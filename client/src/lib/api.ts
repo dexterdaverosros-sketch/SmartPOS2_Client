@@ -1,7 +1,7 @@
 const getBaseUrl = () => {
   if (import.meta.env.PROD && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
-    // In production (not local), use the Render backend URL
-    return 'https://smartposv4.onrender.com';
+    // In production (not local), use the NEW Render backend URL
+    return 'https://smartpos2-bsiscaps.onrender.com';
   } else {
     // In development or local production, use the current origin
     return window.location.origin;
