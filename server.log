@@ -1,0 +1,14 @@
+
+> rest-express@1.0.0 dev
+> cross-env NODE_ENV=development tsx server/index.ts
+
+Server will be accessible at: http://192.168.100.51:5000
+Customer scanning page: http://192.168.100.51:5000/customer
+Express env is: development
+NODE_ENV is: development
+Setting up Vite middleware...
+Vite middleware setup complete.
+3:08:06 PM [express] serving on port 5000
+3:08:06 PM [express] Open your browser to: http://localhost:5000
+3:08:06 PM [express] Network access: http://192.168.100.51:5000
+Terminate batch job (Y/N)? 

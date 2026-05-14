@@ -25,7 +25,9 @@ const initSQLite = () => {
 
     // Helper to determine if we should use Cloud (Supabase)
 export const useCloud = () => {
-  return !!process.env.SUPABASE_URL && !!process.env.SUPABASE_ANON_KEY;
+  const url = process.env.SUPABASE_URL || "https://yvtdagbiuxmvlesaikts.supabase.co";
+  const key = process.env.SUPABASE_ANON_KEY || "sb_publishable_9Wwym8pGkJCa_C1xnDtVBQ_F-QFylwk";
+  return !!url && !!key && url !== "" && key !== "";
 };
 
 // Database service
