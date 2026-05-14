@@ -1549,58 +1549,60 @@ const AdminMain: React.FC = () => {
 
         {/* Remittance Confirmation Dialog */}
         <Dialog open={!!selectedRemittance} onOpenChange={(open) => !open && setSelectedRemittance(null)}>
-          <DialogContent className="max-w-md rounded-[2.5rem] p-8">
-            <DialogHeader className="text-center space-y-4">
-              <div className="w-20 h-20 bg-amber-50 rounded-3xl flex items-center justify-center mx-auto mb-2">
-                <DollarSign className="w-10 h-10 text-[#BF953F]" />
-              </div>
-              <DialogTitle className="text-3xl font-black tracking-tighter text-gray-900 leading-tight">
-                Confirm Staff <br /> Remittance?
-              </DialogTitle>
-              <DialogDescription className="text-gray-500 font-medium">
-                The staff member <span className="font-bold text-gray-900">{selectedRemittance?.staffName}</span> is remitting their accumulated revenue.
-              </DialogDescription>
-            </DialogHeader>
+          <DialogContent className="max-w-md w-[95vw] rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
+            <div className="max-h-[90vh] overflow-y-auto custom-scrollbar p-8">
+              <DialogHeader className="text-center space-y-4">
+                <div className="w-20 h-20 bg-amber-50 rounded-3xl border border-amber-100 flex items-center justify-center mx-auto mb-2 shadow-sm">
+                  <DollarSign className="w-10 h-10 text-[#BF953F]" />
+                </div>
+                <DialogTitle className="text-3xl font-black tracking-tighter text-gray-900 leading-tight">
+                  Confirm Staff <br /> Remittance?
+                </DialogTitle>
+                <DialogDescription className="text-gray-500 font-medium">
+                  The staff member <span className="font-bold text-gray-900">{selectedRemittance?.staffName}</span> is remitting their accumulated revenue.
+                </DialogDescription>
+              </DialogHeader>
 
-            <div className="my-8 p-6 bg-gray-50 rounded-3xl border border-gray-100 space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Total Amount</span>
-                <span className="text-2xl font-black text-gray-900">₱{selectedRemittance?.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-              </div>
-              <div className="h-px bg-gray-200 w-full"></div>
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Transactions</span>
-                <span className="text-lg font-black text-gray-900">{selectedRemittance?.transactionCount} Orders</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Timestamp</span>
-                <span className="text-xs font-bold text-gray-600">{selectedRemittance?.createdAt ? new Date(selectedRemittance.createdAt).toLocaleString() : 'N/A'}</span>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 flex gap-3">
-                <CheckCircle className="w-5 h-5 text-blue-500 flex-none" />
-                <p className="text-[11px] text-blue-700 font-medium leading-tight">
-                  By confirming, you acknowledge that you have physically received the cash from the staff member. This will update the system revenue.
-                </p>
+              <div className="my-8 p-6 bg-gray-50 rounded-3xl border border-gray-100 space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Total Amount</span>
+                  <span className="text-2xl font-black text-gray-900">₱{selectedRemittance?.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div className="h-px bg-gray-200 w-full"></div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Transactions</span>
+                  <span className="text-lg font-black text-gray-900">{selectedRemittance?.transactionCount} Orders</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Timestamp</span>
+                  <span className="text-xs font-bold text-gray-600">{selectedRemittance?.createdAt ? new Date(selectedRemittance.createdAt).toLocaleString() : 'N/A'}</span>
+                </div>
               </div>
 
-              <div className="flex gap-3 pt-2">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setSelectedRemittance(null)}
-                  className="flex-1 py-7 rounded-2xl border-gray-200 text-gray-500 font-bold uppercase tracking-widest hover:bg-gray-50 transition-all"
-                >
-                  NOT YET
-                </Button>
-                <Button 
-                  onClick={handleConfirmRemittance}
-                  disabled={isConfirmingRemit}
-                  className="flex-1 py-7 rounded-2xl bg-[#BF953F] hover:bg-[#A67C27] text-white font-bold uppercase tracking-widest shadow-xl shadow-amber-200 transition-all"
-                >
-                  {isConfirmingRemit ? "PROCESSING..." : "CONFIRM"}
-                </Button>
+              <div className="space-y-4">
+                <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 flex gap-3">
+                  <CheckCircle className="w-5 h-5 text-blue-500 flex-none" />
+                  <p className="text-[11px] text-blue-700 font-medium leading-tight">
+                    By confirming, you acknowledge that you have physically received the cash from the staff member. This will update the system revenue.
+                  </p>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setSelectedRemittance(null)}
+                    className="flex-1 py-7 rounded-2xl border-gray-200 text-gray-500 font-bold uppercase tracking-widest hover:bg-gray-50 transition-all"
+                  >
+                    NOT YET
+                  </Button>
+                  <Button 
+                    onClick={handleConfirmRemittance}
+                    disabled={isConfirmingRemit}
+                    className="flex-1 py-7 rounded-2xl bg-[#BF953F] hover:bg-[#A67C27] text-white font-bold uppercase tracking-widest shadow-xl shadow-amber-200 transition-all"
+                  >
+                    {isConfirmingRemit ? "PROCESSING..." : "CONFIRM"}
+                  </Button>
+                </div>
               </div>
             </div>
           </DialogContent>

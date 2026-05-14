@@ -295,71 +295,52 @@ const CustomerScan: React.FC = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {manualEntry ? (
-              <form onSubmit={handleManualSubmit} className="space-y-4">
+            <div className="flex flex-col items-center justify-center space-y-6">
+              <div className="w-full aspect-square max-w-sm bg-gray-100 dark:bg-gray-800 rounded-3xl border-2 border-dashed border-gray-300 dark:border-gray-700 flex flex-col items-center justify-center p-8 text-center space-y-4">
+                <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center">
+                  <Camera className="w-10 h-10 text-primary" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Scan Product Barcode</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Use your device's native camera to scan a product barcode</p>
+                </div>
+                <label className="w-full cursor-pointer">
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handleImageCapture}
+                    className="hidden"
+                  />
+                  <div className="w-full py-4 bg-primary text-primary-foreground rounded-2xl font-bold uppercase tracking-widest shadow-lg active:scale-95 transition-all text-center">
+                    Open Camera
+                  </div>
+                </label>
+              </div>
+
+              <div className="w-full max-w-sm flex items-center gap-4">
+                <div className="h-px bg-gray-200 dark:bg-gray-700 flex-1"></div>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Or Enter Manually</span>
+                <div className="h-px bg-gray-200 dark:bg-gray-700 flex-1"></div>
+              </div>
+
+              <form onSubmit={handleManualSubmit} className="w-full max-w-sm flex gap-2">
                 <Input
-                  ref={inputRef}
-                  type="text"
-                  placeholder="Enter barcode number"
+                  placeholder="Enter Barcode"
                   value={barcodeInput}
                   onChange={(e) => setBarcodeInput(e.target.value)}
-                  className={darkMode ? "bg-gray-700 border-gray-600" : ""}
-                  autoFocus
+                  className="flex-1 h-14 rounded-2xl border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-6 font-medium focus:ring-2 focus:ring-primary/20 transition-all"
                 />
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? "Searching..." : "Look Up Product"}
+                <Button 
+                  type="submit"
+                  disabled={loading || !barcodeInput.trim()}
+                  className="h-14 w-14 rounded-2xl shadow-lg active:scale-95 transition-all"
+                >
+                  <Keyboard className="w-6 h-6" />
                 </Button>
               </form>
-            ) : (
-              <div className="space-y-4">
-                <div className="rounded-lg overflow-hidden border">
-                  <Scanner 
-                    onResult={handleScanResult} 
-                    onError={handleScanError}
-                  />
-                </div>
-                <p className="text-center text-sm">
-                  Position barcode in the center of the camera
-                </p>
-                {!window.isSecureContext && (
-                  <div className="space-y-2">
-                    <p className="text-center text-xs text-red-500">Insecure connection detected. Camera is unavailable on mobile. Use photo capture.</p>
-                    <label className="w-full">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        onChange={handleImageCapture}
-                        className="hidden"
-                      />
-                      <Button className="w-full" type="button" onClick={(e) => (e.currentTarget.previousElementSibling as HTMLInputElement)?.click()}>
-                        Take Photo Instead
-                      </Button>
-                    </label>
-                  </div>
-                )}
-              </div>
-            )}
+            </div>
           </CardContent>
-          <CardFooter>
-            <Button 
-              onClick={toggleInputMethod} 
-              variant="outline" 
-              className="w-full"
-            >
-              {manualEntry ? (
-                <>
-                  <Camera className="mr-2 h-4 w-4" />
-                  Switch to Camera
-                </>
-              ) : (
-                <>
-                  <Keyboard className="mr-2 h-4 w-4" />
-                  Enter Manually
-                </>
-              )}
-            </Button>
-          </CardFooter>
         </Card>
       </main>
 

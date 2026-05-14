@@ -176,11 +176,35 @@ const ScannerSales: React.FC = () => {
       });
 
       if (res.success) {
+        // Update local sales to be remitted
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const localSales = await SalesService.getAllSales();
+        const toMarkRemitted = localSales.filter(s => {
+          const saleDate = s.createdAt ? new Date(s.createdAt) : new Date();
+          const isUser = s.staffId === user?.id || s.staffId === user?.staffId;
+          return isUser && saleDate >= today && !s.remitted;
+        });
+
+        for (const s of toMarkRemitted) {
+          await db.sales.update(s.id, { remitted: true });
+        }
+
         toast({
           title: "Remittance Sent",
           description: `Successfully remitted ₱${remitAmount.toLocaleString()} to admin.`,
         });
+        
+        // Reset local state
+        setTodaysTotal(0);
+        setRemitAmount(0);
+        setRemitTxCount(0);
+        setRemitTransactions([]);
         setIsRemitDialogOpen(false);
+        
+        // Final sync just in case
+        await syncRemittedSales();
       }
     } catch (err) {
       console.error('Remittance failed', err);
