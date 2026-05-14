@@ -126,21 +126,17 @@ export default function LedgerPage() {
                         <Bell className="w-4 h-4" />
                         <span>Remind</span>
                       </button>
-                      <div className="text-gray-800 dark:text-gray-200 font-medium">{c.name}</div>
+                      <div className="text-gray-800 dark:text-gray-200 font-medium cursor-pointer hover:underline" onClick={() => setLocation(`/admin/creditors/${c.id}`)}>
+                        {c.name}
+                      </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <div className="text-gray-900 dark:text-gray-100 font-semibold">{formatCurrency(c.amount)}</div>
+                      <div className="text-gray-900 dark:text-gray-100 font-semibold cursor-pointer hover:text-purple-600" onClick={() => setLocation(`/admin/creditors/${c.id}`)}>
+                        {formatCurrency(c.amount)}
+                      </div>
                       <button
                         className="px-2 py-1 rounded-lg border border-gray-300 hover:bg-gray-50 flex items-center"
-                        onClick={async () => {
-                          try {
-                            console.log(`Navigating to creditor details for ID: ${c.id}`);
-                            setLocation(`/admin/creditors/${c.id}`);
-                            console.log('Navigation to creditor details initiated');
-                          } catch (e) {
-                            console.error(`Failed to navigate to creditor details for ID: ${c.id}`, e);
-                          }
-                        }}
+                        onClick={() => setLocation(`/admin/creditors/${c.id}`)}
                       >
                         <motion.div whileTap={{ scale: 0.95 }} transition={{ duration: 0.1 }}>
                           <ChevronRight className="w-5 h-5 text-gray-500" />

@@ -14,6 +14,14 @@ export const users = sqliteTable("users", {
   businessName: text("business_name"),
   ownerName: text("owner_name"),
   profileImage: text("profile_image"), // Base64 encoded profile image
+  securityQuestion1: text("security_question_1"),
+  securityAnswer1: text("security_answer_1"),
+  securityQuestion2: text("security_question_2"),
+  securityAnswer2: text("security_answer_2"),
+  securityQuestion3: text("security_question_3"),
+  securityAnswer3: text("security_answer_3"),
+  failedAttemptCount: integer("failed_attempt_count").default(0),
+  lockoutUntil: integer("lockout_until", { mode: 'timestamp' }),
   createdAt: integer("created_at", { mode: 'timestamp' }).default(new Date()),
 });
 
@@ -23,7 +31,7 @@ export const users = sqliteTable("users", {
 export const products = sqliteTable("products", {
   id: text("id").primaryKey(),
   name: text("name").notNull().unique(),
-  barcode: text("barcode").notNull().unique(),
+  barcode: text("barcode").unique(),
   price: real("price").notNull(),
   cost: real("cost").default(0),
   quantity: integer("quantity").notNull().default(0),
@@ -55,6 +63,7 @@ export const sales = sqliteTable("sales", {
   paymentType: text("payment_type").notNull(), // 'cash' or 'ewallet'
   paymentAmount: real("payment_amount").notNull(),
   staffId: text("staff_id"),
+  remitted: integer("remitted", { mode: 'boolean' }).default(false),
   createdAt: integer("created_at", { mode: 'timestamp' }).default(new Date()),
 });
 
@@ -110,7 +119,7 @@ export const nonInventoryProducts = sqliteTable("non_inventory_products", {
   category: text("category").default("general"),
   description: text("description"),
   image: text("image"), // Base64 encoded image or URL
-  barcode: text("barcode").notNull().unique(),
+  barcode: text("barcode").unique(),
   barcodeData: text("barcode_data"), // SVG or Base64 barcode image
   createdAt: integer("created_at", { mode: 'timestamp' }).default(new Date()),
   updatedAt: integer("updated_at", { mode: 'timestamp' }).default(new Date()),
@@ -127,6 +136,29 @@ export const creditors = sqliteTable("creditors", {
     isPaid: integer("is_paid", { mode: 'boolean' }).default(false),
 });
 
+// Remittances table for staff remitting daily sales to admin
+export const remittances = sqliteTable("remittances", {
+  id: text("id").primaryKey(),
+  staffId: text("staff_id").notNull(),
+  staffName: text("staff_name").notNull(),
+  amount: real("amount").notNull(),
+  transactionCount: integer("transaction_count").notNull(),
+  status: text("status").notNull().default("pending"), // 'pending', 'confirmed', 'rejected'
+  createdAt: integer("created_at", { mode: 'timestamp' }).default(new Date()),
+  confirmedAt: integer("confirmed_at", { mode: 'timestamp' }),
+});
+
+// Notifications table for system alerts
+export const notifications = sqliteTable("notifications", {
+  id: text("id").primaryKey(),
+  userId: text("user_id"), // recipient, null for all admins
+  type: text("type").notNull(), // 'remittance', 'system_update', 'inventory_alert'
+  message: text("message").notNull(),
+  data: text("data"), // JSON string for extra payload
+  isRead: integer("is_read", { mode: 'boolean' }).default(false),
+  createdAt: integer("created_at", { mode: 'timestamp' }).default(new Date()),
+});
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
@@ -137,6 +169,14 @@ export const insertUserSchema = createInsertSchema(users).pick({
   staffId: true,
   businessName: true,
   ownerName: true,
+  securityQuestion1: true,
+  securityAnswer1: true,
+  securityQuestion2: true,
+  securityAnswer2: true,
+  securityQuestion3: true,
+  securityAnswer3: true,
+  failedAttemptCount: true,
+  lockoutUntil: true,
 });
 
 export const insertProductSchema = createInsertSchema(products).pick({
@@ -168,6 +208,9 @@ export const insertStaffSchema = createInsertSchema(staff).pick({
 export const insertExpenseSchema = createInsertSchema(expenses);
 export const insertPurchaseSchema = createInsertSchema(purchases);
 export const insertCreditorSchema = createInsertSchema(creditors);
+export const insertRemittanceSchema = createInsertSchema(remittances);
+export const insertNotificationSchema = createInsertSchema(notifications);
+
 export const insertNonInventoryProductSchema = createInsertSchema(nonInventoryProducts).pick({
   name: true,
   price: true,
@@ -206,6 +249,10 @@ export type InsertPurchase = z.infer<typeof insertPurchaseSchema>;
 export type Purchase = typeof purchases.$inferSelect;
 export type InsertCreditor = z.infer<typeof insertCreditorSchema>;
 export type Creditor = typeof creditors.$inferSelect;
+export type Remittance = typeof remittances.$inferSelect;
+export type InsertRemittance = z.infer<typeof insertRemittanceSchema>;
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type NonInventoryProduct = typeof nonInventoryProducts.$inferSelect;
 export type InsertNonInventoryProduct = z.infer<typeof insertNonInventoryProductSchema>;
 

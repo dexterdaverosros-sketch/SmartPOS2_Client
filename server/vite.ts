@@ -49,6 +49,7 @@ export async function setupVite(app: Express, server: Server) {
   app.use(vite.middlewares);
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
+    console.log("--> Vite Catch-all middleware hit for URL:", url);
 
     try {
       const clientTemplate = path.resolve(
@@ -61,8 +62,10 @@ export async function setupVite(app: Express, server: Server) {
       // always reload the index.html file from disk incase it changes
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
       const page = await vite.transformIndexHtml(url, template);
+      console.log("--> Successfully transformed index.html");
       res.status(200).set({ "Content-Type": "text/html" }).end(page);
     } catch (e) {
+      console.error("--> Error in Vite Catch-all middleware:", e);
       vite.ssrFixStacktrace(e as Error);
       next(e);
     }

@@ -1,7 +1,7 @@
 import Dexie, { Table } from 'dexie';
 import bcrypt from 'bcryptjs';
 import type {
-    User, Product, Sale, Staff, CartItem, SaleItem, Expense, Purchase, Creditor, Variant, NonInventoryProduct
+    User, Product, Sale, Staff, CartItem, SaleItem, Expense, Purchase, Creditor, Variant, NonInventoryProduct, Remittance, Notification
 } from '@shared/schema';
 import { getUnitMultiplier } from './utils';
 import api from './api';
@@ -53,6 +53,8 @@ export class SmartPOSDB extends Dexie {
   creditors!: Table<Creditor>;
   variants!: Table<Variant>;
   nonInventoryProducts!: Table<NonInventoryProduct>;
+  remittances!: Table<Remittance>;
+  notifications!: Table<Notification>;
 
   constructor() {
     super('SmartPOSDB');
@@ -78,6 +80,34 @@ export class SmartPOSDB extends Dexie {
       variants: 'id, productId, name, barcode',
       nonInventoryProducts: 'id, &barcode, name, category',
     });
+    this.version(4).stores({
+      users: 'id, username, email, mobile, role, staffId',
+      products: 'id, &barcode, name, category',
+      sales: 'id, staffId, createdAt',
+      saleItems: 'id, saleId, productId',
+      staff: 'id, &staffId, name, createdBy',
+      expenses: 'id, description, category, date',
+      purchases: 'id, productName, date, supplier',
+      creditors: 'id, name, dueDate, isPaid',
+      variants: 'id, productId, name, barcode',
+      nonInventoryProducts: 'id, &barcode, name, category',
+      remittances: 'id, staffId, status, createdAt',
+      notifications: 'id, type, isRead, createdAt'
+    });
+    this.version(5).stores({
+      users: 'id, username, email, mobile, role, staffId',
+      products: 'id, &barcode, name, category',
+      sales: 'id, staffId, createdAt, remitted',
+      saleItems: 'id, saleId, productId',
+      staff: 'id, &staffId, name, createdBy',
+      expenses: 'id, description, category, date',
+      purchases: 'id, productName, date, supplier',
+      creditors: 'id, name, dueDate, isPaid',
+      variants: 'id, productId, name, barcode',
+      nonInventoryProducts: 'id, &barcode, name, category',
+      remittances: 'id, staffId, status, createdAt',
+      notifications: 'id, type, isRead, createdAt'
+    });
   }
 
   async resetDatabase() {
@@ -87,6 +117,56 @@ export class SmartPOSDB extends Dexie {
 }
 
 export const db = new SmartPOSDB();
+
+// Notification Service
+export const NotificationService = {
+  async list(): Promise<Notification[]> {
+    try {
+      return await api.get<Notification[]>('/api/notifications');
+    } catch (e) {
+      console.warn('Failed to fetch notifications from server, using local data', e);
+      return await db.notifications.orderBy('createdAt').reverse().toArray();
+    }
+  },
+  async getUnreadCount(): Promise<number> {
+    try {
+      const res = await api.get<{ count: number }>('/api/notifications/unread-count');
+      return res.count;
+    } catch {
+      return await db.notifications.where('isRead').equals(0).count();
+    }
+  },
+  async markAsRead(id: string): Promise<void> {
+    try {
+      await api.patch(`/api/notifications/${id}/read`, {});
+    } catch {}
+    await db.notifications.update(id, { isRead: true });
+  },
+  async saveLocally(notification: Notification): Promise<void> {
+    await db.notifications.put(notification);
+  }
+};
+
+// Remittance Service
+export const RemittanceService = {
+  async remit(data: { staffId: string; staffName: string; amount: number; transactionCount: number }): Promise<{ success: boolean; remittance: Remittance }> {
+    const res = await api.post<{ success: boolean, remittance: Remittance }>('/api/remit', data);
+    if (res.success && res.remittance) {
+      await db.remittances.put(res.remittance);
+    }
+    return res;
+  },
+  async confirm(id: string): Promise<{ success: boolean; remittance: Remittance }> {
+    const res = await api.post<{ success: boolean, remittance: Remittance }>(`/api/remit/confirm/${id}`, {});
+    if (res.success && res.remittance) {
+      await db.remittances.update(id, { status: 'confirmed', confirmedAt: new Date() });
+    }
+    return res;
+  },
+  async listPending(): Promise<Remittance[]> {
+    return await api.get<Remittance[]>('/api/remittances/pending');
+  }
+};
 
 // NOTE: When running in Electron native mode we'll replace or augment this
 // Dexie-backed `db` with a native SQLite adapter via IPC. The migration
@@ -126,6 +206,14 @@ export class AuthService {
       businessName: userData.businessName,
       ownerName: userData.ownerName,
       profileImage: null,
+      securityQuestion1: null,
+      securityAnswer1: null,
+      securityQuestion2: null,
+      securityAnswer2: null,
+      securityQuestion3: null,
+      securityAnswer3: null,
+      failedAttemptCount: 0,
+      lockoutUntil: null,
       createdAt: new Date(),
     };
 
@@ -189,59 +277,15 @@ export class AuthService {
       ownerName: staffMember.name,
       profileImage: null,
       createdAt: staffMember.createdAt,
+      securityQuestion1: null,
+      securityAnswer1: null,
+      securityQuestion2: null,
+      securityAnswer2: null,
+      securityQuestion3: null,
+      securityAnswer3: null,
+      failedAttemptCount: 0,
+      lockoutUntil: null,
     };
-  }
-
-  static async requestPasswordReset(usernameOrMobile: string): Promise<boolean> {
-    try {
-      // Find user by username or mobile
-      const user = await db.users.where('username').equals(usernameOrMobile).first() ||
-                  await db.users.where('mobile').equals(usernameOrMobile).first();
-      
-      if (!user) return false;
-      
-      // In a real application, we would:
-      // 1. Generate a secure reset token
-      // 2. Store the token and expiration time in the database
-      // 3. Send the token to the user's email or mobile number
-      
-      // For this demo, we'll just simulate success
-      console.log(`Password reset requested for user: ${user.username || user.mobile}`);
-      
-      return true;
-    } catch (error) {
-      console.error('Error requesting password reset:', error);
-      return false;
-    }
-  }
-
-  static async resetPassword(token: string, newPassword: string): Promise<boolean> {
-    try {
-      // In a real application, we would:
-      // 1. Verify the token is valid and not expired
-      // 2. Find the user associated with the token
-      // 3. Update the user's password
-      // 4. Invalidate the token
-      
-      // For this demo, we'll just simulate success
-      console.log(`Password reset with token: ${token}`);
-      
-      // In a real implementation, we would update the user's password here
-      // const user = await db.users.where('resetToken').equals(token).first();
-      // if (!user) return false;
-      // 
-      // const hashedPassword = await hashPassword(newPassword);
-      // await db.users.update(user.id, { 
-      //   password: hashedPassword,
-      //   resetToken: null,
-      //   resetTokenExpiry: null
-      // });
-      
-      return true;
-    } catch (error) {
-      console.error('Error resetting password:', error);
-      return false;
-    }
   }
 
   static async createStaff(staffData: {
@@ -512,6 +556,17 @@ export class ProductService {
       quantity: newQuantity,
       updatedAt: new Date(),
     });
+
+    // Immediate sync to server for stock changes
+    try {
+      await api.post('/api/products', [{
+        ...product,
+        quantity: newQuantity,
+        updatedAt: new Date().toISOString()
+      }]);
+    } catch (e) {
+      console.warn('Immediate stock sync failed, will rely on periodic sync', e);
+    }
   }
 
   static async addVariant(productId: string, data: { name: string; price: number; cost: number; quantity?: number; barcode?: string; image?: string | null }): Promise<Variant> {
@@ -547,14 +602,19 @@ export class ProductService {
   static async updateVariant(id: string, updates: Partial<Variant>): Promise<void> {
     await db.variants.update(id, { ...updates, updatedAt: new Date() });
     try {
-      await ProductService.syncVariantsToServer();
+      const updated = await db.variants.get(id);
+      if (updated) {
+        await api.post('/api/variants', [{
+          ...updated,
+          updatedAt: new Date().toISOString()
+        }]);
+      }
     } catch (e) {
       console.error('Failed to sync variant update', e);
     }
   }
 }
 
-// Non-inventory product service
 export class NonInventoryProductService {
   static async getAllNonInventoryProducts(): Promise<NonInventoryProduct[]> {
     return await db.nonInventoryProducts.toArray();
@@ -562,6 +622,10 @@ export class NonInventoryProductService {
 
   static async getNonInventoryProductById(id: string): Promise<NonInventoryProduct | undefined> {
     return await db.nonInventoryProducts.get(id);
+  }
+
+  static async getNonInventoryProductByBarcode(barcode: string): Promise<NonInventoryProduct | undefined> {
+    return await db.nonInventoryProducts.where('barcode').equals(barcode).first();
   }
 
   static async addNonInventoryProduct(productData: {
@@ -692,6 +756,7 @@ export class SalesService {
       paymentType: saleData.paymentType,
       paymentAmount: Math.round(saleData.paymentAmount * 100) / 100,
       staffId: saleData.staffId || null,
+      remitted: false,
       createdAt: new Date(),
     };
 
@@ -767,6 +832,10 @@ export class SalesService {
     return await db.sales.where('createdAt').above(today).toArray();
   }
 
+  static async getAllSales(): Promise<Sale[]> {
+    return await db.sales.toArray();
+  }
+
   static async getTotalSales(): Promise<number> {
     const sales = await db.sales.toArray();
     return sales.reduce((total, sale) => total + (sale.total || 0), 0);
@@ -782,9 +851,27 @@ export class SalesService {
       paymentType,
       paymentAmount: Math.round(total * 100) / 100,
       staffId: staffId || null,
+      remitted: false,
       createdAt: new Date(),
     } as Sale;
     await db.sales.add(sale);
+    
+    // CRITICAL: Push income to server for admin visibility
+    try {
+      await api.post('/api/sales', {
+        ...sale,
+        items: [{
+          productId: 'income-adjustment',
+          quantity: 1,
+          price: total,
+          unit: 'total',
+          name: `Income (${paymentType})`
+        }]
+      });
+    } catch (err) {
+      console.warn('Failed to push income to server immediately:', err);
+    }
+    
     return sale;
   }
 }

@@ -78,7 +78,13 @@ const InventoryManagement: React.FC = () => {
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [editModeTimerId, setEditModeTimerId] = useState<number | null>(null);
   const [pcsPerBox, setPcsPerBox] = useState(1);
-  const [activeTab, setActiveTab] = useState('inventory');
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('tab') === 'non-inventory' ? 'non-inventory' : 'inventory';
+    }
+    return 'inventory';
+  });
 
   const form = useForm<ProductFormData>({
     resolver: zodResolver(enhancedProductSchema),
@@ -266,7 +272,7 @@ const InventoryManagement: React.FC = () => {
   // Filter products based on search and category
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         product.barcode.includes(searchTerm);
+                         (product.barcode && product.barcode.includes(searchTerm));
     const matchesCategory = selectedCategory === 'All' || product.category === selectedCategory;
     const matchesLowStock = !lowStockOnly || (product.quantity <= 10);
     return matchesSearch && matchesCategory && matchesLowStock;
@@ -420,7 +426,7 @@ const InventoryManagement: React.FC = () => {
     setProductImage(product.image || null);
     form.reset({
       name: product.name,
-      barcode: product.barcode,
+      barcode: product.barcode || '',
       price: product.price,
       cost: (product as any).cost ?? 0,
       quantity: product.quantity,
@@ -718,17 +724,6 @@ const InventoryManagement: React.FC = () => {
                   >
                     <Tag className="w-5 h-5 text-pink-500" />
                     <span className="text-gray-700 dark:text-gray-200">Create Category</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setActiveTab('non-inventory');
-                      setIsFabExpanded(false);
-                    }}
-                    className="flex items-center space-x-2 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg w-full text-left border-t dark:border-gray-700"
-                  >
-                    <Package className="w-5 h-5 text-orange-500" />
-                    <span className="text-gray-700 dark:text-gray-200">Non-Inventory</span>
                   </button>
                 </motion.div>
               </>

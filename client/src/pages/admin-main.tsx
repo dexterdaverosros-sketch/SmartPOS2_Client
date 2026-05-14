@@ -1,15 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLocation } from 'wouter';
-import { LogOut, DollarSign, Package, Plus, Eye, Calendar, CreditCard, Receipt, User, FileText } from 'lucide-react';
+import { LogOut, DollarSign, Package, Plus, Eye, Calendar, CreditCard, Receipt, User, FileText, Lock, FileSpreadsheet, BarChart3, Bell, CheckCircle, Clock, ArrowRight } from 'lucide-react';
 import Layout from '@/components/Layout';
 import FloatingActionButton from '@/components/FloatingActionButton';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-    SalesService, ProductService, ExpenseService, PurchaseService, CreditorService
+    SalesService, ProductService, ExpenseService, PurchaseService, CreditorService, NotificationService, RemittanceService, db
 } from '@/lib/db';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useForm } from 'react-hook-form';
@@ -18,7 +18,7 @@ import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { ChartContainer } from '@/components/ui/chart';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { db } from '@/lib/db';
+import type { Notification, Remittance } from '@shared/schema';
 
 // Schemas for expenses and purchases
 const expenseSchema = z.object({
@@ -76,7 +76,7 @@ interface Creditor {
 }
 
 const AdminMain: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, socket } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [stats, setStats] = useState({
@@ -102,6 +102,13 @@ const AdminMain: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
+
+  // Notification & Remittance State
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [selectedRemittance, setSelectedRemittance] = useState<Remittance | null>(null);
+  const [isConfirmingRemit, setIsConfirmingRemit] = useState(false);
 
   // Form hooks
   const expenseForm = useForm<ExpenseFormData>({
@@ -261,6 +268,16 @@ const AdminMain: React.FC = () => {
     return months[month];
   };
 
+  const formatDateSafely = (date: any) => {
+    try {
+      const d = date instanceof Date ? date : new Date(date ?? Date.now());
+      if (isNaN(d.getTime())) return new Date().toISOString().split('T')[0];
+      return d.toISOString().split('T')[0];
+    } catch (e) {
+      return new Date().toISOString().split('T')[0];
+    }
+  };
+
   const loadFinancialData = async () => {
     try {
       const [expensesData, purchasesData, creditorsData] = await Promise.all([
@@ -271,25 +288,25 @@ const AdminMain: React.FC = () => {
       setExpenses(expensesData.map(e => ({
         id: e.id,
         description: e.description,
-        amount: e.amount,
+        amount: Number(e.amount) || 0,
         category: e.category,
-        date: (e.date instanceof Date ? e.date : new Date(e.date ?? Date.now())).toISOString().split('T')[0],
+        date: formatDateSafely(e.date),
       })));
       setPurchases(purchasesData.map(p => ({
         id: p.id,
         productName: p.productName,
-        quantity: p.quantity,
-        cost: p.cost,
+        quantity: Number(p.quantity) || 0,
+        cost: Number(p.cost) || 0,
         supplier: p.supplier ?? null,
-        date: (p.date instanceof Date ? p.date : new Date(p.date ?? Date.now())).toISOString().split('T')[0],
+        date: formatDateSafely(p.date),
       })));
       setCreditors(creditorsData.map(c => ({
         id: c.id,
         name: c.name,
-        amount: c.amount,
+        amount: Number(c.amount) || 0,
         description: c.description ?? '',
-        dueDate: (c.dueDate instanceof Date ? c.dueDate : new Date(c.dueDate ?? Date.now())).toISOString().split('T')[0],
-        reminderDate: (c.reminderDate instanceof Date ? c.reminderDate : new Date(c.reminderDate ?? Date.now())).toISOString().split('T')[0],
+        dueDate: formatDateSafely(c.dueDate),
+        reminderDate: formatDateSafely(c.reminderDate),
         isPaid: !!c.isPaid,
       })));
     } catch (error) {
@@ -326,24 +343,30 @@ const AdminMain: React.FC = () => {
       const allExpenses = await db.expenses.toArray();
 
       const currentWeekSales = allSales
-        .filter(s => new Date(s.createdAt as any) >= oneWeekAgo)
-        .reduce((sum, s) => sum + (s.total || 0), 0);
+        .filter(s => {
+          const d = new Date(s.createdAt as any);
+          return !isNaN(d.getTime()) && d >= oneWeekAgo;
+        })
+        .reduce((sum, s) => sum + (Number(s.total) || 0), 0);
       const previousWeekSales = allSales
         .filter(s => {
           const d = new Date(s.createdAt as any);
-          return d >= twoWeeksAgo && d < oneWeekAgo;
+          return !isNaN(d.getTime()) && d >= twoWeeksAgo && d < oneWeekAgo;
         })
-        .reduce((sum, s) => sum + (s.total || 0), 0);
+        .reduce((sum, s) => sum + (Number(s.total) || 0), 0);
 
       const currentWeekExpenses = allExpenses
-        .filter(e => new Date(e.date) >= oneWeekAgo)
-        .reduce((sum, e) => sum + (e.amount || 0), 0);
+        .filter(e => {
+          const d = new Date(e.date);
+          return !isNaN(d.getTime()) && d >= oneWeekAgo;
+        })
+        .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
       const previousWeekExpenses = allExpenses
         .filter(e => {
           const d = new Date(e.date);
-          return d >= twoWeeksAgo && d < oneWeekAgo;
+          return !isNaN(d.getTime()) && d >= twoWeeksAgo && d < oneWeekAgo;
         })
-        .reduce((sum, e) => sum + (e.amount || 0), 0);
+        .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
 
       const currentProfit = currentWeekSales - currentWeekExpenses;
       const previousProfit = previousWeekSales - previousWeekExpenses;
@@ -370,14 +393,115 @@ const AdminMain: React.FC = () => {
     loadStats();
     loadFinancialData();
     loadChartData();
-    
+    loadNotifications();
+
+    if (socket) {
+      socket.on('notification-received', (notification: Notification) => {
+        setNotifications(prev => [notification, ...prev]);
+        setUnreadCount(prev => prev + 1);
+        toast({
+          title: "New Notification",
+          description: notification.message,
+        });
+      });
+
+      socket.on('remittance-sent', (remittance: Remittance) => {
+        loadNotifications();
+        loadStats();
+        loadFinancialData();
+      });
+    }
+
     // Update date and time every second
     const timer = setInterval(() => {
       setCurrentDateTime(new Date());
     }, 1000);
     
-    return () => clearInterval(timer);
-  }, []);
+    return () => {
+      clearInterval(timer);
+      if (socket) {
+        socket.off('notification-received');
+        socket.off('remittance-sent');
+      }
+    };
+  }, [socket]);
+
+  const loadNotifications = async () => {
+    try {
+      const list = await NotificationService.list();
+      setNotifications(list);
+      const count = await NotificationService.getUnreadCount();
+      setUnreadCount(count);
+    } catch (error) {
+      console.error('Failed to load notifications', error);
+    }
+  };
+
+  const handleMarkAsRead = async (id: string) => {
+    try {
+      await NotificationService.markAsRead(id);
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    } catch (error) {
+      console.error('Failed to mark as read', error);
+    }
+  };
+
+  const handleNotificationClick = (notification: Notification) => {
+    handleMarkAsRead(notification.id);
+    if (notification.type === 'remittance' && notification.data) {
+      try {
+        const data = JSON.parse(notification.data);
+        if (data.remittanceId) {
+          fetchAndShowRemittance(data.remittanceId);
+        }
+      } catch (e) {
+        console.error('Failed to parse notification data', e);
+      }
+    }
+  };
+
+  const fetchAndShowRemittance = async (id: string) => {
+    try {
+      const pending = await RemittanceService.listPending();
+      const found = pending.find((r: Remittance) => r.id === id);
+      if (found) {
+        setSelectedRemittance(found);
+      } else {
+        toast({
+          title: "Remittance Not Found",
+          description: "This remittance may have already been processed.",
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch remittance', error);
+    }
+  };
+
+  const handleConfirmRemittance = async () => {
+    if (!selectedRemittance) return;
+    setIsConfirmingRemit(true);
+    try {
+      const res = await RemittanceService.confirm(selectedRemittance.id);
+      if (res.success) {
+        toast({
+          title: "Remittance Confirmed",
+          description: `Confirmed receipt of ₱${selectedRemittance.amount.toLocaleString()} from ${selectedRemittance.staffName}.`,
+        });
+        setSelectedRemittance(null);
+        loadStats(); // Refresh income
+      }
+    } catch (error) {
+      console.error('Failed to confirm remittance', error);
+      toast({
+        title: "Error",
+        description: "Failed to confirm remittance. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsConfirmingRemit(false);
+    }
+  };
 
   // Derived KPI values (Income, Expenses, Profit)
   const totalExpenses = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
@@ -411,16 +535,16 @@ const AdminMain: React.FC = () => {
         const income = sales
           .filter(s => {
             const c = new Date(s.createdAt as any);
-            return c >= d && c <= next && (s.paymentType as any) !== 'credits';
+            return !isNaN(c.getTime()) && c >= d && c <= next && (s.paymentType as any) !== 'credits';
           })
-          .reduce((sum, s) => sum + (s.total || 0), 0);
+          .reduce((sum, s) => sum + (Number(s.total) || 0), 0);
 
         const exp = allExpenses
           .filter(e => {
             const c = new Date(e.date);
-            return c >= d && c <= next;
+            return !isNaN(c.getTime()) && c >= d && c <= next;
           })
-          .reduce((sum, e) => sum + (e.amount || 0), 0);
+          .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
 
         return { date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), income, expenses: exp };
       });
@@ -428,12 +552,17 @@ const AdminMain: React.FC = () => {
       setChartData(data);
 
       // Recent Transactions
-      const staffMap = new Map(allStaff.map(s => [s.staffId, s.name]));
+      const staffMap = new Map(allStaff.map(s => [s.id, s.name]));
       const recent = sales
-        .sort((a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime())
+        .sort((a, b) => {
+          const da = new Date(a.createdAt as any).getTime();
+          const db = new Date(b.createdAt as any).getTime();
+          return (isNaN(db) ? 0 : db) - (isNaN(da) ? 0 : da);
+        })
         .slice(0, 5)
         .map(s => ({
           ...s,
+          total: Number(s.total) || 0,
           staffName: s.staffId ? staffMap.get(s.staffId) : 'Owner'
         }));
       setRecentTransactions(recent);
@@ -468,7 +597,7 @@ const AdminMain: React.FC = () => {
         { name: 'Owner', sales: staffSales.get('owner') || 0 },
         ...allStaff.map(s => ({
           name: s.name,
-          sales: staffSales.get(s.staffId) || 0
+          sales: staffSales.get(s.id) || 0
         }))
       ]
       .filter(p => p.sales > 0)
@@ -478,6 +607,43 @@ const AdminMain: React.FC = () => {
     } catch (error) {
       console.error('Failed to load chart data', error);
     }
+  };
+
+  const handleExportCSV = () => {
+    const rows = [
+      ['Report Date', currentDateTime.toLocaleString()],
+      ['Today Sales', stats.todaySales.toFixed(2)],
+      ['Total Income', stats.totalIncome.toFixed(2)],
+      ['Total Expenses', totalExpenses.toFixed(2)],
+      ['Net Profit', profit.toFixed(2)],
+      ['Total Products', stats.totalProducts],
+      [],
+      ['Recent Transactions'],
+      ['ID', 'Staff', 'Type', 'Total', 'Date'],
+      ...recentTransactions.map(tx => [
+        tx.id,
+        tx.staffName,
+        tx.paymentType,
+        tx.total.toFixed(2),
+        new Date(tx.createdAt).toLocaleString()
+      ])
+    ];
+    
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + rows.map(e => e.join(",")).join("\n");
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `SmartPOS_Report_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({
+      title: "Report Exported",
+      description: "Business summary has been downloaded as CSV",
+    });
   };
 
   return (
@@ -496,7 +662,23 @@ const AdminMain: React.FC = () => {
                 {currentDateTime.toLocaleDateString('en-US', {month: 'long', day: '2-digit', year: 'numeric'})} • {currentDateTime.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit', hour12: true})}
               </div>
             </div>
-            <div>
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="w-12 h-12 rounded-2xl bg-white border border-gray-100 shadow-sm relative group"
+                  onClick={() => setShowNotifications(true)}
+                >
+                  <Bell className="w-5 h-5 text-gray-400 group-hover:text-[#BF953F] transition-colors" />
+                  {unreadCount > 0 && (
+                    <span className="absolute top-2 right-2 w-4 h-4 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white">
+                      {unreadCount}
+                    </span>
+                  )}
+                </Button>
+              </div>
+
               <DropdownMenu>
                 <DropdownMenuTrigger className="flex items-center gap-3 bg-white p-1.5 pr-4 rounded-full border border-gray-100 shadow-sm hover:shadow-md transition-all focus:outline-none group">
                   <div className="w-10 h-10 bg-gradient-to-br from-[#BF953F] to-[#B38728] rounded-full flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform">
@@ -552,6 +734,24 @@ const AdminMain: React.FC = () => {
               </div>
 
               <div className="text-right flex flex-col items-end">
+                <div className="flex gap-3 mb-4">
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setLocation('/admin/reports')}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-100 shadow-sm text-xs font-bold uppercase tracking-wider text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <BarChart3 className="w-4 h-4 text-[#BF953F]" />
+                    Summary
+                  </motion.button>
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    onClick={handleExportCSV}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-100 shadow-sm text-xs font-bold uppercase tracking-wider text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-[#BF953F]" />
+                    Export
+                  </motion.button>
+                </div>
                 <div className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400 mb-2">Total Gross Income</div>
                 <div className="text-6xl font-black tracking-tighter text-gray-900 leading-none">
                   ₱{stats.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -599,6 +799,7 @@ const AdminMain: React.FC = () => {
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.5 }}
               className="modern-card p-8 group cursor-pointer"
+              onClick={() => setLocation('/ledger')}
             >
               <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-[#BF953F] transition-colors duration-500">
                 <CreditCard className="w-6 h-6 text-[#BF953F] group-hover:text-white transition-colors duration-500" />
@@ -634,10 +835,11 @@ const AdminMain: React.FC = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {[
-                { title: 'Inventory', desc: 'Product tracking', icon: Package, path: '/inventory', color: 'pink' },
+                { title: 'Inventory', desc: 'Stock control', icon: Package, path: '/inventory', color: 'pink' },
+                { title: 'Non-Inventory', desc: 'Service items', icon: Package, path: '/inventory?tab=non-inventory', color: 'orange' },
                 { title: 'Financials', desc: 'Ledger management', icon: CreditCard, path: '/ledger', color: 'indigo' },
                 { title: 'Expenses', desc: 'Cost analysis', icon: DollarSign, path: '/expenses', color: 'emerald' },
-                { title: 'Logistics', desc: 'Purchase orders', icon: Calendar, path: '/purchased', color: 'amber' },
+                { title: 'Security Questions', desc: 'Manage account security', icon: Lock, path: '/security-questions', color: 'purple' },
               ].map((tool, i) => (
                 <motion.button
                   key={tool.title}
@@ -1272,28 +1474,138 @@ const AdminMain: React.FC = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Footer */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1.5 }}
-          className="mt-20 mb-10 text-center space-y-2"
-        >
-          <p className="text-[#BF953F] text-[11px] font-black tracking-[0.3em] uppercase">
-            @2026 SMARTPOS+
-          </p>
-          <div className="space-y-1">
-            <p className="text-gray-500 text-[10px] font-bold tracking-wider uppercase">
-              Redesigned and Developed By: <span className="text-gray-900 dark:text-gray-100">Dexter Dave A. Ros</span>
-            </p>
-            <p className="text-gray-400 text-[9px] font-medium italic">
-              ( Bachelor of Science In Information System )
-            </p>
-          </div>
-          <p className="text-gray-300 dark:text-gray-600 text-[8px] font-medium tracking-widest uppercase mt-4 opacity-80">
-            "This System is Protected Under Copyright law"
-          </p>
-        </motion.div>
+        {/* Notifications Dialog */}
+        <Dialog open={showNotifications} onOpenChange={setShowNotifications}>
+          <DialogContent className="max-w-md h-[70vh] flex flex-col p-0 overflow-hidden outline-none rounded-[2rem]">
+            <DialogHeader className="p-6 border-b bg-white flex-none">
+              <DialogTitle className="text-xl font-black tracking-tighter gold-gradient-text uppercase">Notifications</DialogTitle>
+              <DialogDescription className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+                System Alerts & Staff Remittances
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50/50">
+              {notifications.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center p-10">
+                  <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
+                    <Bell className="w-8 h-8 text-gray-300" />
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-900">All clear!</h3>
+                  <p className="text-sm text-gray-400">You have no new notifications at the moment.</p>
+                </div>
+              ) : (
+                notifications.map((n) => (
+                  <motion.div
+                    key={n.id}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    onClick={() => handleNotificationClick(n)}
+                    className={`p-4 rounded-2xl border transition-all cursor-pointer group ${
+                      n.isRead 
+                        ? 'bg-white border-gray-100 opacity-60' 
+                        : 'bg-white border-[#BF953F]/20 shadow-sm hover:shadow-md'
+                    }`}
+                  >
+                    <div className="flex gap-4">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-none ${
+                        n.type === 'remittance' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'
+                      }`}>
+                        {n.type === 'remittance' ? <DollarSign className="w-5 h-5" /> : <Bell className="w-5 h-5" />}
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <div className="flex justify-between items-start">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-gray-400">
+                            {n.type === 'remittance' ? 'Staff Remittance' : 'System Update'}
+                          </span>
+                          <span className="text-[9px] font-bold text-gray-300">
+                            {new Date(n.createdAt as any).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <p className={`text-sm leading-tight ${n.isRead ? 'text-gray-500' : 'text-gray-900 font-bold'}`}>
+                          {n.message}
+                        </p>
+                        {!n.isRead && (
+                          <div className="flex items-center gap-1 text-[10px] font-bold text-[#BF953F] pt-1">
+                            <span>View Details</span>
+                            <ArrowRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </motion.div>
+                ))
+              )}
+            </div>
+            <div className="p-4 border-t bg-white text-center flex-none">
+              <Button 
+                variant="ghost" 
+                className="text-xs font-bold text-gray-400 hover:text-gray-900 uppercase tracking-widest"
+                onClick={() => setShowNotifications(false)}
+              >
+                Close Panel
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Remittance Confirmation Dialog */}
+        <Dialog open={!!selectedRemittance} onOpenChange={(open) => !open && setSelectedRemittance(null)}>
+          <DialogContent className="max-w-md rounded-[2.5rem] p-8">
+            <DialogHeader className="text-center space-y-4">
+              <div className="w-20 h-20 bg-amber-50 rounded-3xl flex items-center justify-center mx-auto mb-2">
+                <DollarSign className="w-10 h-10 text-[#BF953F]" />
+              </div>
+              <DialogTitle className="text-3xl font-black tracking-tighter text-gray-900 leading-tight">
+                Confirm Staff <br /> Remittance?
+              </DialogTitle>
+              <DialogDescription className="text-gray-500 font-medium">
+                The staff member <span className="font-bold text-gray-900">{selectedRemittance?.staffName}</span> is remitting their accumulated revenue.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="my-8 p-6 bg-gray-50 rounded-3xl border border-gray-100 space-y-4">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Total Amount</span>
+                <span className="text-2xl font-black text-gray-900">₱{selectedRemittance?.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div className="h-px bg-gray-200 w-full"></div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Transactions</span>
+                <span className="text-lg font-black text-gray-900">{selectedRemittance?.transactionCount} Orders</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Timestamp</span>
+                <span className="text-xs font-bold text-gray-600">{selectedRemittance?.createdAt ? new Date(selectedRemittance.createdAt).toLocaleString() : 'N/A'}</span>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 flex gap-3">
+                <CheckCircle className="w-5 h-5 text-blue-500 flex-none" />
+                <p className="text-[11px] text-blue-700 font-medium leading-tight">
+                  By confirming, you acknowledge that you have physically received the cash from the staff member. This will update the system revenue.
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setSelectedRemittance(null)}
+                  className="flex-1 py-7 rounded-2xl border-gray-200 text-gray-500 font-bold uppercase tracking-widest hover:bg-gray-50 transition-all"
+                >
+                  NOT YET
+                </Button>
+                <Button 
+                  onClick={handleConfirmRemittance}
+                  disabled={isConfirmingRemit}
+                  className="flex-1 py-7 rounded-2xl bg-[#BF953F] hover:bg-[#A67C27] text-white font-bold uppercase tracking-widest shadow-xl shadow-amber-200 transition-all"
+                >
+                  {isConfirmingRemit ? "PROCESSING..." : "CONFIRM"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
       </motion.div>
     </Layout>
   );

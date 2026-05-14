@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -36,6 +37,7 @@ const NonInventoryProducts: React.FC = () => {
   const [isBarcodeModalOpen, setIsBarcodeModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<NonInventoryProduct | null>(null);
   const [productImage, setProductImage] = useState<string | null>(null);
+  const [deletingProduct, setDeletingProduct] = useState<NonInventoryProduct | null>(null);
 
   const form = useForm<NonInventoryFormData>({
     resolver: zodResolver(nonInventorySchema),
@@ -132,19 +134,22 @@ const NonInventoryProducts: React.FC = () => {
       category: product.category || 'general',
       description: product.description || '',
       image: product.image || '',
-      barcode: product.barcode,
+      barcode: product.barcode || '',
     });
     setIsAddDialogOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async () => {
+    if (!deletingProduct) return;
+    
     try {
-      await NonInventoryProductService.deleteNonInventoryProduct(id);
+      await NonInventoryProductService.deleteNonInventoryProduct(deletingProduct.id);
       toast({
         title: 'Product Deleted',
-        description: 'Non-inventory product removed successfully',
+        description: `${deletingProduct.name} removed successfully`,
       });
       await loadProducts();
+      setDeletingProduct(null);
     } catch (error) {
       console.error('Error deleting product:', error);
       toast({
@@ -157,7 +162,7 @@ const NonInventoryProducts: React.FC = () => {
 
   const filteredProducts = products.filter(p =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.barcode.toLowerCase().includes(searchTerm.toLowerCase())
+    (p.barcode && p.barcode.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   return (
@@ -235,7 +240,7 @@ const NonInventoryProducts: React.FC = () => {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleDelete(product.id)}
+                      onClick={() => setDeletingProduct(product)}
                       className="text-gray-500 hover:text-red-500 hover:bg-red-50 h-8 w-8"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -413,6 +418,25 @@ const NonInventoryProducts: React.FC = () => {
           barcode={selectedProduct.barcode}
         />
       )}
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={!!deletingProduct} onOpenChange={(open) => !open && setDeletingProduct(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Non-Inventory Product?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove "{deletingProduct?.name}" from the system.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-red-500 hover:bg-red-600">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

@@ -71,19 +71,6 @@ const SplashScreen: React.FC = () => {
           when technology meets enterprises
         </motion.p>
 
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 3, duration: 1 }}
-          className="mt-12 text-center space-y-1"
-        >
-          <p className="text-white/40 text-[9px] font-bold tracking-widest uppercase">
-            @2026 SMARTPOS+
-          </p>
-          <p className="text-white/20 text-[8px] font-medium tracking-wider">
-            Redesigned and Developed By: Dexter Dave A. Ros
-          </p>
-        </motion.div>
       </div>
 
       <motion.div

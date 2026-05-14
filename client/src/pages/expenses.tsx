@@ -27,18 +27,31 @@ export default function ExpensesPage() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
 
+  const formatDateSafely = (date: any, formatStr: string) => {
+    try {
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return "Invalid Date";
+      return format(d, formatStr);
+    } catch (e) {
+      return "Invalid Date";
+    }
+  };
+
   const loadData = async () => {
       const all = await db.expenses.toArray();
       
       // Filter by date
       const start = new Date(filterDate);
+      if (isNaN(start.getTime())) start.setTime(Date.now());
       start.setHours(0, 0, 0, 0);
+      
       const end = new Date(filterDate);
+      if (isNaN(end.getTime())) end.setTime(Date.now());
       end.setHours(23, 59, 59, 999);
 
       const filtered = all.filter(e => {
           const d = new Date(e.date);
-          return d >= start && d <= end;
+          return !isNaN(d.getTime()) && d >= start && d <= end;
       });
 
       setExpenses(filtered);
@@ -47,12 +60,12 @@ export default function ExpensesPage() {
       const groups: Record<string, number> = {};
       filtered.forEach(e => {
           const name = e.category || e.description || "Uncategorized";
-          groups[name] = (groups[name] || 0) + e.amount;
+          groups[name] = (groups[name] || 0) + (Number(e.amount) || 0);
       });
       
       const summary = Object.entries(groups).map(([name, amount]) => ({ name, amount }));
       setSummaryData(summary);
-      setTotalExpenses(filtered.reduce((s, e) => s + e.amount, 0));
+      setTotalExpenses(filtered.reduce((s, e) => s + (Number(e.amount) || 0), 0));
   };
 
   useEffect(() => {
@@ -180,7 +193,7 @@ export default function ExpensesPage() {
                     >
                         <div className="flex flex-col">
                             <span className="font-semibold text-gray-900 dark:text-gray-100">{expense.category}</span>
-                            <span className="text-sm text-gray-500">{format(new Date(expense.date), 'hh:mm a')}</span>
+                            <span className="text-sm text-gray-500">{formatDateSafely(expense.date, 'hh:mm a')}</span>
                         </div>
                         <span className="font-bold text-gray-900 dark:text-gray-100">{formatCurrency(expense.amount)}</span>
                     </div>
@@ -264,7 +277,7 @@ export default function ExpensesPage() {
                     <div className="py-4 space-y-6">
                         <div className="flex justify-between items-start">
                             <div className="text-sm text-gray-500">
-                                {format(new Date(selectedExpense.date), 'hh:mma dd MMMM- yyyy')}
+                                {formatDateSafely(selectedExpense.date, 'hh:mma dd MMMM- yyyy')}
                             </div>
                             <div className="font-bold text-2xl text-gray-900 dark:text-gray-100">
                                 {formatCurrency(selectedExpense.amount)}

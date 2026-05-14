@@ -2,7 +2,7 @@ import express, { type Express, Request, Response, NextFunction } from "express"
 import { createServer, type Server } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import cors from "cors";
-import type { Staff } from "@shared/schema";
+import type { Staff, Sale, SaleItem, User } from "@shared/schema"; // Import Sale and SaleItem types
 import dbService from "./database";
 import { scanWifiNetworks, getWifiStatus } from "./network";
 import { randomUUID } from "crypto";
@@ -117,7 +117,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/auth/admin-login', async (req: Request, res: Response) => {
     try {
       const { username, password } = req.body;
-      const admin = dbService.getUserByUsername(username);
+      const admin = dbService.getUserByUsername(username) as User | undefined;
       
       if (!admin || admin.role !== 'admin') {
         return res.status(401).json({ error: 'Invalid username or password' });
@@ -252,6 +252,119 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  const authenticateUser = (req: Request, res: Response, next: NextFunction) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Authentication required: No token provided' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    const session = dbService.getSessionByToken(token) as any;
+
+    if (!session) {
+      return res.status(401).json({ error: 'Authentication required: Invalid session' });
+    }
+
+    // Update activity
+    dbService.updateSessionActivity(token);
+
+    // Attach user ID to request for downstream use
+    (req as any).userId = session.user_id;
+    next();
+  };
+
+  app.post('/api/auth/set-security-questions', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId;
+      const { questions, answers } = req.body;
+
+      if (!userId || !Array.isArray(questions) || questions.length !== 3 || !Array.isArray(answers) || answers.length !== 3) {
+        return res.status(400).json({ error: 'Invalid input: userId, 3 questions, and 3 answers are required.' });
+      }
+
+      // Hash answers before saving (already handled in dbService.saveSecurityQuestions)
+      await dbService.saveSecurityQuestions(userId, questions, answers);
+      res.status(200).json({ message: 'Security questions set successfully.' });
+    } catch (error) {
+      console.error('Error setting security questions:', error);
+      res.status(500).json({ error: 'Failed to set security questions.' });
+    }
+  });
+
+  app.post('/api/auth/verify-security-answers', async (req: Request, res: Response) => {
+    try {
+      const { username, answers } = req.body;
+
+      if (!username || !Array.isArray(answers) || answers.length !== 3) {
+        return res.status(400).json({ error: 'Invalid input: username and 3 answers are required.' });
+      }
+
+      const user = dbService.getUserByUsername(username) as User | undefined; // Get full user data
+      if (!user) {
+        return res.status(404).json({ error: 'User not found.' });
+      }
+
+      // Check for lockout
+      if (user.lockoutUntil && new Date(user.lockoutUntil) > new Date()) {
+        const remainingTime = Math.ceil((new Date(user.lockoutUntil).getTime() - new Date().getTime()) / (1000 * 60));
+        return res.status(429).json({ error: `Account locked. Try again in ${remainingTime} minutes.` });
+      }
+
+      const securityQuestions = dbService.getUserSecurityQuestions(username);
+
+      if (!securityQuestions || !securityQuestions.securityQuestion1) { // Check if questions are set
+        return res.status(404).json({ error: 'Security questions not set for this user.' });
+      }
+
+      const storedHashedAnswers = [
+        securityQuestions.securityAnswer1,
+        securityQuestions.securityAnswer2,
+        securityQuestions.securityAnswer3,
+      ];
+
+      let allAnswersMatch = true;
+      for (let i = 0; i < 3; i++) {
+        if (!await bcrypt.compare(answers[i], storedHashedAnswers[i])) {
+          allAnswersMatch = false;
+          break;
+        }
+      }
+
+      if (allAnswersMatch) {
+        dbService.resetLoginAttempts(username); // Reset attempts on success
+        res.status(200).json({ success: true, message: 'Security answers verified.' });
+      } else {
+        const failedAttempts = dbService.recordFailedLoginAttempt(username);
+        if (failedAttempts >= 3) { // Lockout after 3 failed attempts
+          dbService.lockUserAccount(username, 3); // Lock for 3 minutes
+          return res.status(401).json({ success: false, error: 'Incorrect security answers. Account locked for 3 minutes.' });
+        }
+        res.status(401).json({ success: false, error: 'Incorrect security answers.' });
+      }
+    } catch (error) {
+      console.error('Error verifying security answers:', error);
+      res.status(500).json({ error: 'Failed to verify security answers.' });
+    }
+  });
+
+  app.post('/api/auth/reset-password', async (req: Request, res: Response) => {
+    try {
+      const { username, newPassword } = req.body;
+
+      if (!username || !newPassword) {
+        return res.status(400).json({ error: 'Username and new password are required.' });
+      }
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      await dbService.updateUserPassword(username, hashedPassword);
+
+      res.status(200).json({ success: true, message: 'Password reset successfully.' });
+    } catch (error) {
+      console.error('Error resetting password:', error);
+      res.status(500).json({ error: 'Failed to reset password.' });
+    }
+  });
+
   app.get('/api/auth/session', (req: Request, res: Response) => {
     try {
       const authHeader = req.headers.authorization;
@@ -310,34 +423,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/sales', async (req: Request, res: Response) => {
     try {
-      const sale = req.body;
-      const items = Array.isArray(sale.items) ? sale.items : [];
+      const { sale, items } = req.body; // Expecting sale and items separately
       
-      // Update inventory on server
+      if (!sale || !items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: 'Invalid sale data provided.' });
+      }
+
+      // Ensure staffId is present, if not, default to 'unknown' or handle as appropriate
+      if (!sale.staffId) {
+        sale.staffId = 'unknown'; // Or fetch from session if admin is making the sale
+      }
+
+      // Use the new atomic addSale method
+      dbService.addSale(sale, items);
+      
+      // Emit specific inventory updates and a new sale event
       for (const item of items) {
-        try {
-          const product = dbService.getProductById(item.productId);
-          if (product) {
-            dbService.updateStock(item.productId, -Number(item.quantity));
-          } else {
-            const variant = dbService.getVariantById(item.productId);
-            if (variant) {
-              const newQty = (variant.quantity || 0) - Number(item.quantity);
-              dbService.saveVariants([{ ...variant, quantity: newQty }]);
-            }
-          }
-        } catch (e) {
-          console.warn(`Failed to update server stock for item ${item.productId}`, e);
+        if (!item.isNonInventory) {
+          io.emit('inventory-update', { productId: item.productId, quantityChange: -item.quantity });
         }
       }
-      
-      // Notify all connected clients about inventory change
-      io.emit('inventory-update', { timestamp: new Date().toISOString() });
-      
-      res.status(201).json({ success: true });
-    } catch (error) {
+      io.emit('sale-added', { sale, items }); // Emit the full sale for admin dashboard
+
+      res.status(201).json({ success: true, message: 'Sale processed successfully.' });
+    } catch (error: any) {
       console.error('Error processing server sale:', error);
-      res.status(500).json({ error: 'Failed to process sale on server' });
+      res.status(500).json({ error: error.message || 'Failed to process sale on server' });
+    }
+  });
+
+  app.get('/api/sales-history', (req: Request, res: Response) => {
+    try {
+      const salesHistory = dbService.getAllSalesWithStaff();
+      res.status(200).json(salesHistory);
+    } catch (error) {
+      console.error('Error fetching sales history:', error);
+      res.status(500).json({ error: 'Failed to fetch sales history' });
     }
   });
 
@@ -418,7 +539,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/products/barcode/:barcode', (req: Request, res: Response) => {
     try {
       const { barcode } = req.params;
-      const product = dbService.getProductByBarcode(barcode) as any;
+      let product = dbService.getProductByBarcode(barcode) as any;
+      
+      if (!product) {
+        // Try to find in non-inventory products
+        const niProduct = dbService.getNonInventoryProductByBarcode(barcode) as any;
+        if (niProduct) {
+          product = {
+            ...niProduct,
+            quantity: 999999, // Infinite stock for non-inventory
+            isNonInventory: true
+          };
+        }
+      }
       
       if (!product) {
         return res.status(404).json({ error: 'Product not found' });
@@ -1305,6 +1438,109 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(200).json({ synced: rows.length });
     } catch {
       res.status(500).json({ error: 'Failed to sync admins' });
+    }
+  });
+
+  // Remittance & Notifications Routes
+  app.post('/api/remit', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const { staffId, staffName, amount, transactionCount } = req.body;
+      const id = randomUUID();
+      const remittance = dbService.createRemittance({
+        id,
+        staffId,
+        staffName,
+        amount,
+        transactionCount
+      });
+
+      // Create notification for admin
+      const notification = dbService.createNotification({
+        type: 'remittance',
+        message: `${staffName} remitted ₱${amount.toLocaleString()} for ${transactionCount} transactions.`,
+        data: { remittanceId: id, staffName, amount, transactionCount }
+      });
+
+      // Notify all admins via socket
+      io.emit('notification-received', notification);
+      io.emit('remittance-sent', remittance);
+
+      res.status(201).json({ success: true, remittance });
+    } catch (error) {
+      console.error('Remittance error:', error);
+      res.status(500).json({ error: 'Failed to process remittance' });
+    }
+  });
+
+  app.post('/api/remit/confirm/:id', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const remittance = dbService.confirmRemittance(id) as any;
+      if (!remittance) return res.status(404).json({ error: 'Remittance not found' });
+
+      // Create notification about confirmation (optional)
+      const notification = dbService.createNotification({
+        type: 'system_update',
+        message: `Remittance of ₱${remittance.amount} from ${remittance.staff_name} has been confirmed.`,
+        data: { remittanceId: id }
+      });
+
+      io.emit('notification-received', notification);
+      io.emit('remittance-confirmed', remittance);
+
+      res.json({ success: true, remittance });
+    } catch (error) {
+      console.error('Confirmation error:', error);
+      res.status(500).json({ error: 'Failed to confirm remittance' });
+    }
+  });
+
+  app.get('/api/remittances/pending', async (req: Request, res: Response) => {
+    try {
+      const pending = dbService.listPendingRemittances();
+      res.json(pending);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch pending remittances' });
+    }
+  });
+
+  app.get('/api/sales/remitted/:staffId', async (req: Request, res: Response) => {
+    try {
+      const { staffId } = req.params;
+      const remittedSales = dbService.getRemittedSalesForStaff(staffId);
+      res.json(remittedSales);
+    } catch (error) {
+      console.error('Error fetching remitted sales:', error);
+      res.status(500).json({ error: 'Failed to fetch remitted sales' });
+    }
+  });
+
+  app.get('/api/notifications', async (req: Request, res: Response) => {
+    try {
+      const userId = (req.query.userId as string) || null;
+      const notifications = dbService.listNotifications(userId);
+      res.json(notifications);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch notifications' });
+    }
+  });
+
+  app.get('/api/notifications/unread-count', async (req: Request, res: Response) => {
+    try {
+      const userId = (req.query.userId as string) || null;
+      const count = dbService.getUnreadNotificationCount(userId);
+      res.json({ count });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch unread count' });
+    }
+  });
+
+  app.patch('/api/notifications/:id/read', async (req: Request, res: Response) => {
+    try {
+      dbService.markNotificationRead(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to mark notification as read' });
     }
   });
 

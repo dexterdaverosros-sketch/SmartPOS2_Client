@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
-import { AuthService } from '@/lib/db';
+import api from '@/lib/api'; // Import the api utility
 
 const resetPasswordSchema = z.object({
   token: z.string().min(1, 'Reset token is required'),
@@ -42,10 +42,13 @@ const ResetPassword: React.FC = () => {
   const onSubmit = async (data: ResetPasswordFormData) => {
     setIsLoading(true);
     try {
-      // Reset password using AuthService
-      const success = await AuthService.resetPassword(data.token.trim(), data.newPassword);
+      // Reset password using the API
+      const response = await api.post('/api/auth/reset-password', {
+        username: data.token, // Assuming the token is the username for this flow
+        newPassword: data.newPassword,
+      });
       
-      if (success) {
+      if (response.data.success) {
         // Simulate API call delay
         await new Promise(resolve => setTimeout(resolve, 1000));
         
@@ -57,15 +60,15 @@ const ResetPassword: React.FC = () => {
       } else {
         toast({
           title: 'Reset Failed',
-          description: 'Invalid or expired reset token. Please request a new password reset.',
+          description: response.data.error || 'An error occurred during password reset.',
           variant: 'destructive',
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Password reset error:', error);
       toast({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'An error occurred during password reset',
+        description: error.response?.data?.error || 'An error occurred during password reset',
         variant: 'destructive',
       });
     } finally {

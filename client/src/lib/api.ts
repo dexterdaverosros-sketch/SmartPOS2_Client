@@ -20,7 +20,7 @@ const getHeaders = () => {
 };
 
 const api = {
-  async get(endpoint: string) {
+  async get<T = any>(endpoint: string): Promise<T> {
     try {
       const response = await fetch(`${getBaseUrl()}${endpoint}`, {
         headers: getHeaders(),
@@ -36,7 +36,7 @@ const api = {
     }
   },
 
-  async post(endpoint: string, body: any) {
+  async post<T = any>(endpoint: string, body: any): Promise<T> {
     try {
       const response = await fetch(`${getBaseUrl()}${endpoint}`, {
         method: 'POST',
@@ -46,12 +46,10 @@ const api = {
       if (!response.ok) {
         const errorText = await response.text();
         try {
-          // Try to parse the error as JSON
           const errorJson = JSON.parse(errorText);
-          throw new Error(errorJson.message || `API POST Error (${response.status})`);
+          throw new Error(errorJson.error || `API POST Error (${response.status})`);
         } catch (e) {
-          // If it's not JSON, throw the raw text or status
-          throw new Error(errorText || `API POST Error (${response.status})`);
+          throw new Error(`API POST Error (${response.status}): ${errorText || response.statusText}`);
         }
       }
       return response.json();
@@ -61,40 +59,58 @@ const api = {
     }
   },
 
-  async put(endpoint: string, body: any) {
-    const response = await fetch(`${getBaseUrl()}${endpoint}`, {
-      method: 'PUT',
-      headers: getHeaders(),
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) {
-      const errorText = await response.text();
-      try {
-        const errorJson = JSON.parse(errorText);
-        throw new Error(errorJson.message || 'An unknown error occurred');
-      } catch (e) {
-        throw new Error(errorText || 'An unknown error occurred');
+  async patch<T = any>(endpoint: string, body: any): Promise<T> {
+    try {
+      const response = await fetch(`${getBaseUrl()}${endpoint}`, {
+        method: 'PATCH',
+        headers: getHeaders(),
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API PATCH Error (${response.status}): ${errorText || response.statusText}`);
       }
+      return response.json();
+    } catch (error) {
+      console.error(`API PATCH failed for ${endpoint}:`, error);
+      throw error;
     }
-    return response.json();
+  },
+
+  async put<T = any>(endpoint: string, body: any): Promise<T> {
+    try {
+      const response = await fetch(`${getBaseUrl()}${endpoint}`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API PUT Error (${response.status}): ${errorText || response.statusText}`);
+      }
+      return response.json();
+    } catch (error) {
+      console.error(`API PUT failed for ${endpoint}:`, error);
+      throw error;
+    }
   },
 
   async delete(endpoint: string) {
-    const response = await fetch(`${getBaseUrl()}${endpoint}`, {
-      method: 'DELETE',
-      headers: getHeaders(),
-    });
-    if (!response.ok) {
-      const errorText = await response.text();
-      try {
-        const errorJson = JSON.parse(errorText);
-        throw new Error(errorJson.message || 'An unknown error occurred');
-      } catch (e) {
-        throw new Error(errorText || 'An unknown error occurred');
+    try {
+      const response = await fetch(`${getBaseUrl()}${endpoint}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API DELETE Error (${response.status}): ${errorText || response.statusText}`);
       }
+      return true;
+    } catch (error) {
+      console.error(`API DELETE failed for ${endpoint}:`, error);
+      throw error;
     }
-    return response.json();
-  },
+  }
 };
 
 export default api;

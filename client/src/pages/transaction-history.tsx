@@ -6,6 +6,7 @@ import Layout from '@/components/Layout';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SalesService, db } from '@/lib/db';
+import api from '@/lib/api'; // Import the api utility
 import { useToast } from '@/hooks/use-toast';
 
 interface Transaction {
@@ -33,39 +34,29 @@ const TransactionHistory: React.FC = () => {
     const fetchTransactions = async () => {
       setLoading(true);
       try {
-        // Fetch all sales and staff
-        const [sales, staffList] = await Promise.all([
-          db.sales.toArray(),
-          db.staff.toArray()
-        ]);
+        const response = await api.get('/api/sales-history');
+        const salesHistory = response.data;
 
-        // Create a map for quick staff name lookup
-        const staffMap = new Map(staffList.map(s => [s.staffId, s.name]));
-
-        // Convert sales to Transaction format
-        const formattedTransactions = await Promise.all(sales.map(async (sale) => {
-          // Count items for this sale
-          const itemsCount = await db.saleItems.where('saleId').equals(sale.id).count();
-
-          const date = new Date(sale.createdAt || new Date());
+        const formattedTransactions = salesHistory.map((sale: any) => {
+          const date = new Date(sale.createdAt);
           return {
-            id: String(sale.id ?? ''),
+            id: sale.id,
             date: date.toLocaleDateString(),
             time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            items: itemsCount,
+            items: sale.items.length, // Assuming items array is included
             amount: sale.total,
             paymentMethod: (sale.paymentType === 'ewallet' ? 'ewallet' : sale.paymentType === 'credits' ? 'credits' : 'cash') as 'cash' | 'ewallet' | 'credits',
             createdAt: date,
-            staffName: sale.staffId ? staffMap.get(sale.staffId) : 'Owner'
+            staffName: sale.staffName || 'Owner'
           };
-        }));
+        });
 
-        setTransactions(formattedTransactions.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
+        setTransactions(formattedTransactions.sort((a: any, b: any) => b.createdAt.getTime() - a.createdAt.getTime()));
       } catch (error) {
         console.error('Error fetching transactions:', error);
         toast({
           title: 'Error',
-          description: 'Failed to load transaction history',
+          description: 'Failed to load transaction history from server',
           variant: 'destructive',
         });
         setTransactions([]);

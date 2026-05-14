@@ -76,7 +76,7 @@ export default function AdminCreditors() {
                 <div className="text-lg font-semibold">{formatCurrency(selected.amount)}</div>
                 <div className="mt-1 text-xs">{selected.isPaid ? 'Paid' : 'Unpaid'}</div>
                 <div className="mt-2 flex gap-2 justify-end">
-                  <Button onClick={() => { setPayValue(String(selected.amount)); setIsPayOpen(true); }} className="bg-[#FF8882] hover:bg-[#D89D9D] text-white">Bayad</Button>
+                  <Button onClick={() => { setPayValue(String(selected.amount)); setIsPayOpen(true); }} className="bg-[#FF8882] hover:bg-[#D89D9D] text-white">Pay</Button>
                   <Button onClick={() => setIsHistoryOpen(true)} className="bg-[#FF8882] hover:bg-[#D89D9D] text-white">History of paying Credits</Button>
                 </div>
               </div>
@@ -113,10 +113,10 @@ export default function AdminCreditors() {
           <Dialog open={isPayOpen} onOpenChange={setIsPayOpen}>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>Utang: {formatCurrency(selected.amount)}</DialogTitle>
+                <DialogTitle>Credit Balance: {formatCurrency(selected.amount)}</DialogTitle>
               </DialogHeader>
               <div className="space-y-2">
-                <div className="text-sm">Perang Binayad</div>
+                <div className="text-sm">Amount Paid</div>
                 <Input type="number" value={payValue} onChange={(e) => setPayValue(e.target.value)} />
               </div>
               <DialogFooter>

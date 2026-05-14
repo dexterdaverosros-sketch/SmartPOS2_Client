@@ -27,7 +27,13 @@ const Scanner: React.FC<ScannerProps> = ({ onResult, onError, initialMirrorMode 
   useEffect(() => {
     scannerRef.current = new BarcodeScanner();
     
+    // Auto-start scanning when component mounts
+    const timer = setTimeout(() => {
+      startScanning();
+    }, 500);
+    
     return () => {
+      clearTimeout(timer);
       if (scannerRef.current) {
         scannerRef.current.stopScanning();
       }
@@ -239,26 +245,6 @@ const Scanner: React.FC<ScannerProps> = ({ onResult, onError, initialMirrorMode 
           <RefreshCw className="w-4 h-4 mr-1" />
           {mirrorMode ? 'Front' : 'Back'}
         </button>
-        
-        {!isActive ? (
-          <button
-            onClick={startScanning}
-            data-testid="button-start-scanner"
-            className="bg-primary text-white px-6 py-2 rounded-lg flex items-center touch-feedback"
-          >
-            <Camera className="w-4 h-4 mr-2" />
-            Start Scanner
-          </button>
-        ) : (
-          <button
-            onClick={stopScanning}
-            data-testid="button-stop-scanner"
-            className="bg-red-500 text-white px-6 py-2 rounded-lg flex items-center touch-feedback"
-          >
-            <CameraOff className="w-4 h-4 mr-2" />
-            Stop Scanner
-          </button>
-        )}
         
         {/* Retry button when there's an error */}
         {error && (

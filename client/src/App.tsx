@@ -24,7 +24,7 @@ import AdminReports from "@/pages/admin-reports";
 import StockInsights from "@/pages/stock-insights";
 import SalesSummary from "@/pages/sales-summary";
 import AdminMain from "@/pages/admin-main";
-import LedgerPage from "./pages/ledger.tsx";
+import LedgerPage from "@/pages/ledger";
 import LedgerAddCustomer from "@/pages/ledger-add-customer";
 import PurchasedPage from "@/pages/purchased";
 import ExpensesPage from "@/pages/expenses";
@@ -40,6 +40,7 @@ import ProfileSettings from "@/pages/profile-settings";
 import TransactionHistory from "@/pages/transaction-history";
 import ForgotPassword from "@/pages/forgot-password";
 import ResetPassword from "@/pages/reset-password";
+import SecurityQuestionsPage from "@/pages/security-questions";
 import ResetDataPage from "@/pages/reset-data";
 import CustomerScan from "@/pages/customer-scan";
 import WalletCallback from "@/pages/wallet-callback";
@@ -82,6 +83,7 @@ function Router() {
       <Route path="/transaction-history" component={TransactionHistory} />
       <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/reset-password" component={ResetPassword} />
+      <Route path="/security-questions" component={() => <ProtectedAdmin component={SecurityQuestionsPage} />} />
       <Route path="/reset-data" component={ResetDataPage} />
       <Route path="/customer" component={CustomerScan} />
       <Route path="/wallet-callback" component={WalletCallback} />
@@ -93,17 +95,24 @@ function Router() {
 
 function App() {
   useEffect(() => {
+    let syncTimer: any;
+    
     const runSync = async () => {
       try {
         await ProductService.syncAllProductsToServer();
-      } catch {}
-      try {
         const origin = typeof window !== 'undefined' ? window.location.origin : '';
         databaseSyncService.setBaseUrl(origin);
         await databaseSyncService.syncDatabase();
-      } catch {}
+      } catch (err) {
+        console.warn('Background sync failed:', err);
+      } finally {
+        // Schedule next sync only after current one finishes
+        syncTimer = setTimeout(runSync, 60000); // Increase to 60s for better stability
+      }
     };
+    
     runSync();
+    return () => clearTimeout(syncTimer);
   }, []);
   return (
     <QueryClientProvider client={queryClient}>

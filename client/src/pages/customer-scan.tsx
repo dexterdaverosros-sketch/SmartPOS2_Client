@@ -18,7 +18,7 @@ interface Product {
   id: string;
   name: string;
   price: number;
-  barcode: string;
+  barcode: string | null;
   description?: string;
   imageUrl?: string;
   inStock: boolean;
@@ -107,8 +107,8 @@ const CustomerScan: React.FC = () => {
       // Listen for inventory updates
       socketRef.current.on('inventory-update', () => {
         setInventoryUpdated(true);
-        if (product && showProduct) {
-          lookupProduct(product.barcode);
+        if (product && showProduct && product.barcode) {
+          lookupProduct(product.barcode as string);
         }
       });
     };
@@ -219,8 +219,18 @@ const CustomerScan: React.FC = () => {
     try {
       // Fetch product from server with cache-busting parameter for real-time data
       const data = await api.get(`/api/products/barcode/${encodeURIComponent(barcode)}`);
-      setProduct(data);
-      setShowProduct(true);
+      if (data) {
+        setProduct({
+          id: data.id,
+          name: data.name,
+          price: data.price,
+          barcode: data.barcode,
+          description: data.description || '',
+          imageUrl: data.image || '',
+          inStock: (data.quantity ?? 0) > 0
+        });
+        setShowProduct(true);
+      }
       
       // Emit event to notify server that product was viewed
       if (socketRef.current) {
@@ -235,7 +245,7 @@ const CustomerScan: React.FC = () => {
           id: localProduct.id,
           name: localProduct.name,
           price: Number(localProduct.price),
-          barcode: localProduct.barcode,
+          barcode: localProduct.barcode ?? null,
           description: localProduct.description || '',
           imageUrl: localProduct.image || '',
           inStock: (localProduct.quantity ?? 0) > 0
@@ -410,10 +420,10 @@ const CustomerScan: React.FC = () => {
                 
                 <div className="pt-4 flex gap-2">
                   <Button 
-                    onClick={() => lookupProduct(product.barcode)} 
+                    onClick={() => product.barcode && lookupProduct(product.barcode as string)} 
                     variant="outline"
                     className="flex-1"
-                    disabled={loading}
+                    disabled={loading || !product.barcode}
                   >
                     <RefreshCw className="h-4 w-4 mr-2" />
                     Refresh

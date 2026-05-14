@@ -2,8 +2,10 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import type { Staff } from '@shared/schema';
-import { getSupabase } from './supabase';
+import { randomUUID } from "crypto";
+import bcrypt from "bcryptjs"; // Import bcryptjs
+import { getSupabase } from "./supabase";
+import { Product, Variant, NonInventoryProduct, Staff, User, Sale, SaleItem } from "../shared/schema";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,8 +23,8 @@ const initSQLite = () => {
   return db;
 };
 
-// Helper to determine if we should use Cloud (Supabase)
-const useCloud = () => {
+    // Helper to determine if we should use Cloud (Supabase)
+export const useCloud = () => {
   return !!process.env.SUPABASE_URL && !!process.env.SUPABASE_ANON_KEY;
 };
 
@@ -200,6 +202,50 @@ export const dbService = {
         created_at TEXT,
         updated_at TEXT
       );
+
+      CREATE TABLE IF NOT EXISTS remittances (
+        id TEXT PRIMARY KEY,
+        staff_id TEXT NOT NULL,
+        staff_name TEXT NOT NULL,
+        amount REAL NOT NULL,
+        transaction_count INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT,
+        confirmed_at TEXT,
+        FOREIGN KEY(staff_id) REFERENCES staff(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS notifications (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        type TEXT NOT NULL,
+        message TEXT NOT NULL,
+        data TEXT,
+        is_read INTEGER DEFAULT 0,
+        created_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS sales (
+        id TEXT PRIMARY KEY,
+        total REAL NOT NULL,
+        paymentType TEXT NOT NULL,
+        paymentAmount REAL NOT NULL,
+        staffId TEXT,
+        remitted INTEGER DEFAULT 0,
+        createdAt TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS sale_items (
+        id TEXT PRIMARY KEY,
+        saleId TEXT NOT NULL,
+        productId TEXT NOT NULL,
+        quantity INTEGER NOT NULL,
+        price REAL NOT NULL,
+        unit TEXT DEFAULT 'pieces',
+        productName TEXT,
+        isNonInventory INTEGER DEFAULT 0,
+        FOREIGN KEY(saleId) REFERENCES sales(id) ON DELETE CASCADE
+      );
     `);
 
     // Perform lightweight migrations for missing columns
@@ -211,8 +257,18 @@ export const dbService = {
     const customerCols = getColumns('customers').map(c => c.name);
     const creditCols = getColumns('credits').map(c => c.name);
     const paymentCols = getColumns('payments').map(c => c.name);
+    const salesCols = getColumns('sales').map(c => c.name);
 
     const migrate = db.transaction(() => {
+      // Add missing columns to sales
+      if (!salesCols.includes('remitted')) {
+        try {
+          db.exec(`ALTER TABLE sales ADD COLUMN remitted INTEGER DEFAULT 0`);
+        } catch (e) {
+          console.error('Migration: sales.remitted failed (might already exist)', e);
+        }
+      }
+
       // Add missing columns to products
       if (!productCols.includes('updatedAt')) {
         db.exec(`ALTER TABLE products ADD COLUMN updatedAt TEXT`);
@@ -483,8 +539,122 @@ export const dbService = {
     }
     return user;
   },
+
+  saveSecurityQuestions: async (userId: string, questions: string[], answers: string[]) => {
+    const hashedAnswers = await Promise.all(answers.map(answer => bcrypt.hash(answer, 10)));
+    const stmt = db.prepare(`
+      UPDATE users SET
+        securityQuestion1 = ?, securityAnswer1 = ?,
+        securityQuestion2 = ?, securityAnswer2 = ?,
+        securityQuestion3 = ?, securityAnswer3 = ?
+      WHERE id = ?
+    `);
+    stmt.run(
+      questions[0], hashedAnswers[0],
+      questions[1], hashedAnswers[1],
+      questions[2], hashedAnswers[2],
+      userId
+    );
+
+    // Sync to Cloud (Supabase) if available
+    if (useCloud()) {
+      const supabase = getSupabase();
+      if (supabase) {
+        supabase.from('users').update({
+          security_question_1: questions[0],
+          security_answer_1: hashedAnswers[0],
+          security_question_2: questions[1],
+          security_answer_2: hashedAnswers[1],
+          security_question_3: questions[2],
+          security_answer_3: hashedAnswers[2],
+        }).eq('id', userId).then(({ error }) => {
+          if (error) console.error('Cloud security questions sync error:', error);
+          else console.log('Cloud security questions sync: 1 user updated.');
+        });
+      }
+    }
+  },
+
   getUserByUsername: (username: string) => {
     return db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  },
+
+  getUserSecurityQuestions: (username: string) => {
+    return db.prepare(`
+      SELECT securityQuestion1, securityQuestion2, securityQuestion3,
+             securityAnswer1, securityAnswer2, securityAnswer3
+      FROM users WHERE username = ?
+    `).get(username);
+  },
+
+  updateUserPassword: async (username: string, newPasswordHash: string) => {
+    const stmt = db.prepare(`UPDATE users SET password = ? WHERE username = ?`);
+    stmt.run(newPasswordHash, username);
+
+    // Sync to Cloud (Supabase) if available
+    if (useCloud()) {
+      const supabase = getSupabase();
+      if (supabase) {
+        supabase.from('users').update({ password: newPasswordHash }).eq('username', username).then(({ error }) => {
+          if (error) console.error('Cloud password update sync error:', error);
+          else console.log('Cloud password update sync: 1 user updated.');
+        });
+      }
+    }
+  },
+
+  recordFailedLoginAttempt: (username: string) => {
+    const user = db.prepare('SELECT failedAttemptCount FROM users WHERE username = ?').get(username);
+    if (user) {
+      const newCount = (user.failedAttemptCount || 0) + 1;
+      db.prepare('UPDATE users SET failedAttemptCount = ? WHERE username = ?').run(newCount, username);
+      return newCount;
+    }
+    return 0;
+  },
+
+  lockUserAccount: (username: string, lockoutMinutes: number) => {
+    const lockoutUntil = new Date(Date.now() + lockoutMinutes * 60 * 1000);
+    db.prepare('UPDATE users SET lockoutUntil = ? WHERE username = ?').run(lockoutUntil.toISOString(), username);
+  },
+
+  resetLoginAttempts: (username: string) => {
+    db.prepare('UPDATE users SET failedAttemptCount = 0, lockoutUntil = NULL WHERE username = ?').run(username);
+  },
+
+  addSale: (sale: Sale, saleItems: SaleItem[]) => {
+    return db.transaction(() => {
+      // Insert sale
+      db.prepare(`
+        INSERT INTO sales (id, total, paymentType, paymentAmount, staffId, remitted, createdAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(sale.id, sale.total, sale.paymentType, sale.paymentAmount, sale.staffId, sale.remitted ? 1 : 0, sale.createdAt?.toISOString());
+
+      // Insert sale items and update product/variant quantities
+      for (const item of saleItems) {
+        db.prepare(`
+          INSERT INTO sale_items (id, saleId, productId, quantity, price, unit, productName, isNonInventory)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(item.id, item.saleId, item.productId, item.quantity, item.price, item.unit, item.productName, item.isNonInventory ? 1 : 0);
+
+        if (!item.isNonInventory) {
+          // Deduct from product or variant
+          const product = db.prepare('SELECT id, quantity FROM products WHERE id = ?').get(item.productId) as { id: string, quantity: number } | undefined;
+          if (product) {
+            const newQuantity = product.quantity - item.quantity;
+            db.prepare('UPDATE products SET quantity = ?, updatedAt = ? WHERE id = ?').run(newQuantity, new Date().toISOString(), product.id);
+          } else {
+            const variant = db.prepare('SELECT id, quantity FROM variants WHERE id = ?').get(item.productId) as { id: string, quantity: number } | undefined;
+            if (variant) {
+              const newQuantity = variant.quantity - item.quantity;
+              db.prepare('UPDATE variants SET quantity = ?, updated_at = ? WHERE id = ?').run(newQuantity, new Date().toISOString(), variant.id);
+            } else {
+              throw new Error(`Product or variant with ID ${item.productId} not found for inventory deduction.`);
+            }
+          }
+        }
+      }
+    });
   },
 
   // Non-inventory product methods
@@ -618,6 +788,22 @@ export const dbService = {
     return db.prepare('SELECT * FROM products WHERE datetime(updatedAt) > datetime(?)').all(timestamp.toISOString());
   },
 
+  getVariantsSince: (timestamp: Date) => {
+    const rows = db.prepare('SELECT * FROM variants WHERE datetime(updated_at) > datetime(?)').all(timestamp.toISOString()) as any[];
+    return rows.map(r => ({
+      id: r.id,
+      productId: r.product_id,
+      name: r.name,
+      barcode: r.barcode,
+      price: r.price,
+      cost: r.cost,
+      image: r.image,
+      quantity: r.quantity,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at
+    }));
+  },
+
   // Variant methods
   getVariants: (productId: string) => {
     // Map snake_case columns to camelCase properties to match shared/schema
@@ -651,6 +837,39 @@ export const dbService = {
       createdAt: r.created_at,
       updatedAt: r.updated_at
     };
+  },
+
+  getAllSalesWithStaff: () => {
+    const sales = db.prepare(`
+      SELECT
+        s.id AS saleId,
+        s.total,
+        s.paymentType,
+        s.paymentAmount,
+        s.staffId,
+        s.remitted,
+        s.createdAt,
+        st.name AS staffName
+      FROM sales s
+      LEFT JOIN staff st ON s.staffId = st.staff_id
+      ORDER BY s.createdAt DESC
+    `).all() as any[];
+
+    const salesWithItems = sales.map(sale => {
+      const items = db.prepare('SELECT * FROM sale_items WHERE saleId = ?').all(sale.saleId);
+      return {
+        id: sale.saleId,
+        total: sale.total,
+        paymentType: sale.paymentType,
+        paymentAmount: sale.paymentAmount,
+        staffId: sale.staffId,
+        remitted: sale.remitted === 1,
+        createdAt: sale.createdAt,
+        staffName: sale.staffName,
+        items: items
+      };
+    });
+    return salesWithItems;
   },
 
   getAllVariants: () => {
@@ -687,10 +906,6 @@ export const dbService = {
     
     insertMany(variants);
     return variants;
-  },
-
-  getVariantsSince: (timestamp: Date) => {
-    return db.prepare('SELECT * FROM variants WHERE datetime(updated_at) > datetime(?)').all(timestamp.toISOString());
   },
 
   // Staff methods
@@ -796,7 +1011,99 @@ export const dbService = {
     `).run(maxAgeHours);
   },
 
+  // Remittance methods
+  createRemittance: (remittance: any) => {
+    const stmt = db.prepare(`
+      INSERT INTO remittances (id, staff_id, staff_name, amount, transaction_count, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      remittance.id,
+      remittance.staffId,
+      remittance.staffName,
+      remittance.amount,
+      remittance.transactionCount,
+      'pending',
+      new Date().toISOString()
+    );
+    return remittance;
+  },
 
+  getRemittanceById: (id: string) => {
+    return db.prepare('SELECT * FROM remittances WHERE id = ?').get(id);
+  },
+
+  getRemittedSalesForStaff: (staffId: string) => {
+    return db.prepare('SELECT id FROM sales WHERE (staffId = ? OR staffId = ?) AND remitted = 1').all(staffId, staffId);
+  },
+
+  confirmRemittance: (id: string) => {
+    const now = new Date().toISOString();
+    
+    return db.transaction(() => {
+      // Update remittance status
+      db.prepare(`
+        UPDATE remittances 
+        SET status = 'confirmed', confirmed_at = ?
+        WHERE id = ?
+      `).run(now, id);
+      
+      const remittance = db.prepare('SELECT * FROM remittances WHERE id = ?').get(id) as any;
+      if (!remittance) return null;
+
+      // Mark all unremitted sales for this staff as remitted
+      db.prepare(`
+        UPDATE sales 
+        SET remitted = 1 
+        WHERE (staffId = ? OR staffId = ?) AND remitted = 0
+      `).run(remittance.staff_id, remittance.staff_id); 
+      // Some systems might use different IDs, but here staff_id is what we have in remittance
+
+      return remittance;
+    })();
+  },
+
+  listPendingRemittances: () => {
+    return db.prepare("SELECT * FROM remittances WHERE status = 'pending' ORDER BY created_at DESC").all();
+  },
+
+  // Notification methods
+  createNotification: (notification: any) => {
+    const stmt = db.prepare(`
+      INSERT INTO notifications (id, user_id, type, message, data, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    const id = randomUUID();
+    stmt.run(
+      id,
+      notification.userId || null,
+      notification.type,
+      notification.message,
+      notification.data ? JSON.stringify(notification.data) : null,
+      new Date().toISOString()
+    );
+    return { id, ...notification };
+  },
+
+  listNotifications: (userId: string | null) => {
+    if (userId) {
+      return db.prepare('SELECT * FROM notifications WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC LIMIT 50').all(userId);
+    }
+    return db.prepare('SELECT * FROM notifications WHERE user_id IS NULL ORDER BY created_at DESC LIMIT 50').all();
+  },
+
+  markNotificationRead: (id: string) => {
+    return db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ?').run(id);
+  },
+
+  getUnreadNotificationCount: (userId: string | null) => {
+    if (userId) {
+      const row = db.prepare('SELECT COUNT(*) as count FROM notifications WHERE (user_id = ? OR user_id IS NULL) AND is_read = 0').get(userId) as any;
+      return row?.count || 0;
+    }
+    const row = db.prepare('SELECT COUNT(*) as count FROM notifications WHERE user_id IS NULL AND is_read = 0').get() as any;
+    return row?.count || 0;
+  },
 };
 
 export default dbService;

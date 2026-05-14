@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, useDragControls, PanInfo } from 'framer-motion';
-import { Home, Trash2, CreditCard, AlertTriangle, LogOut, Search, ArrowLeft, Edit, Usb, Bluetooth } from 'lucide-react';
+import { Home, Trash2, CreditCard, AlertTriangle, LogOut, Search, ArrowLeft, Edit, Usb, Bluetooth, Send } from 'lucide-react';
 import { useLocation } from 'wouter';
 import Layout from '@/components/Layout';
 import Scanner from '@/components/Scanner';
@@ -14,37 +14,21 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
 import { useDevices } from '@/contexts/DeviceContext';
 import { useToast } from '@/hooks/use-toast';
-import { ProductService, SalesService, AuthService, db, CreditorService } from '@/lib/db';
-import type { CartItem } from '@shared/schema';
+import { ProductService, SalesService, AuthService, db, CreditorService, NonInventoryProductService, RemittanceService } from '@/lib/db';
+import type { Product, Variant, Sale, CartItem } from '@shared/schema';
 import api from '@/lib/api';
 
-// Local interfaces for Product and Variant
-interface Product {
-  id: string;
-  name: string;
-  barcode: string;
-  price: number;
-  cost?: number;
-  quantity: number;
-  category?: string;
-  image?: string | null;
-  createdAt?: Date;
-  updatedAt?: Date;
-}
-
-interface Variant {
-  id: string;
-  productId: string;
-  name: string;
-  barcode?: string | null;
-  price: number;
-  cost: number;
-  image?: string | null;
+// UI-specific product type that combines inventory and non-inventory properties
+interface UIProduct extends Omit<Product, 'createdAt' | 'updatedAt'> {
+  isNonInventory?: boolean;
+  inStock?: boolean;
+  createdAt?: Date | string | null;
+  updatedAt?: Date | string | null;
 }
 
 const ScannerSales: React.FC = () => {
   const [, setLocation] = useLocation();
-  const { user, isAdmin, isStaff, logout } = useAuth();
+  const { user, isAdmin, isStaff, logout, socket } = useAuth();
   const { cart, addToCart, removeFromCart, updateCartItem, clearCart, getCartTotal } = useApp();
   const { connectedDevices, printToThermalPrinter } = useDevices();
   const { toast } = useToast();
@@ -75,11 +59,11 @@ const ScannerSales: React.FC = () => {
   // Manual Mode State
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<UIProduct[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
-  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
+  const [filteredProducts, setFilteredProducts] = useState<UIProduct[]>([]);
   const [isVariantSelectionOpen, setIsVariantSelectionOpen] = useState(false);
-  const [selectedProductForVariant, setSelectedProductForVariant] = useState<Product | null>(null);
+  const [selectedProductForVariant, setSelectedProductForVariant] = useState<UIProduct | null>(null);
   const [productVariants, setProductVariants] = useState<Variant[]>([]);
 
   // Pop-up state for quantity input
@@ -92,6 +76,14 @@ const ScannerSales: React.FC = () => {
   const [isPayModalOpen, setIsPayModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<CartItem | null>(null);
   const [editQuantityStr, setEditQuantityStr] = useState('');
+
+  // Remittance State
+  const [isRemitDialogOpen, setIsRemitDialogOpen] = useState(false);
+  const [remitAmount, setRemitAmount] = useState(0);
+  const [remitTxCount, setRemitTxCount] = useState(0);
+  const [remitTransactions, setRemitTransactions] = useState<Sale[]>([]);
+  const [isRemitting, setIsRemitting] = useState(false);
+  const [todaysTotal, setTodaysTotal] = useState(0);
 
   const [scannerSettings, setScannerSettings] = useState<{ enabled: boolean; timeout: number }>({
     enabled: true,
@@ -142,6 +134,142 @@ const ScannerSales: React.FC = () => {
     setIsNonInventoryOpen(false);
   };
 
+  const handleRemitClick = async () => {
+    try {
+      const allSales = await SalesService.getAllSales();
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // Filter sales made by this staff today that haven't been remitted
+      const staffSales = allSales.filter((s: Sale) => {
+        const saleDate = s.createdAt ? new Date(s.createdAt) : new Date();
+        const isToday = saleDate >= today;
+        const isUser = s.staffId === user?.id || s.staffId === user?.staffId;
+        const isNotRemitted = !s.remitted;
+        return isUser && isToday && isNotRemitted;
+      });
+
+      const totalAmount = staffSales.reduce((sum: number, s: Sale) => sum + s.total, 0);
+      setRemitAmount(totalAmount);
+      setRemitTxCount(staffSales.length);
+      setRemitTransactions(staffSales);
+      setIsRemitDialogOpen(true);
+    } catch (err) {
+      console.error('Failed to calculate remittance', err);
+      toast({
+        title: "Error",
+        description: "Failed to calculate daily total",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const confirmRemit = async () => {
+    if (!user) return;
+    setIsRemitting(true);
+    try {
+      const res = await RemittanceService.remit({
+        staffId: user.id,
+        staffName: user.ownerName || user.username || 'Staff',
+        amount: remitAmount,
+        transactionCount: remitTxCount
+      });
+
+      if (res.success) {
+        toast({
+          title: "Remittance Sent",
+          description: `Successfully remitted ₱${remitAmount.toLocaleString()} to admin.`,
+        });
+        setIsRemitDialogOpen(false);
+      }
+    } catch (err) {
+      console.error('Remittance failed', err);
+      toast({
+        title: "Remittance Failed",
+        description: "Could not connect to admin server. Please check your connection.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsRemitting(false);
+    }
+  };
+
+  const syncRemittedSales = async () => {
+    if (!user) return;
+    try {
+      // Check both ID types
+      const userId = user.id || user.staffId;
+      const res = await api.get<Array<{ id: string }>>(`/api/sales/remitted/${userId}`);
+      if (res && Array.isArray(res)) {
+        const remittedIds = res.map(s => s.id);
+        if (remittedIds.length > 0) {
+          const localSales = await SalesService.getAllSales();
+          const toUpdate = localSales.filter(s => remittedIds.includes(s.id) && !s.remitted);
+          
+          if (toUpdate.length > 0) {
+            for (const s of toUpdate) {
+              await db.sales.update(s.id, { remitted: true });
+            }
+            loadTodaysTotal();
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to sync remitted sales status', err);
+    }
+  };
+
+  const loadTodaysTotal = async () => {
+    try {
+      const allSales = await SalesService.getAllSales();
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const total = allSales
+        .filter((s: Sale) => {
+          const saleDate = s.createdAt ? new Date(s.createdAt) : new Date();
+          const isUser = s.staffId === user?.id || s.staffId === user?.staffId;
+          const isNotRemitted = !s.remitted;
+          return isUser && saleDate >= today && isNotRemitted;
+        })
+        .reduce((sum: number, s: Sale) => sum + s.total, 0);
+      
+      setTodaysTotal(total);
+    } catch (err) {
+      console.warn('Failed to load today\'s total', err);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      loadTodaysTotal();
+      syncRemittedSales();
+    }
+  }, [user, cart]); // Reload when user changes or cart is cleared (after sale)
+
+  useEffect(() => {
+    if (socket && user) {
+      const handleRemittanceConfirmed = (data: any) => {
+        // Check both ID formats for compatibility
+        const isTargetStaff = data.staff_id === user.id || data.staff_id === user.staffId || 
+                             data.staffId === user.id || data.staffId === user.staffId;
+        
+        if (isTargetStaff) {
+          toast({
+            title: "Remittance Confirmed",
+            description: "Admin has confirmed your remittance. Your daily total has been reset.",
+          });
+          syncRemittedSales();
+        }
+      };
+
+      socket.on('remittance-confirmed', handleRemittanceConfirmed);
+      return () => {
+        socket.off('remittance-confirmed', handleRemittanceConfirmed);
+      };
+    }
+  }, [socket, user]);
+
   useEffect(() => {
     if (mode === 'manual') {
       loadProducts();
@@ -150,10 +278,36 @@ const ScannerSales: React.FC = () => {
 
   const loadProducts = async () => {
     try {
-      // Cast the result to unknown first then to Product[] to match our local interface
-      const allProducts = (await ProductService.getAllProducts()) as unknown as Product[];
-      setProducts(allProducts);
-      const cats = Array.from(new Set(allProducts.map(p => p.category || 'Uncategorized')));
+      // Load both inventory and non-inventory products
+      const [allInventory, allNonInventory] = await Promise.all([
+        ProductService.getAllProducts(),
+        NonInventoryProductService.getAllNonInventoryProducts()
+      ]);
+
+      const adaptedInventory = (allInventory as unknown as Product[]).map(p => ({ 
+        ...p, 
+        isNonInventory: false, 
+        inStock: (p.quantity ?? 0) > 0 
+      }));
+      const adaptedNonInventory: UIProduct[] = (allNonInventory as unknown as any[]).map(p => ({
+        id: p.id,
+        name: p.name,
+        barcode: (p.barcode ?? null) as string | null,
+        price: p.price,
+        quantity: 999999,
+        category: p.category || 'Non-Inventory',
+        image: p.image,
+        isNonInventory: true,
+        inStock: true, // Non-inventory items are always "in stock"
+        createdAt: p.createdAt || new Date().toISOString(), 
+        cost: null,
+        description: p.description || null,
+        updatedAt: p.updatedAt || new Date().toISOString(),
+      }));
+
+      const combined: UIProduct[] = [...adaptedInventory, ...adaptedNonInventory];
+      setProducts(combined);
+      const cats = Array.from(new Set(combined.map(p => p.category || 'Uncategorized')));
       setCategories(['all', ...cats]);
     } catch (error) {
       console.error('Failed to load products', error);
@@ -164,18 +318,28 @@ const ScannerSales: React.FC = () => {
     let result = products;
     if (searchTerm) {
       const lower = searchTerm.toLowerCase();
-      result = result.filter(p => p.name.toLowerCase().includes(lower) || p.barcode.includes(searchTerm));
+      result = result.filter(p => p.name.toLowerCase().includes(lower) || (p.barcode && p.barcode.includes(searchTerm)));
     }
     if (selectedCategory !== 'all') {
       result = result.filter(p => (p.category || 'Uncategorized') === selectedCategory);
     }
+    // Filter out products with 0 quantity
+    result = result.filter(p => p.isNonInventory || (p.quantity ?? 0) > 0);
     setFilteredProducts(result);
   }, [searchTerm, selectedCategory, products]);
 
   // Handle product click in manual mode
-  const handleProductClick = async (product: Product) => {
+  const handleProductClick = async (product: UIProduct) => {
     try {
-      const variants = (await ProductService.getVariants(product.id)) as unknown as Variant[];
+      if (product.isNonInventory) {
+        setScannedProduct(product);
+        setTempQuantity(1);
+        setTempUnit('pieces');
+        setShowQuantityDialog(true);
+        return;
+      }
+
+      const variants = (await ProductService.getVariants(product.id)) as Variant[];
       if (variants && variants.length > 0) {
         setSelectedProductForVariant(product);
         setProductVariants(variants);
@@ -201,13 +365,20 @@ const ScannerSales: React.FC = () => {
     
     // Create a product-like object for the cart
     // Use variant ID to ensure uniqueness in cart
-    const variantProduct = {
-      ...selectedProductForVariant,
+    const variantProduct: UIProduct = {
       id: variant.id, 
       name: `${selectedProductForVariant?.name} (${variant.name})`,
       price: variant.price,
-      quantity: (variant as any).quantity ?? 0,
-      barcode: variant.barcode,
+      quantity: variant.quantity ?? 0,
+      barcode: (variant.barcode as string | null) ?? null,
+      cost: variant.cost,
+      category: selectedProductForVariant?.category ?? null,
+      image: variant.image ?? null,
+      description: selectedProductForVariant?.description ?? null,
+      isNonInventory: false,
+      inStock: (variant.quantity ?? 0) > 0,
+      createdAt: variant.createdAt,
+      updatedAt: variant.updatedAt
     };
     
     setScannedProduct(variantProduct);
@@ -272,7 +443,30 @@ const ScannerSales: React.FC = () => {
         return;
       }
 
-      const product = await ProductService.getProductByBarcode(barcode.trim());
+      let product: UIProduct | undefined = (await ProductService.getProductByBarcode(barcode.trim())) as UIProduct | undefined;
+      let isNonInventory = false;
+      
+      if (!product) {
+        // Check non-inventory products
+        const niProduct = await NonInventoryProductService.getNonInventoryProductByBarcode(barcode.trim());
+        if (niProduct) {
+          // Adapt non-inventory product to UIProduct interface
+          product = {
+            id: niProduct.id,
+            name: niProduct.name,
+            barcode: (niProduct.barcode as string | null) ?? null,
+            price: niProduct.price,
+            quantity: 999999, // Infinite for non-inventory
+            category: niProduct.category || null,
+            image: niProduct.image,
+            createdAt: niProduct.createdAt ? new Date(niProduct.createdAt) : new Date(),
+            updatedAt: niProduct.updatedAt ? new Date(niProduct.updatedAt) : new Date(),
+            cost: null,
+            description: niProduct.description || null,
+          };
+          isNonInventory = true;
+        }
+      }
       
       if (!product) {
         toast({
@@ -285,7 +479,7 @@ const ScannerSales: React.FC = () => {
 
 
       // Show pop-up for quantity and unit input
-      setScannedProduct(product);
+      setScannedProduct({ ...product, isNonInventory });
       setTempQuantity(1);
       setTempUnit('pieces');
       setShowQuantityDialog(true);
@@ -319,27 +513,30 @@ const ScannerSales: React.FC = () => {
     const unitMultiplier = getUnitMultiplier(tempUnit);
     const actualQuantity = currentTempQuantity * unitMultiplier;
 
-    // Check stock availability
-    if (scannedProduct.quantity < actualQuantity) {
-      toast({
-        title: 'Insufficient Stock',
-        description: `Only ${scannedProduct.quantity} pieces available`,
-        variant: 'destructive',
-      });
-      return;
-    }
+    // Skip stock check for non-inventory products
+    if (!scannedProduct.isNonInventory) {
+      // Check stock availability
+      if (scannedProduct.quantity < actualQuantity) {
+        toast({
+          title: 'Insufficient Stock',
+          description: `Only ${scannedProduct.quantity} pieces available`,
+          variant: 'destructive',
+        });
+        return;
+      }
 
-    // Check existing cart items
-    const existingCartItem = cart.find(item => item.productId === scannedProduct.id);
-    const currentCartQuantity = existingCartItem ? existingCartItem.quantity : 0;
-    
-    if (currentCartQuantity + actualQuantity > scannedProduct.quantity) {
-      toast({
-        title: 'Insufficient Stock',
-        description: `Cannot add ${actualQuantity} more. Only ${scannedProduct.quantity - currentCartQuantity} pieces available`,
-        variant: 'destructive',
-      });
-      return;
+      // Check existing cart items
+      const existingCartItem = cart.find(item => item.productId === scannedProduct.id);
+      const currentCartQuantity = existingCartItem ? existingCartItem.quantity : 0;
+      
+      if (currentCartQuantity + actualQuantity > scannedProduct.quantity) {
+        toast({
+          title: 'Insufficient Stock',
+          description: `Cannot add ${actualQuantity} more. Only ${scannedProduct.quantity - currentCartQuantity} pieces available`,
+          variant: 'destructive',
+        });
+        return;
+      }
     }
 
     // Add to cart with unit information
@@ -350,6 +547,7 @@ const ScannerSales: React.FC = () => {
       quantity: currentTempQuantity,
       unit: tempUnit,
       subtotal: Math.round(scannedProduct.price * actualQuantity * 100) / 100,
+      isNonInventory: !!scannedProduct.isNonInventory
     };
 
     addToCart(cartItem);
@@ -511,7 +709,7 @@ const ScannerSales: React.FC = () => {
         total,
         paymentType,
         paymentAmount: effectivePaymentAmount,
-        staffId: user?.staffId || undefined,
+        staffId: user?.id || undefined,
       });
       if (paymentType === 'credits' && selectedCreditor) {
         await CreditorService.applyCredit(selectedCreditor.id, cart, total);
@@ -600,6 +798,12 @@ Thank you for your purchase!
           <div className="flex justify-between items-center mb-4 flex-none">
             <div className="flex flex-col">
               <h2 className="text-lg font-semibold">Scanner & Sales</h2>
+              <div className="flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                  {isStaff ? `Today: ₱${todaysTotal.toFixed(2)}` : 'Live System'}
+                </span>
+              </div>
               {connectedDevices.length > 0 && (
                 <div className="flex gap-2 mt-1">
                   {connectedDevices.map(d => (
@@ -611,26 +815,36 @@ Thank you for your purchase!
                 </div>
               )}
             </div>
-            <button
-              onClick={() => {
-                if (isStaff) {
-                  setShowLogoutConfirm(true);
-                } else if (isAdmin) {
-                  setLocation('/admin-main');
-                }
-              }}
-              data-testid="button-home"
-              className="bg-[#7D6C7D] p-2 rounded-lg touch-feedback hover:bg-[#D89D9D] transition-colors flex items-center justify-center"
-              style={{ width: '40px', height: '40px' }}
-            >
-              {isStaff ? (
-                <LogOut className="w-5 h-5" />
-              ) : isAdmin ? (
-                <Home className="w-5 h-5" />
-              ) : (
-                <Home className="w-5 h-5" />
+            <div className="flex gap-2">
+              {isStaff && (
+                <button
+                  onClick={handleRemitClick}
+                  className="bg-[#BF953F] px-4 rounded-lg touch-feedback hover:bg-[#A67C27] transition-colors flex items-center justify-center gap-2 text-white text-xs font-bold"
+                  style={{ height: '40px' }}
+                >
+                  <Send className="w-4 h-4" />
+                  REMIT
+                </button>
               )}
-            </button>
+              <button
+                onClick={() => {
+                  if (isStaff) {
+                    setShowLogoutConfirm(true);
+                  } else if (isAdmin) {
+                    setLocation('/admin-main');
+                  }
+                }}
+                data-testid="button-home"
+                className="bg-[#7D6C7D] p-2 rounded-lg touch-feedback hover:bg-[#D89D9D] transition-colors flex items-center justify-center"
+                style={{ width: '40px', height: '40px' }}
+              >
+                {isStaff ? (
+                  <LogOut className="w-5 h-5 text-white" />
+                ) : (
+                  <Home className="w-5 h-5 text-white" />
+                )}
+              </button>
+            </div>
           </div>
           
           {/* Toggle Switch */}
@@ -1034,7 +1248,12 @@ Thank you for your purchase!
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel onClick={() => setShowLogoutConfirm(false)}>No</AlertDialogCancel>
-              <AlertDialogAction onClick={() => { setShowLogoutConfirm(false); logout(); setLocation('/role-selection'); }}>Yes</AlertDialogAction>
+              <AlertDialogAction onClick={() => { 
+                setShowLogoutConfirm(false); 
+                logout(); 
+                // Wait a bit to ensure context and localStorage are cleared before redirect
+                setTimeout(() => setLocation('/role-selection'), 100);
+              }}>Yes</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
@@ -1325,6 +1544,72 @@ Thank you for your purchase!
                  <Button onClick={saveEditedQuantity} className="bg-[#FF8882] hover:bg-[#D89D9D] text-white flex-1">Save</Button>
               </DialogFooter>
            </DialogContent>
+        </Dialog>
+
+        {/* Remittance Confirmation Dialog */}
+        <Dialog open={isRemitDialogOpen} onOpenChange={setIsRemitDialogOpen}>
+          <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col p-0 overflow-hidden rounded-3xl">
+            <DialogHeader className="p-6 pb-2">
+              <DialogTitle className="text-center text-xl font-bold text-gray-900">
+                Are you ready to remit the money?
+              </DialogTitle>
+              <DialogDescription className="text-center pt-4">
+                <div className="bg-amber-50 rounded-2xl p-6 border border-amber-100">
+                  <div className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-600 mb-2">Total Accumulated Revenue</div>
+                  <div className="text-4xl font-black text-gray-900 mb-1">₱{remitAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                  <div className="text-xs font-medium text-amber-700">From {remitTxCount} transactions today</div>
+                </div>
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex-1 overflow-y-auto px-6 py-2">
+              <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3">Daily Transactions</div>
+              <div className="space-y-2">
+                {remitTransactions.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400 italic text-sm">
+                    No transactions found for today.
+                  </div>
+                ) : (
+                  remitTransactions.map((tx, idx) => (
+                    <div key={tx.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl border border-gray-100">
+                      <div>
+                        <div className="text-xs font-bold text-gray-900">TXN #{tx.id.slice(0, 8)}</div>
+                        <div className="text-[9px] text-gray-500 font-medium">
+                          {tx.createdAt ? new Date(tx.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Unknown time'}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-black text-[#BF953F]">₱{tx.total.toFixed(2)}</div>
+                        <div className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">{tx.paymentType}</div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="p-6 pt-2">
+              <p className="mb-6 text-[11px] text-center text-gray-500 leading-relaxed">
+                This will send your transaction data to the admin for verification. Make sure you have the physical cash ready.
+              </p>
+              <DialogFooter className="flex flex-row gap-3 sm:justify-center">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setIsRemitDialogOpen(false)}
+                  className="flex-1 py-6 rounded-xl border-gray-200 text-gray-600 font-bold"
+                >
+                  NOT YET
+                </Button>
+                <Button 
+                  onClick={confirmRemit}
+                  disabled={isRemitting || remitAmount === 0}
+                  className="flex-1 py-6 rounded-xl bg-[#BF953F] hover:bg-[#A67C27] text-white font-bold shadow-lg shadow-amber-200"
+                >
+                  {isRemitting ? "SENDING..." : "CONFIRM"}
+                </Button>
+              </DialogFooter>
+            </div>
+          </DialogContent>
         </Dialog>
 
       </motion.div>

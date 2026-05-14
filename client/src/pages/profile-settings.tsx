@@ -518,19 +518,6 @@ const ProfileSettings: React.FC = () => {
       }
     }, 2000);
   };
-  const devSlides = [
-    { name: 'Dexter Dave A. Ros', role: 'BSIS STUDENT', imageUrl: '' },
-    { name: 'Althea Rubiso', role: 'BSIS STUDENT', imageUrl: '' },
-    { name: 'Cherry Ann Real', role: 'BSIS STUDENT', imageUrl: '' },
-  ];
-  const [devSlideIndex, setDevSlideIndex] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => {
-      setDevSlideIndex((i) => (i + 1) % devSlides.length);
-    }, 4000);
-    return () => clearInterval(id);
-  }, []);
-
   const profileForm = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
@@ -963,79 +950,6 @@ const ProfileSettings: React.FC = () => {
               <div className="mt-4">
                 <h3 className="text-base font-semibold text-gray-800 dark:text-gray-200">Scanner Configuration</h3>
                 <ExternalScannerSettingsCard />
-              </div>
-              <div className="mt-8">
-                <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
-                  <span className="w-1.5 h-6 bg-[#FF8882] rounded-full inline-block"></span>
-                  Developer Profile
-                </h3>
-                <motion.div 
-                  whileHover={{ y: -5 }}
-                  className="relative group"
-                >
-                  <div className="absolute -inset-0.5 bg-gradient-to-r from-[#FF8882] to-[#FFB3B0] rounded-3xl blur opacity-20 group-hover:opacity-40 transition duration-500"></div>
-                  <Card className="relative p-6 bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl border border-white/20 rounded-3xl shadow-xl overflow-hidden">
-                    {/* Background Decorative Circles */}
-                    <div className="absolute -top-12 -right-12 w-32 h-32 bg-[#FF8882]/5 rounded-full blur-3xl"></div>
-                    <div className="absolute -bottom-12 -left-12 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl"></div>
-
-                    <div className="flex flex-col md:flex-row items-center gap-8 relative z-10">
-                      {/* Avatar with Ring Effect */}
-                      <div className="relative">
-                        <div className="absolute -inset-1 bg-gradient-to-tr from-[#FF8882] to-amber-300 rounded-2xl blur-sm opacity-50"></div>
-                        <div className="w-32 h-32 md:w-40 md:h-40 rounded-2xl overflow-hidden border-2 border-white dark:border-gray-700 shadow-2xl flex-none bg-gray-100 relative">
-                           <img 
-                             src="/developer.jpg" 
-                             alt="Dexter Dave A. Ros" 
-                             className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-700"
-                             onError={(e) => {
-                               (e.target as HTMLImageElement).src = 'https://ui-avatars.com/api/?name=Dexter+Dave+Ros&background=FF8882&color=fff&size=256&bold=true';
-                             }}
-                           />
-                        </div>
-                      </div>
-
-                      <div className="flex-1 text-center md:text-left space-y-4">
-                         <div className="space-y-1">
-                           <h3 className="text-3xl font-black text-gray-900 dark:text-white tracking-tight">
-                             Dexter Dave A. Ros
-                           </h3>
-                           <div className="inline-flex items-center px-3 py-1 rounded-full bg-[#FF8882]/10 text-[#FF8882] text-sm font-bold tracking-wide">
-                             Lead Developer & Designer
-                           </div>
-                         </div>
-                         
-                         <p className="text-gray-500 dark:text-gray-400 text-sm leading-relaxed max-w-md">
-                           Specializing in full-stack development, UI/UX design, and creating seamless real-time business solutions.
-                         </p>
-
-                         <div className="flex flex-wrap justify-center md:justify-start gap-3 pt-2">
-                           <Button 
-                             className="bg-gradient-to-r from-[#FF8882] to-[#FFB3B0] hover:from-[#D89D9D] hover:to-[#FF8882] text-white px-8 h-12 rounded-2xl shadow-[0_10px_20px_rgba(255,136,130,0.3)] transition-all active:scale-95 font-bold group"
-                             onClick={() => window.open('mailto:dexterdave.ros@example.com')}
-                           >
-                             Contact me
-                             <motion.span 
-                               className="ml-2 inline-block"
-                               animate={{ x: [0, 5, 0] }}
-                               transition={{ repeat: Infinity, duration: 1.5 }}
-                             >
-                               →
-                             </motion.span>
-                           </Button>
-                           
-                           <div className="flex gap-2">
-                             {['React', 'Node', 'PWA'].map((tech) => (
-                               <span key={tech} className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl text-[10px] font-black uppercase text-gray-400">
-                                 {tech}
-                               </span>
-                             ))}
-                           </div>
-                         </div>
-                      </div>
-                    </div>
-                  </Card>
-                </motion.div>
               </div>
             </div>
           </div>

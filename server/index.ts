@@ -67,12 +67,18 @@ app.use((req, res, next) => {
     throw err;
   });
 
+  console.log("Express env is:", app.get("env"));
+  console.log("NODE_ENV is:", process.env.NODE_ENV);
+
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
   if (app.get("env") === "development") {
+    console.log("Setting up Vite middleware...");
     await setupVite(app, server);
+    console.log("Vite middleware setup complete.");
   } else {
+    console.log("Setting up Static file serving...");
     serveStatic(app);
   }
 
@@ -86,7 +92,7 @@ app.use((req, res, next) => {
     host: "0.0.0.0", // Listen on all network interfaces
   }, () => {
     log(`serving on port ${port}`);
-    log(`Open your browser to: http://localhost:${port}`);
+    log(`Open your browser to: http://127.0.0.1:${port}`);
     log(`Network access: http://${localIP}:${port}`);
   });
 })();

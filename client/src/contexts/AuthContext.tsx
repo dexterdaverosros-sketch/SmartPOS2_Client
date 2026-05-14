@@ -7,6 +7,7 @@ import api from '@/lib/api';
 interface AuthContextType {
   user: User | null;
   token: string | null;
+  socket: Socket | null;
   login: (user: User, token?: string) => void;
   loginStaff: (staffId: string, passkey: string) => Promise<void>;
   logout: () => void;
@@ -43,13 +44,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const data = await api.get('/api/server-info');
         if (cancelled) return;
 
-        // If data.origin says localhost but we're on a public URL, it's a proxy mismatch
-        let socketUrl = data.origin;
-        if (typeof window !== 'undefined' && socketUrl.includes('localhost') && !window.location.hostname.includes('localhost')) {
-          socketUrl = window.location.origin;
+        // Simplified socket initialization for dev/prod stability
+        let socketUrl = window.location.origin;
+        if (socketUrl.includes('localhost')) {
+          socketUrl = socketUrl.replace('localhost', '127.0.0.1');
         }
-
-        // Handle Netlify WebSocket proxy limitation
+        
         if (window.location.hostname.includes('netlify.app')) {
           socketUrl = 'https://smartposv4.onrender.com';
         }
@@ -57,30 +57,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const newSocket = io(socketUrl, {
           transports: ['polling', 'websocket'],
           reconnection: true,
-          reconnectionAttempts: 20,
-          reconnectionDelay: 1000,
-          timeout: 45000,
+          reconnectionAttempts: 10,
+          reconnectionDelay: 2000,
+          timeout: 20000,
           autoConnect: true
         });
         setSocket(newSocket);
 
-        // Clean up on unmount
         return () => {
           cancelled = true;
-          try { newSocket.close(); } catch (_) {}
+          newSocket.close();
         };
       } catch (error) {
-        // Fallback to origin (best-effort) if server-info not available
-        try {
-          let socketUrl = window.location.origin;
-          if (window.location.hostname.includes('netlify.app')) {
-            socketUrl = 'https://smartposv4.onrender.com';
-          }
-          const newSocket = io(socketUrl, { reconnection: true });
-          if (!cancelled) setSocket(newSocket);
-        } catch (e) {
-          console.warn('Socket init failed:', e);
-        }
+        console.warn('Socket init failed:', error);
       }
     })();
 
@@ -192,6 +181,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const value = {
     user,
     token,
+    socket,
     login,
     loginStaff,
     logout,

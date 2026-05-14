@@ -8,7 +8,7 @@ interface BarcodeModalProps {
   isOpen: boolean;
   onClose: () => void;
   productName: string;
-  barcode: string;
+  barcode: string | null;
 }
 
 const BarcodeModal: React.FC<BarcodeModalProps> = ({
@@ -92,7 +92,7 @@ const BarcodeModal: React.FC<BarcodeModalProps> = ({
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col items-center justify-center p-6 space-y-6">
-          <div className="barcode-preview">
+          <div className="barcode-preview w-full overflow-hidden">
             <BarcodePreview value={barcode} width={2.5} height={120} />
           </div>
           <div className="flex gap-4 w-full">

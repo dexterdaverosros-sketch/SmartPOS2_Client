@@ -107,27 +107,6 @@ const RoleSelection: React.FC = () => {
           </motion.button>
         </div>
 
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1 }}
-          className="mt-20 text-center space-y-2"
-        >
-          <p className="text-[#BF953F] text-[11px] font-black tracking-[0.3em] uppercase">
-            @2026 SMARTPOS+
-          </p>
-          <div className="space-y-1">
-            <p className="text-gray-500 text-[10px] font-bold tracking-wider uppercase">
-              Redesigned and Developed By: <span className="text-gray-900">Dexter Dave A. Ros</span>
-            </p>
-            <p className="text-gray-400 text-[9px] font-medium italic">
-              ( Bachelor of Science In Information System )
-            </p>
-          </div>
-          <p className="text-gray-300 text-[8px] font-medium tracking-widest uppercase mt-4 opacity-80">
-            "This System is Protected Under Copyright law"
-          </p>
-        </motion.div>
       </div>
     </div>
   );

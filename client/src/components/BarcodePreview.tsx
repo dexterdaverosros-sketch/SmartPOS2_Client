@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import JsBarcode from 'jsbarcode';
 
 interface BarcodePreviewProps {
-  value: string;
+  value: string | null;
   format?: 'CODE128' | 'CODE39' | 'EAN13' | 'UPC';
   width?: number;
   height?: number;
@@ -39,8 +39,8 @@ const BarcodePreview: React.FC<BarcodePreviewProps> = ({
   }, [value, format, width, height, displayValue]);
 
   return (
-    <div className={`flex justify-center bg-white p-2 rounded ${className}`}>
-      <svg ref={svgRef}></svg>
+    <div className={`flex justify-center bg-white p-2 rounded overflow-hidden w-full ${className}`}>
+      <svg ref={svgRef} style={{ maxWidth: '100%', height: 'auto' }}></svg>
     </div>
   );
 };

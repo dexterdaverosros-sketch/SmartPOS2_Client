@@ -40,6 +40,14 @@ export class MemStorage implements IStorage {
       businessName: insertUser.businessName || null,
       ownerName: insertUser.ownerName || null,
       profileImage: null,
+      securityQuestion1: insertUser.securityQuestion1 || null,
+      securityAnswer1: insertUser.securityAnswer1 || null,
+      securityQuestion2: insertUser.securityQuestion2 || null,
+      securityAnswer2: insertUser.securityAnswer2 || null,
+      securityQuestion3: insertUser.securityQuestion3 || null,
+      securityAnswer3: insertUser.securityAnswer3 || null,
+      failedAttemptCount: 0,
+      lockoutUntil: null,
       createdAt: new Date()
     };
     this.users.set(id, user);
