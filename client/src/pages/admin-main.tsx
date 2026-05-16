@@ -766,7 +766,7 @@ const AdminMain: React.FC = () => {
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.3 }}
-              className="modern-card p-8 group cursor-pointer"
+              className="modern-card p-8 group cursor-pointer border-l-8 border-emerald-500 hover:bg-emerald-50/30"
               onClick={() => setLocation('/transaction-history')}
             >
               <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-emerald-500 transition-colors duration-500">
@@ -775,14 +775,14 @@ const AdminMain: React.FC = () => {
               <div className="text-3xl font-black text-gray-900 tracking-tighter mb-1">
                 <span data-testid="text-today-sales">₱{stats.todaySales.toFixed(2)}</span>
               </div>
-              <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Daily Sales Revenue</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">Daily Sales Revenue</div>
             </motion.div>
 
             <motion.div
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.4 }}
-              className="modern-card p-8 group cursor-pointer"
+              className="modern-card p-8 group cursor-pointer border-l-8 border-blue-500 hover:bg-blue-50/30"
               onClick={() => setLocation('/inventory')}
             >
               <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-blue-500 transition-colors duration-500">
@@ -791,14 +791,14 @@ const AdminMain: React.FC = () => {
               <div className="text-3xl font-black text-gray-900 tracking-tighter mb-1">
                 <span data-testid="text-total-products">{stats.totalProducts}</span>
               </div>
-              <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Active Inventory Count</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-blue-600">Active Inventory Count</div>
             </motion.div>
 
             <motion.div
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.5 }}
-              className="modern-card p-8 group cursor-pointer"
+              className="modern-card p-8 group cursor-pointer border-l-8 border-amber-500 hover:bg-amber-50/30"
               onClick={() => setLocation('/ledger')}
             >
               <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-[#BF953F] transition-colors duration-500">
@@ -807,14 +807,14 @@ const AdminMain: React.FC = () => {
               <div className="text-3xl font-black text-gray-900 tracking-tighter mb-1">
                 <span>{getFilteredCreditors().length}</span>
               </div>
-              <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Pending Receivables</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-amber-600">Pending Receivables</div>
             </motion.div>
 
             <motion.div
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.6 }}
-              className="modern-card p-8 group cursor-pointer"
+              className="modern-card p-8 group cursor-pointer border-l-8 border-purple-500 hover:bg-purple-50/30"
             >
               <div className="w-12 h-12 bg-purple-50 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-purple-500 transition-colors duration-500">
                 <Receipt className="w-6 h-6 text-purple-500 group-hover:text-white transition-colors duration-500" />
@@ -822,7 +822,7 @@ const AdminMain: React.FC = () => {
               <div className="text-3xl font-black text-gray-900 tracking-tighter mb-1">
                 <span>₱{totalExpenses.toFixed(2)}</span>
               </div>
-              <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Monthly Operating Costs</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-purple-600">Monthly Operating Costs</div>
             </motion.div>
           </div>
 

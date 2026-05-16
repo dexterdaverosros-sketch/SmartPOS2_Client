@@ -488,14 +488,31 @@ const InventoryManagement: React.FC = () => {
 
         <div className="p-4 space-y-4 pb-20">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-2 bg-white dark:bg-gray-800 border dark:border-gray-700">
-              <TabsTrigger value="inventory" className="data-[state=active]:bg-[#FF8882] data-[state=active]:text-white">
-                Inventory Products
-              </TabsTrigger>
-              <TabsTrigger value="non-inventory" className="data-[state=active]:bg-[#FF8882] data-[state=active]:text-white">
-                Non-Inventory
-              </TabsTrigger>
-            </TabsList>
+            <div className="relative bg-white dark:bg-gray-800 p-1 rounded-xl border dark:border-gray-700 shadow-sm mb-4">
+              <TabsList className="grid w-full grid-cols-2 bg-transparent relative h-10">
+                <motion.div
+                  className="absolute top-0 bottom-0 bg-[#FF8882] rounded-lg shadow-sm"
+                  initial={false}
+                  animate={{
+                    x: activeTab === 'inventory' ? '0%' : '100%',
+                    width: '50%'
+                  }}
+                  transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                />
+                <TabsTrigger 
+                  value="inventory" 
+                  className="relative z-10 data-[state=active]:text-white transition-colors duration-200 h-full font-bold uppercase tracking-widest text-[10px]"
+                >
+                  Inventory Products
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="non-inventory" 
+                  className="relative z-10 data-[state=active]:text-white transition-colors duration-200 h-full font-bold uppercase tracking-widest text-[10px]"
+                >
+                  Non-Inventory
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
             <TabsContent value="inventory" className="space-y-4 mt-4">
               {/* Search Bar */}

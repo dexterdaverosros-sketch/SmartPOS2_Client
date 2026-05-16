@@ -1059,7 +1059,21 @@ export const dbService = {
         SET remitted = 1 
         WHERE (staffId = ? OR staffId = ?) AND remitted = 0
       `).run(remittance.staff_id, remittance.staff_id); 
-      // Some systems might use different IDs, but here staff_id is what we have in remittance
+
+      // NEW: Sync Inventory with Cloud (Supabase) if configured
+      if (useCloud()) {
+        const supabase = getSupabase();
+        if (supabase) {
+          // Get all products to sync current local state to cloud
+          const products = db.prepare('SELECT * FROM products').all();
+          if (products && products.length > 0) {
+            supabase.from('products').upsert(products).then(({ error }) => {
+              if (error) console.error('Cloud inventory sync error on remit:', error);
+              else console.log(`Cloud inventory sync on remit: ${products.length} products synced.`);
+            });
+          }
+        }
+      }
 
       return remittance;
     })();

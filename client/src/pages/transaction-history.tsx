@@ -35,7 +35,7 @@ const TransactionHistory: React.FC = () => {
       setLoading(true);
       try {
         const response = await api.get('/api/sales-history');
-        const salesHistory = response.data;
+        const salesHistory = Array.isArray(response) ? response : (response.data || []);
 
         const formattedTransactions = salesHistory.map((sale: any) => {
           const date = new Date(sale.createdAt);
