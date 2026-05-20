@@ -1368,22 +1368,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const staff = req.body;
       if (Array.isArray(staff)) {
         dbService.saveStaff(staff);
-
-        // Sync to Supabase if configured
-        const supabase = getSupabase();
-        if (supabase) {
-          const rows = staff.map(m => ({
-            id: m.id,
-            name: m.name,
-            staff_id: m.staffId,
-            passhash: m.passkey, // Already hashed in createStaff (client side)
-            created_by: m.createdBy ?? null,
-            created_at: m.createdAt ?? new Date().toISOString()
-          }));
-          const { error } = await supabase.from('staff').upsert(rows, { onConflict: 'id' });
-          if (error) console.error('Failed to sync staff to cloud:', error);
-        }
-
         res.status(200).json({ message: 'Staff updated successfully' });
       } else {
         res.status(400).json({ error: 'Invalid staff data' });

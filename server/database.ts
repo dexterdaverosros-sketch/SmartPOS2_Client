@@ -697,6 +697,30 @@ export const dbService = {
     });
     
     insertMany(products);
+
+    // Mirror to Cloud (Supabase) if available
+    if (useCloud()) {
+      const supabase = getSupabase();
+      if (supabase) {
+        const cloudProducts = products.map(p => ({
+          id: String(p.id),
+          name: String(p.name || ''),
+          price: Number(p.price || 0),
+          category: p.category || 'general',
+          description: p.description || null,
+          image: p.image || null,
+          barcode: String(p.barcode || ''),
+          barcode_data: p.barcodeData || p.barcode_data || null,
+          created_at: p.createdAt || new Date().toISOString(),
+          updated_at: p.updatedAt || new Date().toISOString()
+        }));
+        supabase.from('non_inventory_products').upsert(cloudProducts, { onConflict: 'id' }).then(({ error }) => {
+          if (error) console.error('Cloud non-inventory product sync error:', error);
+          else console.log(`Cloud non-inventory product sync: ${cloudProducts.length} items updated.`);
+        });
+      }
+    }
+
     return products;
   },
 
@@ -775,10 +799,24 @@ export const dbService = {
     if (useCloud()) {
       const supabase = getSupabase();
       if (supabase) {
+        // Map to snake_case for Supabase
+        const cloudProducts = products.map(p => ({
+          id: String(p.id),
+          name: String(p.name || ''),
+          price: Number(p.price || 0),
+          cost: Number(p.cost || 0),
+          barcode: String(p.barcode || ''),
+          category: p.category ?? null,
+          image: p.image ?? null,
+          quantity: Number(p.quantity || 0),
+          created_at: p.createdAt ?? new Date().toISOString(),
+          updated_at: p.updatedAt ?? new Date().toISOString()
+        }));
+        
         // Upsert to Supabase
-        supabase.from('products').upsert(products).then(({ error }) => {
+        supabase.from('products').upsert(cloudProducts, { onConflict: 'id' }).then(({ error }) => {
           if (error) console.error('Cloud product sync error:', error);
-          else console.log(`Cloud product sync: ${products.length} products updated.`);
+          else console.log(`Cloud product sync: ${cloudProducts.length} products updated.`);
         });
       }
     }
@@ -944,9 +982,19 @@ export const dbService = {
     if (useCloud()) {
       const supabase = getSupabase();
       if (supabase) {
-        supabase.from('staff').upsert(staff).then(({ error }) => {
+        // Map to snake_case for Supabase
+        const cloudStaff = staff.map(m => ({
+          id: String(m.id),
+          name: String(m.name || ''),
+          staff_id: String(m.staffId || ''),
+          passhash: String(m.passkey || ''),
+          created_by: m.createdBy ?? null,
+          created_at: m.createdAt ?? new Date().toISOString()
+        }));
+        
+        supabase.from('staff').upsert(cloudStaff, { onConflict: 'id' }).then(({ error }) => {
           if (error) console.error('Cloud staff sync error:', error);
-          else console.log(`Cloud staff sync: ${staff.length} staff updated.`);
+          else console.log(`Cloud staff sync: ${cloudStaff.length} staff updated.`);
         });
       }
     }

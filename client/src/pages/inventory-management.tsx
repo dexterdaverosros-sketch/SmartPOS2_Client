@@ -501,13 +501,13 @@ const InventoryManagement: React.FC = () => {
                 />
                 <TabsTrigger 
                   value="inventory" 
-                  className="relative z-10 data-[state=active]:text-white transition-colors duration-200 h-full font-bold uppercase tracking-widest text-[10px]"
+                  className="relative z-10 data-[state=active]:text-white data-[state=inactive]:text-gray-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-colors duration-200 h-full font-bold uppercase tracking-widest text-[10px]"
                 >
                   Inventory Products
                 </TabsTrigger>
                 <TabsTrigger 
                   value="non-inventory" 
-                  className="relative z-10 data-[state=active]:text-white transition-colors duration-200 h-full font-bold uppercase tracking-widest text-[10px]"
+                  className="relative z-10 data-[state=active]:text-white data-[state=inactive]:text-gray-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-colors duration-200 h-full font-bold uppercase tracking-widest text-[10px]"
                 >
                   Non-Inventory
                 </TabsTrigger>
