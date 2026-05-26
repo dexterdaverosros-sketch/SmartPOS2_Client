@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { BarcodeScanner } from '@/lib/scanner';
-import { Camera, CameraOff, RefreshCw, Upload } from 'lucide-react';
+import { Camera, CameraOff, RefreshCw, Upload, Scan } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 interface ScannerProps {
   onResult: (barcode: string) => void;
@@ -23,6 +24,7 @@ const Scanner: React.FC<ScannerProps> = ({ onResult, onError, initialMirrorMode 
   const [isReconnecting, setIsReconnecting] = useState(false);
   const memoryBeforeRef = useRef<number | undefined>(undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     scannerRef.current = new BarcodeScanner();
@@ -83,13 +85,13 @@ const Scanner: React.FC<ScannerProps> = ({ onResult, onError, initialMirrorMode 
         videoRef.current,
         (barcode) => {
           onResult(barcode);
-          // Brief pause after successful scan to prevent multiple scans of same item
-          scannerRef.current?.stopScanning();
+          // Briefly pause after successful scan to prevent multiple scans of same item
+          setIsActive(false);
           setTimeout(() => {
             if (scannerRef.current && !scannerRef.current.isScanning()) {
               startScanning();
             }
-          }, 1000);
+          }, 2000);
         },
         (err) => {
           // Check if this is a reconnection attempt
@@ -113,6 +115,25 @@ const Scanner: React.FC<ScannerProps> = ({ onResult, onError, initialMirrorMode 
       const errorMessage = err instanceof Error ? err.message : 'Camera access denied or not available';
       setError(errorMessage);
       onError?.(err as Error);
+    }
+  };
+
+  const handleManualScan = async () => {
+    if (!videoRef.current || !scannerRef.current || !isActive) return;
+    
+    try {
+      // Manual decode attempt from current video frame
+      // ZXing's decodeFromVideoElement can be called even if the loop is running
+      const result = await scannerRef.current.decodeFromVideoElement(videoRef.current);
+      if (result) {
+        onResult(result.getText());
+      }
+    } catch (err) {
+      toast({
+        title: "Scan Failed",
+        description: "Could not identify barcode in current frame. Ensure it's centered and clear.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -222,13 +243,22 @@ const Scanner: React.FC<ScannerProps> = ({ onResult, onError, initialMirrorMode 
       </div>
 
       {/* Control buttons */}
-      <div className="flex justify-center mt-4 space-x-4 flex-wrap gap-y-2">
+      <div className="flex justify-center mt-4 space-x-2 flex-wrap gap-y-2">
+        <button
+          onClick={handleManualScan}
+          disabled={!isActive}
+          className={`${!isActive ? 'bg-gray-400' : 'bg-pink-600'} text-white px-4 py-2 rounded-lg flex items-center touch-feedback shadow-md hover:bg-pink-700 transition-colors`}
+        >
+          <Scan className="w-5 h-5 mr-2" />
+          Scan Now
+        </button>
+
         <button
             onClick={() => fileInputRef.current?.click()}
-            className="bg-blue-600 text-white px-3 py-2 rounded-lg flex items-center touch-feedback"
+            className="bg-blue-600 text-white px-3 py-2 rounded-lg flex items-center touch-feedback shadow-md hover:bg-blue-700 transition-colors"
         >
             <Upload className="w-4 h-4 mr-2" />
-            Device Camera
+            Upload
         </button>
 
         <button
@@ -239,7 +269,7 @@ const Scanner: React.FC<ScannerProps> = ({ onResult, onError, initialMirrorMode 
               setTimeout(() => startScanning(), 300);
             }
           }}
-          className="bg-gray-700 text-white px-3 py-2 rounded-lg flex items-center touch-feedback"
+          className="bg-gray-700 text-white px-3 py-2 rounded-lg flex items-center touch-feedback shadow-md hover:bg-gray-800 transition-colors"
           title="Toggle mirror mode"
         >
           <RefreshCw className="w-4 h-4 mr-1" />
@@ -253,13 +283,16 @@ const Scanner: React.FC<ScannerProps> = ({ onResult, onError, initialMirrorMode 
               stopScanning();
               setTimeout(() => startScanning(), 500);
             }}
-            className="bg-yellow-500 text-white px-6 py-2 rounded-lg flex items-center touch-feedback"
+            className="bg-yellow-500 text-white px-6 py-2 rounded-lg flex items-center touch-feedback shadow-md hover:bg-yellow-600 transition-colors"
           >
             <RefreshCw className="w-4 h-4 mr-2" />
             Retry
           </button>
         )}
       </div>
+      <p className="text-center text-[10px] text-gray-500 mt-2">
+        Tip: Center the barcode in the box and hold steady. Use "Scan Now" if auto-scan is slow.
+      </p>
     </div>
   );
 };

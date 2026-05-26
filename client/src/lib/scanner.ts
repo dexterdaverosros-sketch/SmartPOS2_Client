@@ -1,4 +1,9 @@
-import { BrowserMultiFormatReader, NotFoundException } from '@zxing/library';
+import { 
+  BrowserMultiFormatReader, 
+  NotFoundException, 
+  DecodeHintType, 
+  BarcodeFormat 
+} from '@zxing/library';
 
 export class BarcodeScanner {
   private codeReader: BrowserMultiFormatReader;
@@ -12,8 +17,32 @@ export class BarcodeScanner {
   private currentOnError: ((error: Error) => void) | undefined = undefined;
   private currentMirrorMode = false;
 
+  private createReader(): BrowserMultiFormatReader {
+    const hints = new Map();
+    const formats = [
+      BarcodeFormat.QR_CODE,
+      BarcodeFormat.EAN_13,
+      BarcodeFormat.EAN_8,
+      BarcodeFormat.UPC_A,
+      BarcodeFormat.UPC_E,
+      BarcodeFormat.CODE_128,
+      BarcodeFormat.CODE_39,
+      BarcodeFormat.CODE_93,
+      BarcodeFormat.ITF,
+      BarcodeFormat.DATA_MATRIX,
+      BarcodeFormat.AZTEC,
+      BarcodeFormat.PDF_417
+    ];
+    
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
+    hints.set(DecodeHintType.TRY_HARDER, true);
+    hints.set(DecodeHintType.ASSUME_GS1, true);
+    
+    return new BrowserMultiFormatReader(hints);
+  }
+
   constructor() {
-    this.codeReader = new BrowserMultiFormatReader();
+    this.codeReader = this.createReader();
   }
 
   async startScanning(
@@ -53,21 +82,39 @@ export class BarcodeScanner {
       // Try with preferred camera settings first (HD resolution for better scanning)
       let stream;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
+        const constraints = {
           video: { 
             facingMode: mirrorMode ? 'user' : 'environment',
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            focusMode: 'continuous' 
-          } as MediaTrackConstraints,
+            width: { ideal: 1920, min: 1280 },
+            height: { ideal: 1080, min: 720 },
+            aspectRatio: { ideal: 1.7777777778 } // 16:9
+          },
           audio: false,
-        });
+        };
 
-        // Try to enable torch/flash if available
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+        // Try to apply advanced constraints like focus and torch
         const track = stream.getVideoTracks()[0];
         const capabilities = track.getCapabilities() as any;
-        if (capabilities.torch) {
-             // We can expose this control later if needed
+        
+        const advancedConstraints: any = {};
+        if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+          advancedConstraints.focusMode = 'continuous';
+        }
+        if (capabilities.whiteBalanceMode && capabilities.whiteBalanceMode.includes('continuous')) {
+          advancedConstraints.whiteBalanceMode = 'continuous';
+        }
+        if (capabilities.exposureMode && capabilities.exposureMode.includes('continuous')) {
+          advancedConstraints.exposureMode = 'continuous';
+        }
+
+        if (Object.keys(advancedConstraints).length > 0) {
+          try {
+            await track.applyConstraints({ advanced: [advancedConstraints] } as any);
+          } catch (e) {
+            console.warn('Failed to apply advanced constraints', e);
+          }
         }
 
       } catch (initialError) {
@@ -290,7 +337,7 @@ export class BarcodeScanner {
       }
       // Recreate reader instance to avoid lingering internal state that can
       // cause errors when starting again after a stop.
-      this.codeReader = new BrowserMultiFormatReader();
+      this.codeReader = this.createReader();
       // Also stop all media streams to prevent memory leaks
       if (typeof document !== 'undefined') {
         const videos = document.querySelectorAll('video');
@@ -319,5 +366,9 @@ export class BarcodeScanner {
     } finally {
       URL.revokeObjectURL(imageUrl);
     }
+  }
+
+  async decodeFromVideoElement(videoElement: HTMLVideoElement) {
+    return await this.codeReader.decodeFromVideoElement(videoElement);
   }
 }

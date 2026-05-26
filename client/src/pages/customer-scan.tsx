@@ -10,7 +10,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
 import io from 'socket.io-client';
 import { ProductService } from '@/lib/db';
-import { BrowserMultiFormatReader } from '@zxing/library';
+import { 
+  BrowserMultiFormatReader, 
+  DecodeHintType, 
+  BarcodeFormat 
+} from '@zxing/library';
 import api from '@/lib/api';
 
 // Product interface
@@ -35,6 +39,7 @@ const CustomerScan: React.FC = () => {
     return false;
   });
   const [manualEntry, setManualEntry] = useState(false);
+  const [useLiveScanner, setUseLiveScanner] = useState(false);
   const [barcodeInput, setBarcodeInput] = useState('');
   const [scanning, setScanning] = useState(true);
   const [product, setProduct] = useState<Product | null>(null);
@@ -176,19 +181,42 @@ const CustomerScan: React.FC = () => {
   const handleImageCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new BrowserMultiFormatReader();
+
+    const hints = new Map();
+    const formats = [
+      BarcodeFormat.QR_CODE,
+      BarcodeFormat.EAN_13,
+      BarcodeFormat.EAN_8,
+      BarcodeFormat.UPC_A,
+      BarcodeFormat.UPC_E,
+      BarcodeFormat.CODE_128,
+      BarcodeFormat.CODE_39,
+      BarcodeFormat.CODE_93,
+      BarcodeFormat.ITF,
+      BarcodeFormat.DATA_MATRIX,
+      BarcodeFormat.AZTEC,
+      BarcodeFormat.PDF_417
+    ];
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
+    hints.set(DecodeHintType.TRY_HARDER, true);
+    hints.set(DecodeHintType.ASSUME_GS1, true);
+
+    const reader = new BrowserMultiFormatReader(hints);
     const url = URL.createObjectURL(file);
+    setLoading(true);
     try {
       const result = await reader.decodeFromImageUrl(url);
       if (result) {
         handleScanResult(result.getText());
       } else {
-        toast({ title: "Scan Failed", description: "No barcode detected in photo", variant: "destructive" });
+        toast({ title: "Scan Failed", description: "No barcode detected in photo. Please ensure the barcode is clear and well-lit.", variant: "destructive" });
       }
     } catch (err) {
-      toast({ title: "Scan Failed", description: "Could not read barcode from photo", variant: "destructive" });
+      console.error('Image scan error:', err);
+      toast({ title: "Scan Failed", description: "Could not read barcode from photo. Try taking a closer, clearer picture.", variant: "destructive" });
     } finally {
       URL.revokeObjectURL(url);
+      setLoading(false);
       e.target.value = "";
     }
   };
@@ -296,27 +324,51 @@ const CustomerScan: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="flex flex-col items-center justify-center space-y-6">
-              <div className="w-full aspect-square max-w-sm bg-gray-100 dark:bg-gray-800 rounded-3xl border-2 border-dashed border-gray-300 dark:border-gray-700 flex flex-col items-center justify-center p-8 text-center space-y-4">
-                <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center">
-                  <Camera className="w-10 h-10 text-primary" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Scan Product Barcode</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Use your device's native camera to scan a product barcode</p>
-                </div>
-                <label className="w-full cursor-pointer">
-                  <Input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={handleImageCapture}
-                    className="hidden"
-                  />
-                  <div className="w-full py-4 bg-primary text-primary-foreground rounded-2xl font-bold uppercase tracking-widest shadow-lg active:scale-95 transition-all text-center">
-                    Open Camera
-                  </div>
-                </label>
+              <div className="w-full max-w-sm flex bg-gray-100 dark:bg-gray-800 p-1 rounded-xl">
+                <button 
+                  onClick={() => setUseLiveScanner(false)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${!useLiveScanner ? 'bg-white dark:bg-gray-700 shadow-sm text-primary' : 'text-gray-500'}`}
+                >
+                  Take Photo
+                </button>
+                <button 
+                  onClick={() => setUseLiveScanner(true)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${useLiveScanner ? 'bg-white dark:bg-gray-700 shadow-sm text-primary' : 'text-gray-500'}`}
+                >
+                  Live Scan
+                </button>
               </div>
+
+              {useLiveScanner ? (
+                <div className="w-full max-w-sm aspect-video bg-black rounded-3xl overflow-hidden border-2 border-primary/20 shadow-xl">
+                  <Scanner 
+                    onResult={handleScanResult}
+                    onError={handleScanError}
+                  />
+                </div>
+              ) : (
+                <div className="w-full aspect-square max-w-sm bg-gray-100 dark:bg-gray-800 rounded-3xl border-2 border-dashed border-gray-300 dark:border-gray-700 flex flex-col items-center justify-center p-8 text-center space-y-4">
+                  <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center">
+                    <Camera className="w-10 h-10 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Scan Product Barcode</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Use your device's native camera to scan a product barcode</p>
+                  </div>
+                  <label className="w-full cursor-pointer">
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={handleImageCapture}
+                      className="hidden"
+                    />
+                    <div className="w-full py-4 bg-primary text-primary-foreground rounded-2xl font-bold uppercase tracking-widest shadow-lg active:scale-95 transition-all text-center">
+                      Open Camera
+                    </div>
+                  </label>
+                </div>
+              )}
 
               <div className="w-full max-w-sm flex items-center gap-4">
                 <div className="h-px bg-gray-200 dark:bg-gray-700 flex-1"></div>
