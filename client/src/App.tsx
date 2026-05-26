@@ -16,7 +16,7 @@ import AdminLogin from "@/pages/admin-login";
 import AdminSignup from "@/pages/admin-signup";
 import StaffLogin from "@/pages/staff-login";
 import AdminDashboard from "@/pages/admin-dashboard";
-import ProtectedAdmin from "@/components/ProtectedAdmin";
+import ProtectedRoute from "@/components/ProtectedRoute";
 import AdminCreditors from "@/pages/admin-creditors";
 import AdminSettings from "@/pages/admin-settings";
 import AdminAuditLog from "@/pages/admin-audit-log";
@@ -53,41 +53,41 @@ function Router() {
     <Switch>
       <Route path="/" component={SplashScreen} />
       <Route path="/role-selection" component={RoleSelection} />
-      <Route path="/account-details" component={ProfileSettings} />
+      <Route path="/account-details" component={() => <ProtectedRoute component={ProfileSettings} />} />
       <Route path="/admin-login" component={AdminLogin} />
       <Route path="/admin-signup" component={AdminSignup} />
       <Route path="/staff-login" component={StaffLogin} />
-      <Route path="/admin-dashboard" component={AdminDashboard} />
-      <Route path="/admin/dashboard" component={() => <ProtectedAdmin component={AdminDashboard} />} />
-      <Route path="/admin/creditors" component={() => <ProtectedAdmin component={AdminCreditors} />} />
-      <Route path="/admin/creditors/:id" component={() => <ProtectedAdmin component={AdminCreditors} />} />
-      <Route path="/admin/settings" component={() => <ProtectedAdmin component={AdminSettings} />} />
-      <Route path="/admin/audit-log" component={() => <ProtectedAdmin component={AdminAuditLog} />} />
-      <Route path="/admin/reports" component={() => <ProtectedAdmin component={AdminReports} />} />
-      <Route path="/stock-insights" component={() => <ProtectedAdmin component={StockInsights} />} />
-      <Route path="/sales-summary" component={() => <ProtectedAdmin component={SalesSummary} />} />
-      <Route path="/admin-main" component={AdminMain} />
-      <Route path="/purchased" component={PurchasedPage} />
-      <Route path="/expenses" component={ExpensesPage} />
-      <Route path="/expense-report" component={ExpenseReport} />
-      <Route path="/ledger" component={LedgerPage} />
-      <Route path="/ledger/add-customer" component={LedgerAddCustomer} />
-      <Route path="/scanner" component={ScannerSales} />
-      <Route path="/inventory" component={InventoryManagement} />
-      <Route path="/inventory/product/:id" component={ProductDetails} />
-        <Route path="/inventory/variant/add" component={ProductVariantBlank} />
-        <Route path="/inventory/product/:id/variant/add" component={ProductVariantAdd} />
-        <Route path="/inventory/product/:id/variant/edit/:variantId" component={ProductVariantEdit} />
-        <Route path="/staff" component={StaffManagement} />
-      <Route path="/profile" component={ProfileSettings} />
-      <Route path="/transaction-history" component={TransactionHistory} />
+      <Route path="/admin-dashboard" component={() => <ProtectedRoute component={AdminDashboard} role="admin" />} />
+      <Route path="/admin/dashboard" component={() => <ProtectedRoute component={AdminDashboard} role="admin" />} />
+      <Route path="/admin/creditors" component={() => <ProtectedRoute component={AdminCreditors} role="admin" />} />
+      <Route path="/admin/creditors/:id" component={() => <ProtectedRoute component={AdminCreditors} role="admin" />} />
+      <Route path="/admin/settings" component={() => <ProtectedRoute component={AdminSettings} role="admin" />} />
+      <Route path="/admin/audit-log" component={() => <ProtectedRoute component={AdminAuditLog} role="admin" />} />
+      <Route path="/admin/reports" component={() => <ProtectedRoute component={AdminReports} role="admin" />} />
+      <Route path="/stock-insights" component={() => <ProtectedRoute component={StockInsights} role="admin" />} />
+      <Route path="/sales-summary" component={() => <ProtectedRoute component={SalesSummary} role="admin" />} />
+      <Route path="/admin-main" component={() => <ProtectedRoute component={AdminMain} role="admin" />} />
+      <Route path="/purchased" component={() => <ProtectedRoute component={PurchasedPage} />} />
+      <Route path="/expenses" component={() => <ProtectedRoute component={ExpensesPage} />} />
+      <Route path="/expense-report" component={() => <ProtectedRoute component={ExpenseReport} />} />
+      <Route path="/ledger" component={() => <ProtectedRoute component={LedgerPage} />} />
+      <Route path="/ledger/add-customer" component={() => <ProtectedRoute component={LedgerAddCustomer} />} />
+      <Route path="/scanner" component={() => <ProtectedRoute component={ScannerSales} />} />
+      <Route path="/inventory" component={() => <ProtectedRoute component={InventoryManagement} role="admin" />} />
+      <Route path="/inventory/product/:id" component={() => <ProtectedRoute component={ProductDetails} role="admin" />} />
+      <Route path="/inventory/variant/add" component={() => <ProtectedRoute component={ProductVariantBlank} role="admin" />} />
+      <Route path="/inventory/product/:id/variant/add" component={() => <ProtectedRoute component={ProductVariantAdd} role="admin" />} />
+      <Route path="/inventory/product/:id/variant/edit/:variantId" component={() => <ProtectedRoute component={ProductVariantEdit} role="admin" />} />
+      <Route path="/staff" component={() => <ProtectedRoute component={StaffManagement} role="admin" />} />
+      <Route path="/profile" component={() => <ProtectedRoute component={ProfileSettings} />} />
+      <Route path="/transaction-history" component={() => <ProtectedRoute component={TransactionHistory} />} />
       <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/reset-password" component={ResetPassword} />
-      <Route path="/security-questions" component={() => <ProtectedAdmin component={SecurityQuestionsPage} />} />
-      <Route path="/reset-data" component={ResetDataPage} />
+      <Route path="/security-questions" component={() => <ProtectedRoute component={SecurityQuestionsPage} role="admin" />} />
+      <Route path="/reset-data" component={() => <ProtectedRoute component={ResetDataPage} role="admin" />} />
       <Route path="/customer" component={CustomerScan} />
       <Route path="/wallet-callback" component={WalletCallback} />
-      <Route path="/report-blank" component={ReportBlank} />
+      <Route path="/report-blank" component={() => <ProtectedRoute component={ReportBlank} role="admin" />} />
       <Route component={NotFound} />
     </Switch>
   );
