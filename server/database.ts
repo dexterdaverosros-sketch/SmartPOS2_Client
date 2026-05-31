@@ -891,7 +891,7 @@ export const dbService = {
         s.createdAt,
         st.name AS staffName
       FROM sales s
-      LEFT JOIN staff st ON s.staffId = st.staff_id
+      LEFT JOIN staff st ON s.staffId = st.staffId
       ORDER BY s.createdAt DESC
     `).all() as any[];
 

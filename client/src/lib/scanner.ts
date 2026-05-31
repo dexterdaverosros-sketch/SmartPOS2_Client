@@ -51,7 +51,10 @@ export class BarcodeScanner {
     onError?: (error: Error) => void,
     mirrorMode: boolean = false
   ): Promise<void> {
-    if (this.scanning) return;
+    if (this.scanning) {
+      console.warn('Scanning is already in progress');
+      return;
+    }
 
     // Store current parameters for reconnection
     this.currentVideoElement = videoElement;
@@ -62,6 +65,19 @@ export class BarcodeScanner {
     this.scanning = true;
 
     try {
+      // Check for camera permission status if supported
+      if (navigator.permissions && (navigator.permissions as any).query) {
+        try {
+          const status = await navigator.permissions.query({ name: 'camera' as any });
+          if (status.state === 'denied') {
+            throw new DOMException('Permission denied', 'NotAllowedError');
+          }
+        } catch (e) {
+          // Fallback if permissions API query fails
+          console.debug('Permissions API query not supported for camera');
+        }
+      }
+
       // Hint browser to allow inline playback
       try {
         videoElement.setAttribute('playsinline', 'true');

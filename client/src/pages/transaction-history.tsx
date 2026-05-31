@@ -35,16 +35,21 @@ const TransactionHistory: React.FC = () => {
       setLoading(true);
       try {
         const response = await api.get('/api/sales-history');
+        // Ensure we handle both raw array or {data: []} from different api wrappers
         const salesHistory = Array.isArray(response) ? response : (response.data || []);
+        
+        if (!Array.isArray(salesHistory)) {
+          throw new Error('Invalid response format from server');
+        }
 
         const formattedTransactions = salesHistory.map((sale: any) => {
-          const date = new Date(sale.createdAt);
+          const date = sale.createdAt ? new Date(sale.createdAt) : new Date();
           return {
             id: sale.id,
             date: date.toLocaleDateString(),
             time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            items: sale.items.length, // Assuming items array is included
-            amount: sale.total,
+            items: Array.isArray(sale.items) ? sale.items.length : 0,
+            amount: Number(sale.total || 0),
             paymentMethod: (sale.paymentType === 'ewallet' ? 'ewallet' : sale.paymentType === 'credits' ? 'credits' : 'cash') as 'cash' | 'ewallet' | 'credits',
             createdAt: date,
             staffName: sale.staffName || 'Owner'

@@ -801,17 +801,21 @@ export class SalesService {
       
       // CRITICAL: Push sale to server for admin visibility
       try {
-        const saleWithItems = {
-          ...sale,
+        const saleDataForServer = {
+          sale: {
+            ...sale,
+            staffId: sale.staffId || 'unknown'
+          },
           items: saleData.items.map(item => ({
             productId: item.productId,
             quantity: item.quantity,
             price: item.price,
             unit: item.unit,
-            name: item.name
+            name: item.name,
+            isNonInventory: item.isNonInventory
           }))
         };
-        await api.post('/api/sales', saleWithItems);
+        await api.post('/api/sales', saleDataForServer);
         console.log('Sale pushed to server successfully');
       } catch (err) {
         console.warn('Failed to push sale to server immediately, will sync later:', err);
@@ -859,7 +863,10 @@ export class SalesService {
     // CRITICAL: Push income to server for admin visibility
     try {
       await api.post('/api/sales', {
-        ...sale,
+        sale: {
+          ...sale,
+          staffId: staffId || 'unknown'
+        },
         items: [{
           productId: 'income-adjustment',
           quantity: 1,
@@ -873,6 +880,32 @@ export class SalesService {
     }
     
     return sale;
+  }
+
+  static async syncWithServer(): Promise<void> {
+    try {
+      const response = await api.get('/api/sales-history');
+      const serverSales = response.data;
+      
+      if (Array.isArray(serverSales)) {
+        // Map server fields back to Dexie fields if necessary
+        const dexieSales = serverSales.map((s: any) => ({
+          id: s.id,
+          total: Number(s.total || 0),
+          paymentType: s.payment_type || 'cash',
+          paymentAmount: Number(s.payment_amount || 0),
+          staffId: s.staff_id || null,
+          remitted: Boolean(s.remitted),
+          createdAt: s.created_at ? new Date(s.created_at) : new Date(),
+        }));
+
+        // Use a bulk put to update/insert all server sales into local Dexie
+        await db.sales.bulkPut(dexieSales);
+        console.log(`Synced ${dexieSales.length} sales from server`);
+      }
+    } catch (err) {
+      console.error('Failed to sync sales with server:', err);
+    }
   }
 }
 

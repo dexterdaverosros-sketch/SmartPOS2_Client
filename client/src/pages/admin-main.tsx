@@ -327,6 +327,9 @@ const AdminMain: React.FC = () => {
 
   const loadStats = async () => {
     try {
+      // Sync with server first to get latest staff sales
+      await SalesService.syncWithServer();
+      
       const products = await ProductService.getAllProducts();
       const todaysSales = await SalesService.getTodaysSales();
       const todaysTotal = Array.isArray(todaysSales)
