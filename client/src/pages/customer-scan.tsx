@@ -164,7 +164,9 @@ const CustomerScan: React.FC = () => {
 
   // Handle barcode scan result
   const handleScanResult = (barcode: string) => {
-    if (barcode) {
+    setBarcodeInput(barcode);
+    if (scanning && barcode) {
+      setScanning(false);
       lookupProduct(barcode);
     }
   };

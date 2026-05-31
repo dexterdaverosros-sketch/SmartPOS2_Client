@@ -457,6 +457,7 @@ const ScannerSales: React.FC = () => {
 
   const handleBarcodeScan = async (barcode: string) => {
     try {
+      setManualBarcode(barcode); // Auto-fill the manual input box
       // Validate barcode format
       if (!barcode || barcode.trim().length === 0) {
         toast({
