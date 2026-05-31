@@ -14,9 +14,9 @@ export default function ProductVariantEdit() {
   const variantId = match ? params?.variantId : undefined;
 
   const [variant, setVariant] = useState('');
-  const [price, setPrice] = useState<number>(0);
-  const [cost, setCost] = useState<number>(0);
-  const [stock, setStock] = useState<number>(0);
+  const [price, setPrice] = useState<any>('');
+  const [cost, setCost] = useState<any>('');
+  const [stock, setStock] = useState<any>('');
   const [barcode, setBarcode] = useState('');
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -28,9 +28,9 @@ export default function ProductVariantEdit() {
         const v = await ProductService.getVariantById(variantId);
         if (v) {
           setVariant(v.name);
-          setPrice(v.price);
-          setCost(v.cost);
-          setStock((v as any).quantity ?? 0);
+          setPrice(v.price || '');
+          setCost(v.cost || '');
+          setStock((v as any).quantity ?? '');
           setBarcode(v.barcode || '');
           setImagePreview(v.image || null);
         }
@@ -49,9 +49,9 @@ export default function ProductVariantEdit() {
     }
     await ProductService.updateVariant(variantId, {
       name: variant,
-      price,
-      cost,
-      quantity: Math.floor(stock) || 0,
+      price: parseFloat(price) || 0,
+      cost: parseFloat(cost) || 0,
+      quantity: Math.floor(parseFloat(stock)) || 0,
       barcode: barcode || null,
       image: imagePreview,
     });
@@ -125,7 +125,7 @@ export default function ProductVariantEdit() {
                 type="number"
                 step="0.01"
                 value={price}
-                onChange={(e) => setPrice(parseFloat(e.target.value) || 0)}
+                onChange={(e) => setPrice(e.target.value)}
                 placeholder="0.00"
                 className="border-gray-300 dark:border-gray-600"
               />
@@ -136,7 +136,7 @@ export default function ProductVariantEdit() {
                 type="number"
                 step="0.01"
                 value={cost}
-                onChange={(e) => setCost(parseFloat(e.target.value) || 0)}
+                onChange={(e) => setCost(e.target.value)}
                 placeholder="0.00"
                 className="border-gray-300 dark:border-gray-600"
               />
@@ -147,7 +147,7 @@ export default function ProductVariantEdit() {
                 type="number"
                 step="1"
                 value={stock}
-                onChange={(e) => setStock(parseInt(e.target.value || '0', 10) || 0)}
+                onChange={(e) => setStock(e.target.value)}
                 placeholder="0"
                 className="border-gray-300 dark:border-gray-600"
               />

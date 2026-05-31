@@ -23,16 +23,16 @@ import type { Product } from '@shared/schema';
 const productSchema = z.object({
   name: z.string().min(1, 'Product name is required'),
   barcode: z.string().min(1, 'Barcode is required'),
-  price: z.number().min(0.01, 'Price must be greater than 0'),
-  cost: z.number().min(0, 'Cost must be 0 or greater'),
-  quantity: z.number().min(0, 'Quantity must be 0 or greater'),
+  price: z.coerce.number().min(0.01, 'Price must be greater than 0'),
+  cost: z.coerce.number().min(0, 'Cost must be 0 or greater'),
+  quantity: z.coerce.number().min(0, 'Quantity must be 0 or greater'),
   category: z.string().optional(),
   image: z.string().optional(),
 });
 
 // Schema for stock addition
 const stockAdditionSchema = z.object({
-  addQuantity: z.number().min(1, 'Quantity must be at least 1'),
+  addQuantity: z.coerce.number().min(1, 'Quantity must be at least 1'),
 });
 
 const categorySchema = z.object({
@@ -91,9 +91,9 @@ const InventoryManagement: React.FC = () => {
     defaultValues: {
       name: '',
       barcode: '',
-      price: 0,
-      cost: 0,
-      quantity: 0,
+      price: '' as unknown as number,
+      cost: '' as unknown as number,
+      quantity: '' as unknown as number,
       category: 'general',
       image: '',
       unit: 'pcs',
@@ -716,8 +716,8 @@ const InventoryManagement: React.FC = () => {
                       form.reset({
                         name: '',
                         barcode: '',
-                        price: 0,
-                        quantity: 0,
+                        price: '' as unknown as number,
+                        quantity: '' as unknown as number,
                         category: undefined,
                         image: undefined,
                       });
@@ -871,7 +871,7 @@ const InventoryManagement: React.FC = () => {
                             type="number"
                             step="0.01"
                             {...field}
-                            onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                            onChange={(e) => field.onChange(e.target.value)}
                             className="border-gray-300 dark:border-gray-600 focus:border-[#FF8882]"
                           />
                         </FormControl>
@@ -890,7 +890,7 @@ const InventoryManagement: React.FC = () => {
                             type="number"
                             step="0.01"
                             {...field}
-                            onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                            onChange={(e) => field.onChange(e.target.value)}
                             className="border-gray-300 dark:border-gray-600 focus:border-[#FF8882]"
                           />
                         </FormControl>
@@ -910,7 +910,7 @@ const InventoryManagement: React.FC = () => {
                               type="number"
                               min="0"
                               {...field}
-                              onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                              onChange={(e) => field.onChange(e.target.value)}
                               className="border-gray-300 dark:border-gray-600 focus:border-[#FF8882]"
                             />
                           </FormControl>
@@ -1101,8 +1101,8 @@ const InventoryManagement: React.FC = () => {
                   type="number"
                   min="1"
                   placeholder="Quantity to add"
-                  value={stockForm.watch('addQuantity')}
-                  onChange={(e) => stockForm.setValue('addQuantity', parseInt(e.target.value) || 0)}
+                  value={stockForm.watch('addQuantity') || ''}
+                  onChange={(e) => stockForm.setValue('addQuantity', e.target.value as any)}
                   className="border-gray-300 dark:border-gray-600 focus:border-[#FF8882]"
                 />
                 <Button
