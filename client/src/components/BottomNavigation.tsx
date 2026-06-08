@@ -2,12 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { useLocation } from 'wouter';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
+import { useDevices } from '@/contexts/DeviceContext';
 import { Home, Package, Scan, Users, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const BottomNavigation: React.FC = () => {
   const [location, setLocation] = useLocation();
   const { isAdmin } = useAuth();
+  const { deviceMode } = useDevices();
   const [isMobile, setIsMobile] = useState<boolean>(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
   
   useEffect(() => {
@@ -29,9 +31,18 @@ const BottomNavigation: React.FC = () => {
     { id: 'profile', icon: User, label: 'Profile', path: '/profile' },
   ];
 
+  const getContainerMaxWidth = () => {
+    switch (deviceMode) {
+      case 'pc': return 'max-w-4xl';
+      case 'tablet': return 'max-w-2xl';
+      case 'mobile': return 'max-w-md';
+      default: return 'max-w-lg';
+    }
+  };
+
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 px-2 sm:px-4 pb-4 bg-transparent pointer-events-none">
-      <div className="w-full max-w-lg mx-auto pointer-events-auto">
+      <div className={cn("w-full mx-auto pointer-events-auto", getContainerMaxWidth())}>
         {/* Soft UI Navigation Container */}
         <div
           className="relative bg-white/95 rounded-[2rem] shadow-[0_10px_40px_rgba(0,0,0,0.15)] border border-gray-100/50 overflow-visible"

@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useToast } from '@/hooks/use-toast';
 
+export type DeviceMode = 'pc' | 'tablet' | 'mobile';
+
 interface ExternalDevice {
   id: string;
   name: string;
@@ -10,6 +12,8 @@ interface ExternalDevice {
 }
 
 interface DeviceContextType {
+  deviceMode: DeviceMode | null;
+  setDeviceMode: (mode: DeviceMode) => void;
   connectedDevices: ExternalDevice[];
   connectUSBDevice: (type: 'scanner' | 'printer') => Promise<void>;
   connectBluetoothDevice: (type: 'scanner' | 'printer') => Promise<void>;
@@ -22,6 +26,7 @@ interface DeviceContextType {
 const DeviceContext = createContext<DeviceContextType | undefined>(undefined);
 
 export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [deviceMode, setDeviceModeState] = useState<DeviceMode | null>(null);
   const [connectedDevices, setConnectedDevices] = useState<ExternalDevice[]>([]);
   const { toast } = useToast();
 
@@ -30,20 +35,28 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   // Initialize from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem('smartpos_external_devices');
-    if (saved) {
+    const savedDevices = localStorage.getItem('smartpos_external_devices');
+    if (savedDevices) {
       try {
-        const parsed = JSON.parse(saved);
-        // Note: Raw device objects cannot be saved to localStorage, 
-        // so we'll only have metadata. Reconnection might be needed.
+        const parsed = JSON.parse(savedDevices);
         setConnectedDevices(parsed.map((d: any) => ({ ...d, device: null })));
       } catch (e) {
         console.error('Failed to load external devices:', e);
       }
     }
+
+    const savedMode = localStorage.getItem('smartpos_device_mode') as DeviceMode;
+    if (savedMode && ['pc', 'tablet', 'mobile'].includes(savedMode)) {
+      setDeviceModeState(savedMode);
+    }
   }, []);
 
-  // Save to localStorage whenever devices change
+  const setDeviceMode = (mode: DeviceMode) => {
+    setDeviceModeState(mode);
+    localStorage.setItem('smartpos_device_mode', mode);
+  };
+
+  // Save devices to localStorage whenever they change
   useEffect(() => {
     const metadata = connectedDevices.map(({ id, name, type, connection }) => ({ id, name, type, connection }));
     localStorage.setItem('smartpos_external_devices', JSON.stringify(metadata));
@@ -143,6 +156,8 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   return (
     <DeviceContext.Provider value={{
+      deviceMode,
+      setDeviceMode,
       connectedDevices,
       connectUSBDevice,
       connectBluetoothDevice,

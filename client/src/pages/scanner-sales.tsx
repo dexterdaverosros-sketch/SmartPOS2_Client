@@ -110,6 +110,12 @@ const ScannerSales: React.FC = () => {
     loadSettings();
   }, []);
 
+  useEffect(() => {
+    if (deviceMode === 'pc') {
+      setMode('manual');
+    }
+  }, [deviceMode]);
+
   const handleAddNonInventory = () => {
     if (!nonInvName || !nonInvPrice) return;
     const price = parseFloat(nonInvPrice);
@@ -874,17 +880,19 @@ Thank you for your purchase!
           
           {/* Toggle Switch */}
           <div className="flex bg-gray-100 p-1 rounded-lg mb-4 flex-none">
+             {deviceMode !== 'pc' && (
+               <button
+                 className={`flex-1 py-2 rounded-md text-sm font-medium transition-all ${mode === 'scanner' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-900'}`}
+                 onClick={() => setMode('scanner')}
+               >
+                 Scanner
+               </button>
+             )}
              <button
-               className={`flex-1 py-2 rounded-md text-sm font-medium transition-all ${mode === 'scanner' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-900'}`}
-               onClick={() => setMode('scanner')}
-             >
-               Scanner
-             </button>
-             <button
-               className={`flex-1 py-2 rounded-md text-sm font-medium transition-all ${mode === 'manual' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-900'}`}
+               className={`flex-1 py-2 rounded-md text-sm font-medium transition-all ${mode === 'manual' || deviceMode === 'pc' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-900'}`}
                onClick={() => setMode('manual')}
              >
-               Manual
+               Manual Entry {deviceMode === 'pc' && '(External Scanner)'}
              </button>
           </div>
 

@@ -1,7 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { BarcodeScanner } from '@/lib/scanner';
-import { Camera, CameraOff, RefreshCw, Upload, Scan } from 'lucide-react';
+import { Camera, CameraOff, RefreshCw, Upload, Scan, Keyboard } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useDevices } from '@/contexts/DeviceContext';
 
 interface ScannerProps {
   onResult: (barcode: string) => void;
@@ -16,6 +17,7 @@ interface ScannerProps {
 }
 
 const Scanner: React.FC<ScannerProps> = ({ onResult, onError, initialMirrorMode = false, onShutdownComplete }) => {
+  const { deviceMode } = useDevices();
   const videoRef = useRef<HTMLVideoElement>(null);
   const scannerRef = useRef<BarcodeScanner | null>(null);
   const [isActive, setIsActive] = useState(false);
@@ -27,6 +29,8 @@ const Scanner: React.FC<ScannerProps> = ({ onResult, onError, initialMirrorMode 
   const { toast } = useToast();
 
   useEffect(() => {
+    if (deviceMode === 'pc') return; // Don't initialize camera on PC mode
+
     scannerRef.current = new BarcodeScanner();
     
     // Auto-start scanning when component mounts
@@ -46,7 +50,23 @@ const Scanner: React.FC<ScannerProps> = ({ onResult, onError, initialMirrorMode 
         videoRef.current.srcObject = null;
       }
     };
-  }, []);
+  }, [deviceMode]);
+
+  if (deviceMode === 'pc') {
+    return (
+      <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-2xl p-8 flex flex-col items-center justify-center text-center space-y-4">
+        <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center">
+          <Keyboard className="w-8 h-8 text-[#BF953F]" />
+        </div>
+        <div>
+          <h3 className="text-lg font-bold text-gray-900">External Scanner Mode</h3>
+          <p className="text-sm text-gray-500 max-w-[200px] mx-auto">
+            Camera is disabled. Please use your connected USB or Bluetooth scanner.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

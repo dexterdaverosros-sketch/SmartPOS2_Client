@@ -16,6 +16,7 @@ import {
   BarcodeFormat 
 } from '@zxing/library';
 import api from '@/lib/api';
+import { useDevices } from '@/contexts/DeviceContext';
 
 // Product interface
 interface Product {
@@ -29,6 +30,7 @@ interface Product {
 }
 
 const CustomerScan: React.FC = () => {
+  const { deviceMode } = useDevices();
   const [, setLocation] = useLocation();
   const [darkMode, setDarkMode] = useState(() => {
     // Check if user prefers dark mode
@@ -326,49 +328,65 @@ const CustomerScan: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="flex flex-col items-center justify-center space-y-6">
-              <div className="w-full max-w-sm flex bg-gray-100 dark:bg-gray-800 p-1 rounded-xl">
-                <button 
-                  onClick={() => setUseLiveScanner(false)}
-                  className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${!useLiveScanner ? 'bg-white dark:bg-gray-700 shadow-sm text-primary' : 'text-gray-500'}`}
-                >
-                  Take Photo
-                </button>
-                <button 
-                  onClick={() => setUseLiveScanner(true)}
-                  className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${useLiveScanner ? 'bg-white dark:bg-gray-700 shadow-sm text-primary' : 'text-gray-500'}`}
-                >
-                  Live Scan
-                </button>
-              </div>
+              {deviceMode !== 'pc' ? (
+                <>
+                  <div className="w-full max-w-sm flex bg-gray-100 dark:bg-gray-800 p-1 rounded-xl">
+                    <button 
+                      onClick={() => setUseLiveScanner(false)}
+                      className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${!useLiveScanner ? 'bg-white dark:bg-gray-700 shadow-sm text-primary' : 'text-gray-500'}`}
+                    >
+                      Take Photo
+                    </button>
+                    <button 
+                      onClick={() => setUseLiveScanner(true)}
+                      className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${useLiveScanner ? 'bg-white dark:bg-gray-700 shadow-sm text-primary' : 'text-gray-500'}`}
+                    >
+                      Live Scan
+                    </button>
+                  </div>
 
-              {useLiveScanner ? (
-                <div className="w-full max-w-sm aspect-video bg-black rounded-3xl overflow-hidden border-2 border-primary/20 shadow-xl">
-                  <Scanner 
-                    onResult={handleScanResult}
-                    onError={handleScanError}
-                  />
-                </div>
+                  {useLiveScanner ? (
+                    <div className="w-full max-w-sm aspect-video bg-black rounded-3xl overflow-hidden border-2 border-primary/20 shadow-xl">
+                      <Scanner 
+                        onResult={handleScanResult}
+                        onError={handleScanError}
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-full aspect-square max-w-sm bg-gray-100 dark:bg-gray-800 rounded-3xl border-2 border-dashed border-gray-300 dark:border-gray-700 flex flex-col items-center justify-center p-8 text-center space-y-4">
+                      <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center">
+                        <Camera className="w-10 h-10 text-primary" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Scan Product Barcode</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">Use your device's native camera to scan a product barcode</p>
+                      </div>
+                      <label className="w-full cursor-pointer">
+                        <Input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          onChange={handleImageCapture}
+                          className="hidden"
+                        />
+                        <div className="w-full py-4 bg-primary text-primary-foreground rounded-2xl font-bold uppercase tracking-widest shadow-lg active:scale-95 transition-all text-center">
+                          Open Camera
+                        </div>
+                      </label>
+                    </div>
+                  )}
+                </>
               ) : (
-                <div className="w-full aspect-square max-w-sm bg-gray-100 dark:bg-gray-800 rounded-3xl border-2 border-dashed border-gray-300 dark:border-gray-700 flex flex-col items-center justify-center p-8 text-center space-y-4">
-                  <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center">
-                    <Camera className="w-10 h-10 text-primary" />
+                <div className="w-full aspect-video max-w-sm bg-gray-50 dark:bg-gray-800 rounded-3xl border-2 border-dashed border-gray-200 dark:border-gray-700 flex flex-col items-center justify-center p-8 text-center space-y-4">
+                  <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center">
+                    <Monitor className="w-8 h-8 text-[#BF953F]" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Scan Product Barcode</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Use your device's native camera to scan a product barcode</p>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">External Scanner Ready</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Please use your connected barcode scanner or enter the barcode below.
+                    </p>
                   </div>
-                  <label className="w-full cursor-pointer">
-                    <Input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      onChange={handleImageCapture}
-                      className="hidden"
-                    />
-                    <div className="w-full py-4 bg-primary text-primary-foreground rounded-2xl font-bold uppercase tracking-widest shadow-lg active:scale-95 transition-all text-center">
-                      Open Camera
-                    </div>
-                  </label>
                 </div>
               )}
 

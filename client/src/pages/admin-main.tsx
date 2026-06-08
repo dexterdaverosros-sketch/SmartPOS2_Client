@@ -5,6 +5,7 @@ import { LogOut, DollarSign, Package, Plus, Eye, Calendar, CreditCard, Receipt, 
 import Layout from '@/components/Layout';
 import FloatingActionButton from '@/components/FloatingActionButton';
 import { useAuth } from '@/contexts/AuthContext';
+import { useDevices } from '@/contexts/DeviceContext';
 import {
     SalesService, ProductService, ExpenseService, PurchaseService, CreditorService, NotificationService, RemittanceService, db
 } from '@/lib/db';
@@ -77,6 +78,7 @@ interface Creditor {
 
 const AdminMain: React.FC = () => {
   const { user, logout, socket } = useAuth();
+  const { deviceMode } = useDevices();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [stats, setStats] = useState({
@@ -654,28 +656,34 @@ const AdminMain: React.FC = () => {
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="min-h-screen bg-background"
+        className={cn(
+          "min-h-screen bg-background",
+          deviceMode === 'mobile' ? "px-0" : ""
+        )}
       >
         {/* Header */}
         <div className="bg-white/80 backdrop-blur-md sticky top-0 z-50 border-b border-gray-100/50">
-          <div className="max-w-7xl mx-auto flex items-center justify-between p-6">
+          <div className={cn(
+            "max-w-7xl mx-auto flex items-center justify-between",
+            deviceMode === 'mobile' ? "p-4" : "p-6"
+          )}>
             <div className="flex flex-col">
-              <h1 className="text-2xl font-black tracking-tighter gold-gradient-text uppercase">SmartPOS+</h1>
-              <div className="text-[10px] font-bold tracking-[0.2em] text-gray-400 mt-1 uppercase">
-                {currentDateTime.toLocaleDateString('en-US', {month: 'long', day: '2-digit', year: 'numeric'})} • {currentDateTime.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit', hour12: true})}
+              <h1 className="text-xl md:text-2xl font-black tracking-tighter gold-gradient-text uppercase">SmartPOS+</h1>
+              <div className="text-[8px] md:text-[10px] font-bold tracking-[0.2em] text-gray-400 mt-1 uppercase">
+                {currentDateTime.toLocaleDateString('en-US', {month: 'short', day: '2-digit'})} • {currentDateTime.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit', hour12: true})}
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 md:gap-3">
               <div className="relative">
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="w-12 h-12 rounded-2xl bg-white border border-gray-100 shadow-sm relative group"
+                  className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-white border border-gray-100 shadow-sm relative group"
                   onClick={() => setShowNotifications(true)}
                 >
-                  <Bell className="w-5 h-5 text-gray-400 group-hover:text-[#BF953F] transition-colors" />
+                  <Bell className="w-4 h-4 md:w-5 md:h-5 text-gray-400 group-hover:text-[#BF953F] transition-colors" />
                   {unreadCount > 0 && (
-                    <span className="absolute top-2 right-2 w-4 h-4 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white">
+                    <span className="absolute top-1 right-1 w-3.5 h-3.5 bg-red-500 text-white text-[8px] font-black rounded-full flex items-center justify-center border-2 border-white">
                       {unreadCount}
                     </span>
                   )}
@@ -683,13 +691,13 @@ const AdminMain: React.FC = () => {
               </div>
 
               <DropdownMenu>
-                <DropdownMenuTrigger className="flex items-center gap-3 bg-white p-1.5 pr-4 rounded-full border border-gray-100 shadow-sm hover:shadow-md transition-all focus:outline-none group">
-                  <div className="w-10 h-10 bg-gradient-to-br from-[#BF953F] to-[#B38728] rounded-full flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform">
-                    <User className="w-5 h-5 text-white" />
+                <DropdownMenuTrigger className="flex items-center gap-2 md:gap-3 bg-white p-1 pr-3 md:p-1.5 md:pr-4 rounded-full border border-gray-100 shadow-sm hover:shadow-md transition-all focus:outline-none group">
+                  <div className="w-8 h-8 md:w-10 md:h-10 bg-gradient-to-br from-[#BF953F] to-[#B38728] rounded-full flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform">
+                    <User className="w-4 h-4 md:w-5 md:h-5 text-white" />
                   </div>
-                  <div className="flex flex-col items-start">
-                    <span className="text-xs font-bold text-gray-800 uppercase tracking-wider">Administrator</span>
-                    <span className="text-[10px] text-gray-400 font-medium">Control Center</span>
+                  <div className="hidden sm:flex flex-col items-start">
+                    <span className="text-[10px] md:text-xs font-bold text-gray-800 uppercase tracking-wider">Admin</span>
+                    <span className="text-[8px] md:text-[10px] text-gray-400 font-medium">Control Center</span>
                   </div>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent side="bottom" align="end" sideOffset={10} className="w-56 bg-white border border-gray-100 shadow-2xl rounded-2xl overflow-hidden z-50 p-2">
@@ -709,18 +717,24 @@ const AdminMain: React.FC = () => {
           </div>
         </div>
 
-        <div className="max-w-7xl mx-auto p-6 space-y-8 pb-32">
+        <div className={cn(
+          "max-w-7xl mx-auto space-y-6 md:space-y-8 pb-32",
+          deviceMode === 'mobile' ? "p-4" : "p-6"
+        )}>
           {/* Welcome Header Section */}
           <motion.div
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            className="relative overflow-hidden bg-white p-10 rounded-[3rem] border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.03)]"
+            className={cn(
+              "relative overflow-hidden bg-white border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.03)]",
+              deviceMode === 'mobile' ? "p-6 rounded-[2rem]" : "p-10 rounded-[3rem]"
+            )}
           >
             <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-[#BF953F]/10 to-transparent rounded-full -mr-20 -mt-20 blur-3xl"></div>
             <div className="absolute bottom-0 left-0 w-64 h-64 bg-gradient-to-tr from-[#BF953F]/5 to-transparent rounded-full -ml-20 -mb-20 blur-3xl"></div>
 
-            <div className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
-              <div>
+            <div className="relative z-10 flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+              <div className="flex-1">
                 <motion.div
                   initial={{ x: -20, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
@@ -730,33 +744,33 @@ const AdminMain: React.FC = () => {
                   <div className="w-1.5 h-1.5 rounded-full bg-[#BF953F] animate-pulse"></div>
                   <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#BF953F]">Active Dashboard</span>
                 </motion.div>
-                <h1 className="text-5xl font-black text-gray-900 tracking-tighter leading-[0.9]">
+                <h1 className="text-3xl md:text-5xl font-black text-gray-900 tracking-tighter leading-tight">
                   Welcome back, <br />
                   <span className="gold-gradient-text">{user?.ownerName || user?.username || 'Commander'}</span>
                 </h1>
               </div>
 
-              <div className="text-right flex flex-col items-end">
-                <div className="flex gap-3 mb-4">
+              <div className="flex flex-col items-start lg:items-end w-full lg:w-auto">
+                <div className="flex flex-wrap gap-2 mb-4 w-full justify-start lg:justify-end">
                   <motion.button
                     whileTap={{ scale: 0.95 }}
                     onClick={() => setLocation('/admin/reports')}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-100 shadow-sm text-xs font-bold uppercase tracking-wider text-gray-700 hover:bg-gray-50 transition-colors"
+                    className="flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 rounded-lg md:rounded-xl bg-white border border-gray-100 shadow-sm text-[10px] md:text-xs font-bold uppercase tracking-wider text-gray-700 hover:bg-gray-50 transition-colors"
                   >
-                    <BarChart3 className="w-4 h-4 text-[#BF953F]" />
+                    <BarChart3 className="w-3.5 h-3.5 md:w-4 md:h-4 text-[#BF953F]" />
                     Summary
                   </motion.button>
                   <motion.button
                     whileTap={{ scale: 0.95 }}
                     onClick={handleExportCSV}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-100 shadow-sm text-xs font-bold uppercase tracking-wider text-gray-700 hover:bg-gray-50 transition-colors"
+                    className="flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 rounded-lg md:rounded-xl bg-white border border-gray-100 shadow-sm text-[10px] md:text-xs font-bold uppercase tracking-wider text-gray-700 hover:bg-gray-50 transition-colors"
                   >
-                    <FileSpreadsheet className="w-4 h-4 text-[#BF953F]" />
+                    <FileSpreadsheet className="w-3.5 h-3.5 md:w-4 md:h-4 text-[#BF953F]" />
                     Export
                   </motion.button>
                 </div>
-                <div className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400 mb-2">Total Gross Income</div>
-                <div className="text-6xl font-black tracking-tighter text-gray-900 leading-none">
+                <div className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400 mb-1">Total Gross Income</div>
+                <div className="text-4xl md:text-6xl font-black tracking-tighter text-gray-900 leading-none">
                   ₱{stats.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               </div>
@@ -764,7 +778,12 @@ const AdminMain: React.FC = () => {
           </motion.div>
 
           {/* Quick Stats Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className={cn(
+            "grid gap-4 md:gap-6",
+            deviceMode === 'pc' ? "grid-cols-4" : 
+            deviceMode === 'tablet' ? "grid-cols-2" : 
+            "grid-cols-1 sm:grid-cols-2"
+          )}>
             <motion.div
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
