@@ -912,6 +912,10 @@ export const dbService = {
     return salesWithItems;
   },
 
+  getProductById: (id: string) => {
+    return db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+  },
+
   getAllVariants: () => {
      return db.prepare('SELECT * FROM variants').all();
   },
@@ -938,8 +942,12 @@ export const dbService = {
             v.createdAt || v.created_at || new Date().toISOString(),
             v.updatedAt || v.updated_at || new Date().toISOString()
           );
-        } catch (e) {
-          console.error('Failed to upsert variant', v?.id, e);
+        } catch (e: any) {
+          if (e.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
+            console.warn(`Skipping variant ${v?.id} due to missing product_id: ${v.productId || v.product_id}`);
+          } else {
+            console.error('Failed to upsert variant', v?.id, e);
+          }
         }
       }
     });

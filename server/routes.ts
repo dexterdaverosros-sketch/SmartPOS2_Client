@@ -611,11 +611,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/variants', (req: Request, res: Response) => {
     try {
       const variants = req.body;
-      if (Array.isArray(variants)) {
-        dbService.saveVariants(variants);
-        res.status(200).json({ message: 'Variants updated successfully' });
+      if (!Array.isArray(variants)) {
+        return res.status(400).json({ error: 'Invalid variants data: expected an array' });
+      }
+
+      // Filter out variants that don't have a corresponding product
+      const validVariants = variants.filter((v: any) => {
+        if (!v.productId && !v.product_id) {
+          console.warn(`Variant ${v.id} skipped: missing productId`);
+          return false;
+        }
+        const productId = v.productId || v.product_id;
+        const productExists = dbService.getProductById(productId);
+        if (!productExists) {
+          console.warn(`Variant ${v.id} skipped: product with ID ${productId} does not exist`);
+          return false;
+        }
+        return true;
+      });
+
+      if (validVariants.length > 0) {
+        dbService.saveVariants(validVariants);
+        res.status(200).json({ message: `Successfully updated ${validVariants.length} variants` });
       } else {
-        res.status(400).json({ error: 'Invalid variants data' });
+        res.status(200).json({ message: 'No valid variants to update' });
       }
     } catch (error) {
       console.error('Error updating variants:', error);
