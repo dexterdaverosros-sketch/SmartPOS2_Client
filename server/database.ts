@@ -331,38 +331,38 @@ export const dbService = {
     migrate();
 
     // Sync from Cloud (Supabase) if available to restore from backup
-    if (useCloud()) {
-      console.log('Checking for Cloud Backup in Supabase...');
-      const supabase = getSupabase();
-      if (supabase) {
-        try {
-          // Restore Products
-          const { data: cloudProducts } = await supabase.from('products').select('*');
-          if (cloudProducts && cloudProducts.length > 0) {
-            dbService.saveProducts(cloudProducts);
-            console.log(`Restored ${cloudProducts.length} products from Cloud.`);
-          }
+    // if (useCloud()) {
+    //   console.log('Checking for Cloud Backup in Supabase...');
+    //   const supabase = getSupabase();
+    //   if (supabase) {
+    //     try {
+    //       // Restore Products
+    //       const { data: cloudProducts } = await supabase.from('products').select('*');
+    //       if (cloudProducts && cloudProducts.length > 0) {
+    //         dbService.saveProducts(cloudProducts);
+    //         console.log(`Restored ${cloudProducts.length} products from Cloud.`);
+    //       }
           
-          // Restore Staff
-          const { data: cloudStaff } = await supabase.from('staff').select('*');
-          if (cloudStaff && cloudStaff.length > 0) {
-            dbService.saveStaff(cloudStaff);
-            console.log(`Restored ${cloudStaff.length} staff from Cloud.`);
-          }
+    //       // Restore Staff
+    //       const { data: cloudStaff } = await supabase.from('staff').select('*');
+    //       if (cloudStaff && cloudStaff.length > 0) {
+    //         dbService.saveStaff(cloudStaff);
+    //         console.log(`Restored ${cloudStaff.length} staff from Cloud.`);
+    //       }
 
-          // Restore Admins/Users
-          const { data: cloudUsers } = await supabase.from('users').select('*');
-          if (cloudUsers && cloudUsers.length > 0) {
-            for (const user of cloudUsers) {
-              dbService.saveAdmin(user);
-            }
-            console.log(`Restored ${cloudUsers.length} admin accounts from Cloud.`);
-          }
-        } catch (e) {
-          console.warn('Could not restore from Cloud backup (check table existence):', e);
-        }
-      }
-    }
+    //       // Restore Admins/Users
+    //       const { data: cloudUsers } = await supabase.from('users').select('*');
+    //       if (cloudUsers && cloudUsers.length > 0) {
+    //         for (const user of cloudUsers) {
+    //           dbService.saveAdmin(user);
+    //         }
+    //         console.log(`Restored ${cloudUsers.length} admin accounts from Cloud.`);
+    //       }
+    //     } catch (e) {
+    //       console.warn('Could not restore from Cloud backup (check table existence):', e);
+    //     }
+    //   }
+    // }
   },
   // Ledger: Customers
   createCustomer: (input: { id: string; name: string; phone: string; address?: string | null; credit_rating: 'good'|'bad'; photo_url?: string | null; }) => {
@@ -530,15 +530,15 @@ export const dbService = {
     stmt.run(user.id, user.username, user.password, user.role, user.businessName, user.ownerName, user.mobile, user.createdAt);
     
     // Sync to Cloud (Supabase) if available
-    if (useCloud()) {
-      const supabase = getSupabase();
-      if (supabase) {
-        supabase.from('users').upsert(user).then(({ error }) => {
-          if (error) console.error('Cloud admin sync error:', error);
-          else console.log('Cloud admin sync: 1 admin updated.');
-        });
-      }
-    }
+    // if (useCloud()) {
+    //   const supabase = getSupabase();
+    //   if (supabase) {
+    //     supabase.from('users').upsert(user).then(({ error }) => {
+    //       if (error) console.error('Cloud admin sync error:', error);
+    //       else console.log('Cloud admin sync: 1 admin updated.');
+    //     });
+    //   }
+    // }
     return user;
   },
 
@@ -559,22 +559,22 @@ export const dbService = {
     );
 
     // Sync to Cloud (Supabase) if available
-    if (useCloud()) {
-      const supabase = getSupabase();
-      if (supabase) {
-        supabase.from('users').update({
-          security_question_1: questions[0],
-          security_answer_1: hashedAnswers[0],
-          security_question_2: questions[1],
-          security_answer_2: hashedAnswers[1],
-          security_question_3: questions[2],
-          security_answer_3: hashedAnswers[2],
-        }).eq('id', userId).then(({ error }) => {
-          if (error) console.error('Cloud security questions sync error:', error);
-          else console.log('Cloud security questions sync: 1 user updated.');
-        });
-      }
-    }
+    // if (useCloud()) {
+    //   const supabase = getSupabase();
+    //   if (supabase) {
+    //     supabase.from('users').update({
+    //       security_question_1: questions[0],
+    //       security_answer_1: hashedAnswers[0],
+    //       security_question_2: questions[1],
+    //       security_answer_2: hashedAnswers[1],
+    //       security_question_3: questions[2],
+    //       security_answer_3: hashedAnswers[2],
+    //     }).eq('id', userId).then(({ error }) => {
+    //       if (error) console.error('Cloud security questions sync error:', error);
+    //       else console.log('Cloud security questions sync: 1 user updated.');
+    //     });
+    //   }
+    // }
   },
 
   getUserByUsername: (username: string) => {
@@ -594,15 +594,15 @@ export const dbService = {
     stmt.run(newPasswordHash, username);
 
     // Sync to Cloud (Supabase) if available
-    if (useCloud()) {
-      const supabase = getSupabase();
-      if (supabase) {
-        supabase.from('users').update({ password: newPasswordHash }).eq('username', username).then(({ error }) => {
-          if (error) console.error('Cloud password update sync error:', error);
-          else console.log('Cloud password update sync: 1 user updated.');
-        });
-      }
-    }
+    // if (useCloud()) {
+    //   const supabase = getSupabase();
+    //   if (supabase) {
+    //     supabase.from('users').update({ password: newPasswordHash }).eq('username', username).then(({ error }) => {
+    //       if (error) console.error('Cloud password update sync error:', error);
+    //       else console.log('Cloud password update sync: 1 user updated.');
+    //     });
+    //   }
+    // }
   },
 
   recordFailedLoginAttempt: (username: string) => {
@@ -698,28 +698,28 @@ export const dbService = {
     
     insertMany(products);
 
-    // Mirror to Cloud (Supabase) if available
-    if (useCloud()) {
-      const supabase = getSupabase();
-      if (supabase) {
-        const cloudProducts = products.map(p => ({
-          id: String(p.id),
-          name: String(p.name || ''),
-          price: Number(p.price || 0),
-          category: p.category || 'general',
-          description: p.description || null,
-          image: p.image || null,
-          barcode: String(p.barcode || ''),
-          barcode_data: p.barcodeData || p.barcode_data || null,
-          created_at: p.createdAt || new Date().toISOString(),
-          updated_at: p.updatedAt || new Date().toISOString()
-        }));
-        supabase.from('non_inventory_products').upsert(cloudProducts, { onConflict: 'id' }).then(({ error }) => {
-          if (error) console.error('Cloud non-inventory product sync error:', error);
-          else console.log(`Cloud non-inventory product sync: ${cloudProducts.length} items updated.`);
-        });
-      }
-    }
+    // // Mirror to Cloud (Supabase) if available
+    // if (useCloud()) {
+    //   const supabase = getSupabase();
+    //   if (supabase) {
+    //     const cloudProducts = products.map(p => ({
+    //       id: String(p.id),
+    //       name: String(p.name || ''),
+    //       price: Number(p.price || 0),
+    //       category: p.category || 'general',
+    //       description: p.description || null,
+    //       image: p.image || null,
+    //       barcode: String(p.barcode || ''),
+    //       barcode_data: p.barcodeData || p.barcode_data || null,
+    //       created_at: p.createdAt || new Date().toISOString(),
+    //       updated_at: p.updatedAt || new Date().toISOString()
+    //     }));
+    //     supabase.from('non_inventory_products').upsert(cloudProducts, { onConflict: 'id' }).then(({ error }) => {
+    //       if (error) console.error('Cloud non-inventory product sync error:', error);
+    //       else console.log(`Cloud non-inventory product sync: ${cloudProducts.length} items updated.`);
+    //     });
+    //   }
+    // }
 
     return products;
   },
@@ -795,31 +795,31 @@ export const dbService = {
     
     insertMany(products);
     
-    // Mirror to Cloud (Supabase) if available
-    if (useCloud()) {
-      const supabase = getSupabase();
-      if (supabase) {
-        // Map to snake_case for Supabase
-        const cloudProducts = products.map(p => ({
-          id: String(p.id),
-          name: String(p.name || ''),
-          price: Number(p.price || 0),
-          cost: Number(p.cost || 0),
-          barcode: String(p.barcode || ''),
-          category: p.category ?? null,
-          image: p.image ?? null,
-          quantity: Number(p.quantity || 0),
-          created_at: p.createdAt ?? new Date().toISOString(),
-          updated_at: p.updatedAt ?? new Date().toISOString()
-        }));
-        
-        // Upsert to Supabase
-        supabase.from('products').upsert(cloudProducts, { onConflict: 'id' }).then(({ error }) => {
-          if (error) console.error('Cloud product sync error:', error);
-          else console.log(`Cloud product sync: ${cloudProducts.length} products updated.`);
-        });
-      }
-    }
+    // // Mirror to Cloud (Supabase) if available
+    // if (useCloud()) {
+    //   const supabase = getSupabase();
+    //   if (supabase) {
+    //     // Map to snake_case for Supabase
+    //     const cloudProducts = products.map(p => ({
+    //       id: String(p.id),
+    //       name: String(p.name || ''),
+    //       price: Number(p.price || 0),
+    //       cost: Number(p.cost || 0),
+    //       barcode: String(p.barcode || ''),
+    //       category: p.category ?? null,
+    //       image: p.image ?? null,
+    //       quantity: Number(p.quantity || 0),
+    //       created_at: p.createdAt ?? new Date().toISOString(),
+    //       updated_at: p.updatedAt ?? new Date().toISOString()
+    //     }));
+    //     
+    //     // Upsert to Supabase
+    //     supabase.from('products').upsert(cloudProducts, { onConflict: 'id' }).then(({ error }) => {
+    //       if (error) console.error('Cloud product sync error:', error);
+    //       else console.log(`Cloud product sync: ${cloudProducts.length} products updated.`);
+    //     });
+    //   }
+    // }
     
     return products;
   },
@@ -979,25 +979,25 @@ export const dbService = {
     insertMany(staff);
 
     // Mirror to Cloud (Supabase) if available
-    if (useCloud()) {
-      const supabase = getSupabase();
-      if (supabase) {
-        // Map to snake_case for Supabase
-        const cloudStaff = staff.map(m => ({
-          id: String(m.id),
-          name: String(m.name || ''),
-          staff_id: String(m.staffId || ''),
-          passhash: String(m.passkey || ''),
-          created_by: m.createdBy ?? null,
-          created_at: m.createdAt ?? new Date().toISOString()
-        }));
-        
-        supabase.from('staff').upsert(cloudStaff, { onConflict: 'id' }).then(({ error }) => {
-          if (error) console.error('Cloud staff sync error:', error);
-          else console.log(`Cloud staff sync: ${cloudStaff.length} staff updated.`);
-        });
-      }
-    }
+    // if (useCloud()) {
+    //   const supabase = getSupabase();
+    //   if (supabase) {
+    //     // Map to snake_case for Supabase
+    //     const cloudStaff = staff.map(m => ({
+    //       id: String(m.id),
+    //       name: String(m.name || ''),
+    //       staff_id: String(m.staffId || ''),
+    //       passhash: String(m.passkey || ''),
+    //       created_by: m.createdBy ?? null,
+    //       created_at: m.createdAt ?? new Date().toISOString()
+    //     }));
+    //     
+    //     supabase.from('staff').upsert(cloudStaff, { onConflict: 'id' }).then(({ error }) => {
+    //       if (error) console.error('Cloud staff sync error:', error);
+    //       else console.log(`Cloud staff sync: ${cloudStaff.length} staff updated.`);
+    //     });
+    //   }
+    // }
 
     return staff;
   },
@@ -1109,19 +1109,19 @@ export const dbService = {
       `).run(remittance.staff_id, remittance.staff_id); 
 
       // NEW: Sync Inventory with Cloud (Supabase) if configured
-      if (useCloud()) {
-        const supabase = getSupabase();
-        if (supabase) {
-          // Get all products to sync current local state to cloud
-          const products = db.prepare('SELECT * FROM products').all();
-          if (products && products.length > 0) {
-            supabase.from('products').upsert(products).then(({ error }) => {
-              if (error) console.error('Cloud inventory sync error on remit:', error);
-              else console.log(`Cloud inventory sync on remit: ${products.length} products synced.`);
-            });
-          }
-        }
-      }
+      // if (useCloud()) {
+      //   const supabase = getSupabase();
+      //   if (supabase) {
+      //     // Get all products to sync current local state to cloud
+      //     const products = db.prepare('SELECT * FROM products').all();
+      //     if (products && products.length > 0) {
+      //       supabase.from('products').upsert(products).then(({ error }) => {
+      //         if (error) console.error('Cloud inventory sync error on remit:', error);
+      //         else console.log(`Cloud inventory sync on remit: ${products.length} products synced.`);
+      //       });
+      //     }
+      //   }
+      // }
 
       return remittance;
     })();
