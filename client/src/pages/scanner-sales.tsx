@@ -30,7 +30,7 @@ const ScannerSales: React.FC = () => {
   const [, setLocation] = useLocation();
   const { user, isAdmin, isStaff, logout, socket } = useAuth();
   const { cart, addToCart, removeFromCart, updateCartItem, clearCart, getCartTotal } = useApp();
-  const { connectedDevices, printToThermalPrinter } = useDevices();
+  const { deviceMode, connectedDevices, printToThermalPrinter } = useDevices();
   const { toast } = useToast();
   const dragControls = useDragControls();
   
