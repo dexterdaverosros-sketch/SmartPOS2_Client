@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLocation } from 'wouter';
-import { LogOut, DollarSign, Package, Plus, Eye, Calendar, CreditCard, Receipt, User, FileText, Lock, FileSpreadsheet, BarChart3, Bell, CheckCircle, Clock, ArrowRight } from 'lucide-react';
+import { LogOut, DollarSign, Package, Plus, Eye, Calendar, CreditCard, Receipt, User, FileText, Lock, FileSpreadsheet, BarChart3, Bell, CheckCircle, Clock, ArrowRight, Monitor, Tablet, Smartphone } from 'lucide-react';
 import Layout from '@/components/Layout';
 import FloatingActionButton from '@/components/FloatingActionButton';
 import { useAuth } from '@/contexts/AuthContext';
@@ -10,6 +10,7 @@ import {
     SalesService, ProductService, ExpenseService, PurchaseService, CreditorService, NotificationService, RemittanceService, db
 } from '@/lib/db';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
