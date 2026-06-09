@@ -1633,16 +1633,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
-        messages: [
-          { 
-            role: "system", 
-            content: "You are an expert developer assistant for SmartPOS+, a multi-tenant POS ecosystem. You help developers analyze system health, store activity, and infrastructure metrics. Keep responses concise and professional." 
-          },
-          { role: "user", content: query }
-        ],
-        max_tokens: 500
-      });
+         model: "gpt-4o",
+         messages: [
+           { 
+             role: "system", 
+             content: "You are an expert developer assistant for SmartPOS+, a multi-tenant POS ecosystem. You help developers analyze system health, store activity, and infrastructure metrics. Keep responses concise and professional." 
+           },
+           { role: "user", content: query }
+         ],
+         max_tokens: 500
+       });
 
       res.json({ response: completion.choices[0].message?.content || "No response generated" });
     } catch (e: any) {
