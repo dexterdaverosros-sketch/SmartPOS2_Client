@@ -12,6 +12,11 @@ import fs from "fs";
 import bcrypt from "bcryptjs";
 import { getSupabase } from "./supabase";
 import { DeveloperService } from "./developer-service";
+import OpenAI from 'openai';
+
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+}) : null;
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize database schema for products and staff
@@ -1614,15 +1619,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/developer/ai-assistant/query', authenticateDev, async (req, res) => {
     try {
       const { query } = req.body;
-      let response = "I'm analyzing the ecosystem data...";
-      if (query.toLowerCase().includes('storage')) {
-        response = "ABC Store currently consumes 1.8GB, which is 34% of total ecosystem storage. Growth trend suggests they might reach 5GB in 2.4 months.";
-      } else if (query.toLowerCase().includes('inactive')) {
-        response = "There are 5 stores that have been inactive for more than 30 days. Would you like me to generate a summary of these accounts?";
+      
+      if (!openai) {
+        let response = "I'm analyzing the ecosystem data...";
+        if (query.toLowerCase().includes('storage')) {
+          response = "ABC Store currently consumes 1.8GB, which is 34% of total ecosystem storage. Growth trend suggests they might reach 5GB in 2.4 months.";
+        } else if (query.toLowerCase().includes('inactive')) {
+          response = "There are 5 stores that have been inactive for more than 30 days. Would you like me to generate a summary of these accounts?";
+        } else {
+          response = "AI Assistant is currently in simulation mode. Please ensure OPENAI_API_KEY is correctly set in your .env file to enable full capabilities.";
+        }
+        return res.json({ response });
       }
-      res.json({ response });
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [
+          { 
+            role: "system", 
+            content: "You are an expert developer assistant for SmartPOS+, a multi-tenant POS ecosystem. You help developers analyze system health, store activity, and infrastructure metrics. Keep responses concise and professional." 
+          },
+          { role: "user", content: query }
+        ],
+        max_tokens: 500
+      });
+
+      res.json({ response: completion.choices[0].message?.content || "No response generated" });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      console.error('AI Assistant Error:', e);
+      res.status(500).json({ error: e.message || "Failed to query AI Assistant" });
     }
   });
 
