@@ -11,6 +11,7 @@ import path from "path";
 import fs from "fs";
 import bcrypt from "bcryptjs";
 import { getSupabase } from "./supabase";
+import { DeveloperService } from "./developer-service";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize database schema for products and staff
@@ -254,19 +255,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const authenticateUser = (req: Request, res: Response, next: NextFunction) => {
     const authHeader = req.headers.authorization;
+    console.log('Server Auth: Received Authorization header:', authHeader);
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.warn('Server Auth: No valid Authorization header provided.');
       return res.status(401).json({ error: 'Authentication required: No token provided' });
     }
 
     const token = authHeader.split(' ')[1];
+    console.log('Server Auth: Extracted token:', token);
     const session = dbService.getSessionByToken(token) as any;
 
     if (!session) {
+      console.warn('Server Auth: Invalid session for token:', token);
       return res.status(401).json({ error: 'Authentication required: Invalid session' });
     }
 
     // Update activity
     dbService.updateSessionActivity(token);
+    console.log('Server Auth: Session valid, user ID:', session.user_id);
 
     // Attach user ID to request for downstream use
     (req as any).userId = session.user_id;
@@ -452,9 +458,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/sales-history', (req: Request, res: Response) => {
+  app.get('/api/sales-history', async (req: Request, res: Response) => {
     try {
-      const salesHistory = dbService.getAllSalesWithStaff();
+      const salesHistory = await dbService.getAllSalesWithStaff();
       res.status(200).json(salesHistory);
     } catch (error) {
       console.error('Error fetching sales history:', error);
@@ -1544,6 +1550,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: 'Failed to mark notification as read' });
+    }
+  });
+
+  // ==========================================
+  // DEVELOPER MODE ROUTES
+  // ==========================================
+
+  const authenticateDev = (req: Request, res: Response, next: NextFunction) => {
+    // Check for developer flag in session or custom header
+    // In production, this should check a secure token or Supabase session
+    const isDev = req.headers['x-developer-auth'] === 'true';
+    if (!isDev) return res.status(403).json({ error: 'Unauthorized developer access' });
+    next();
+  };
+
+  app.get('/api/developer/dashboard-stats', authenticateDev, async (req, res) => {
+    try {
+      const stats = await DeveloperService.getDashboardStats();
+      res.json(stats);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/developer/clients', authenticateDev, async (req, res) => {
+    try {
+      const clients = await DeveloperService.listClients(req.query);
+      res.json(clients);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/developer/activity-feed', authenticateDev, async (req, res) => {
+    try {
+      const feed = await DeveloperService.getActivityFeed(req.query);
+      res.json(feed);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/developer/feature-flags', authenticateDev, async (req, res) => {
+    try {
+      const flags = await DeveloperService.getFeatureFlags();
+      res.json(flags);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/developer/feature-flags/:id/toggle', authenticateDev, async (req, res) => {
+    try {
+      const { enabled } = req.body;
+      await DeveloperService.updateFeatureFlag(req.params.id, enabled);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/developer/ai-assistant/query', authenticateDev, async (req, res) => {
+    try {
+      const { query } = req.body;
+      let response = "I'm analyzing the ecosystem data...";
+      if (query.toLowerCase().includes('storage')) {
+        response = "ABC Store currently consumes 1.8GB, which is 34% of total ecosystem storage. Growth trend suggests they might reach 5GB in 2.4 months.";
+      } else if (query.toLowerCase().includes('inactive')) {
+        response = "There are 5 stores that have been inactive for more than 30 days. Would you like me to generate a summary of these accounts?";
+      }
+      res.json({ response });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 

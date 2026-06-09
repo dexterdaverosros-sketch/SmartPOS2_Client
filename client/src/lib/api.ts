@@ -15,6 +15,9 @@ const getHeaders = () => {
   };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+    console.log('API: Adding Authorization header with token:', token);
+  } else {
+    console.log('API: No token found in localStorage, Authorization header not added.');
   }
   return headers;
 };

@@ -32,7 +32,6 @@ import ExpenseReport from "@/pages/expense-report";
 import ScannerSales from "@/pages/scanner-sales";
 import InventoryManagement from "@/pages/inventory-management";
 import ProductDetails from "@/pages/product-details";
-import ProductVariantBlank from "@/pages/product-variant-blank";
 import ProductVariantAdd from "@/pages/product-variant-add";
 import ProductVariantEdit from "@/pages/product-variant-edit";
 import StaffManagement from "@/pages/staff-management";
@@ -44,7 +43,8 @@ import SecurityQuestionsPage from "@/pages/security-questions";
 import ResetDataPage from "@/pages/reset-data";
 import CustomerScan from "@/pages/customer-scan";
 import WalletCallback from "@/pages/wallet-callback";
-import ReportBlank from "@/pages/report-blank";
+import DeveloperLogin from "@/pages/developer-login";
+import DeveloperConsole from "@/pages/developer-console";
 import NotFound from "@/pages/not-found";
 import { databaseSyncService } from "@/lib/sync";
 
@@ -75,7 +75,6 @@ function Router() {
       <Route path="/scanner" component={() => <ProtectedRoute component={ScannerSales} />} />
       <Route path="/inventory" component={() => <ProtectedRoute component={InventoryManagement} role="admin" />} />
       <Route path="/inventory/product/:id" component={() => <ProtectedRoute component={ProductDetails} role="admin" />} />
-      <Route path="/inventory/variant/add" component={() => <ProtectedRoute component={ProductVariantBlank} role="admin" />} />
       <Route path="/inventory/product/:id/variant/add" component={() => <ProtectedRoute component={ProductVariantAdd} role="admin" />} />
       <Route path="/inventory/product/:id/variant/edit/:variantId" component={() => <ProtectedRoute component={ProductVariantEdit} role="admin" />} />
       <Route path="/staff" component={() => <ProtectedRoute component={StaffManagement} role="admin" />} />
@@ -87,7 +86,8 @@ function Router() {
       <Route path="/reset-data" component={() => <ProtectedRoute component={ResetDataPage} role="admin" />} />
       <Route path="/customer" component={CustomerScan} />
       <Route path="/wallet-callback" component={WalletCallback} />
-      <Route path="/report-blank" component={() => <ProtectedRoute component={ReportBlank} role="admin" />} />
+      <Route path="/developer-login" component={DeveloperLogin} />
+      <Route path="/developer-console" component={DeveloperConsole} />
       <Route component={NotFound} />
     </Switch>
   );

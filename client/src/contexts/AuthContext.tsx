@@ -83,6 +83,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     if (storedToken) {
       setToken(storedToken);
+      console.log('AuthContext: Found stored token:', storedToken);
       // Verify token with server
       api.get('/api/auth/session')
       .then(data => {
@@ -146,6 +147,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     if (authToken) {
       setToken(authToken);
       localStorage.setItem('smartpos_token', authToken);
+      console.log('AuthContext: Token set in localStorage:', authToken);
     }
   };
 

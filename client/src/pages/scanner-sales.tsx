@@ -1034,6 +1034,33 @@ Thank you for your purchase!
           </DialogContent>
         </Dialog>
 
+        {/* Logout Confirmation Dialog */}
+        <AlertDialog open={showLogoutConfirm} onOpenChange={setShowLogoutConfirm}>
+          <AlertDialogContent className="rounded-[2rem] p-8 border-none shadow-2xl">
+            <AlertDialogHeader>
+              <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mb-4 mx-auto">
+                <LogOut className="w-8 h-8 text-red-500" />
+              </div>
+              <AlertDialogTitle className="text-2xl font-black text-center tracking-tighter uppercase text-slate-900">Confirm Logout</AlertDialogTitle>
+              <AlertDialogDescription className="text-center text-slate-500 font-medium">
+                Are you sure you want to end your shift and logout?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="mt-8 flex gap-3">
+              <AlertDialogCancel className="flex-1 h-14 rounded-2xl border-slate-100 font-black uppercase tracking-widest text-slate-400 hover:bg-slate-50 transition-all">Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={() => {
+                  logout();
+                  setLocation('/role-selection');
+                }}
+                className="flex-1 h-14 rounded-2xl bg-slate-900 text-white font-black uppercase tracking-widest hover:bg-slate-800 shadow-lg shadow-slate-900/20 transition-all"
+              >
+                Logout
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
         {/* Variant Selection Dialog */}
         <Dialog open={isVariantSelectionOpen} onOpenChange={setIsVariantSelectionOpen}>
           <DialogContent className="rounded-[2.5rem] p-8 sm:max-w-[500px]">
@@ -1190,6 +1217,82 @@ Thank you for your purchase!
               >
                 {isProcessing ? 'Finalizing...' : 'Complete Transaction'}
               </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Remittance Dialog */}
+        <Dialog open={isRemitDialogOpen} onOpenChange={setIsRemitDialogOpen}>
+          <DialogContent className="rounded-[2.5rem] p-0 sm:max-w-[600px] overflow-hidden border-none shadow-2xl">
+            <div className="bg-slate-900 p-8 text-white relative">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h2 className="text-3xl font-black tracking-tighter uppercase mb-1">Daily Remittance</h2>
+                  <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em]">Shift Summary & Revenue</p>
+                </div>
+                <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center">
+                  <Send className="w-6 h-6 text-[#BF953F]" />
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
+                  <p className="text-slate-400 text-[9px] font-black uppercase tracking-widest mb-1">Total Revenue</p>
+                  <p className="text-2xl font-black text-[#BF953F]">₱{remitAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                </div>
+                <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
+                  <p className="text-slate-400 text-[9px] font-black uppercase tracking-widest mb-1">Transactions</p>
+                  <p className="text-2xl font-black text-white">{remitTxCount}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-8 bg-white">
+              <div className="mb-6">
+                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-4">Transaction History</h3>
+                <div className="space-y-3 max-h-[30vh] overflow-y-auto pr-2 custom-scrollbar">
+                  {remitTransactions.length > 0 ? (
+                    remitTransactions.map((sale) => (
+                      <div key={sale.id} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100 group hover:bg-white hover:shadow-md transition-all">
+                        <div>
+                          <p className="font-bold text-[11px] text-slate-900 uppercase tracking-tight">
+                            {new Date(sale.createdAt || '').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                            {sale.paymentType}
+                          </p>
+                        </div>
+                        <p className="font-black text-slate-900 text-sm">₱{sale.total.toLocaleString()}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 opacity-40">
+                      <p className="text-[10px] font-black uppercase tracking-widest">No transactions yet</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex gap-4">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setIsRemitDialogOpen(false)}
+                  className="flex-1 h-14 rounded-2xl border-slate-100 font-black uppercase tracking-widest text-slate-400"
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={confirmRemit}
+                  disabled={isRemitting || remitAmount === 0}
+                  className="flex-1 h-14 rounded-2xl bg-slate-900 text-white font-black uppercase tracking-widest shadow-xl shadow-slate-900/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                >
+                  {isRemitting ? 'Processing...' : 'Submit Remit'}
+                </Button>
+              </div>
+              
+              <p className="text-center text-[8px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-6">
+                Once submitted, your daily total will reset and await admin confirmation.
+              </p>
             </div>
           </DialogContent>
         </Dialog>

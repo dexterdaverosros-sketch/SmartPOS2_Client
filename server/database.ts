@@ -625,12 +625,12 @@ export const dbService = {
   },
 
   addSale: (sale: Sale, saleItems: SaleItem[]) => {
-    return db.transaction(() => {
+    const result = db.transaction(() => {
       // Insert sale
       db.prepare(`
         INSERT INTO sales (id, total, paymentType, paymentAmount, staffId, remitted, createdAt)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(sale.id, sale.total, sale.paymentType, sale.paymentAmount, sale.staffId, sale.remitted ? 1 : 0, sale.createdAt?.toISOString());
+      `).run(sale.id, sale.total, sale.paymentType, sale.paymentAmount, sale.staffId, sale.remitted ? 1 : 0, sale.createdAt instanceof Date ? sale.createdAt.toISOString() : String(sale.createdAt));
 
       // Insert sale items and update product/variant quantities
       for (const item of saleItems) {
@@ -651,12 +651,55 @@ export const dbService = {
               const newQuantity = variant.quantity - item.quantity;
               db.prepare('UPDATE variants SET quantity = ?, updated_at = ? WHERE id = ?').run(newQuantity, new Date().toISOString(), variant.id);
             } else {
-              throw new Error(`Product or variant with ID ${item.productId} not found for inventory deduction.`);
+              console.warn(`Product or variant with ID ${item.productId} not found for inventory deduction during sale ${sale.id}.`);
             }
           }
         }
       }
-    });
+    })();
+
+    // Sync to Supabase Cloud if enabled
+    if (useCloud()) {
+      const supabase = getSupabase();
+      if (supabase) {
+        (async () => {
+          try {
+            // Sync Sale
+            const { error: saleError } = await supabase.from('sales').upsert({
+              id: sale.id,
+              total: sale.total,
+              payment_type: sale.paymentType,
+              payment_amount: sale.paymentAmount,
+              staff_id: sale.staffId,
+              remitted: !!sale.remitted,
+              created_at: sale.createdAt instanceof Date ? sale.createdAt.toISOString() : String(sale.createdAt)
+            });
+
+            if (saleError) throw saleError;
+
+            // Sync Sale Items
+            const cloudItems = saleItems.map(item => ({
+              id: item.id,
+              sale_id: item.saleId,
+              product_id: item.productId,
+              quantity: item.quantity,
+              price: item.price,
+              unit: item.unit,
+              product_name: item.productName,
+              is_non_inventory: !!item.isNonInventory
+            }));
+
+            const { error: itemsError } = await supabase.from('sale_items').upsert(cloudItems);
+            if (itemsError) throw itemsError;
+
+            console.log(`Sale ${sale.id} synced to Supabase Cloud.`);
+          } catch (err) {
+            console.error('Failed to sync sale to Supabase:', err);
+          }
+        })();
+      }
+    }
+    return result;
   },
 
   // Non-inventory product methods
@@ -879,8 +922,8 @@ export const dbService = {
     };
   },
 
-  getAllSalesWithStaff: () => {
-    const sales = db.prepare(`
+  getAllSalesWithStaff: async () => {
+    let sales = db.prepare(`
       SELECT
         s.id AS saleId,
         s.total,
@@ -895,20 +938,89 @@ export const dbService = {
       ORDER BY s.createdAt DESC
     `).all() as any[];
 
-    const salesWithItems = sales.map(sale => {
-      const items = db.prepare('SELECT * FROM sale_items WHERE saleId = ?').all(sale.saleId);
+    // If local sales is empty and cloud is available, try fetching from Supabase
+    if (sales.length === 0 && useCloud()) {
+      const supabase = getSupabase();
+      if (supabase) {
+        try {
+          const { data: cloudSales, error: saleError } = await supabase
+            .from('sales')
+            .select(`
+              id,
+              total,
+              payment_type,
+              payment_amount,
+              staff_id,
+              remitted,
+              created_at
+            `)
+            .order('created_at', { ascending: false });
+
+          if (!saleError && cloudSales) {
+            // Also fetch staff names for these sales
+            const { data: cloudStaff } = await supabase.from('staff').select('staff_id, name');
+            const staffMap = new Map((cloudStaff || []).map(s => [s.staff_id, s.name]));
+
+            sales = cloudSales.map(s => ({
+              saleId: s.id,
+              total: s.total,
+              paymentType: s.payment_type,
+              paymentAmount: s.payment_amount,
+              staffId: s.staff_id,
+              remitted: !!s.remitted,
+              createdAt: s.created_at,
+              staffName: staffMap.get(s.staff_id) || 'Staff'
+            }));
+          }
+        } catch (err) {
+          console.error('Failed to fetch sales from Supabase:', err);
+        }
+      }
+    }
+
+    const salesWithItems = await Promise.all(sales.map(async (sale) => {
+      let items = db.prepare('SELECT * FROM sale_items WHERE saleId = ?').all(sale.saleId);
+      
+      // If local items is empty and cloud is available, try fetching from Supabase
+      if (items.length === 0 && useCloud()) {
+        const supabase = getSupabase();
+        if (supabase) {
+          try {
+            const { data: cloudItems } = await supabase
+              .from('sale_items')
+              .select('*')
+              .eq('sale_id', sale.saleId);
+            
+            if (cloudItems) {
+              items = cloudItems.map(it => ({
+                id: it.id,
+                saleId: it.sale_id,
+                productId: it.product_id,
+                quantity: it.quantity,
+                price: it.price,
+                unit: it.unit,
+                productName: it.product_name,
+                isNonInventory: !!it.is_non_inventory
+              }));
+            }
+          } catch (err) {
+            console.error(`Failed to fetch items for sale ${sale.saleId} from Supabase:`, err);
+          }
+        }
+      }
+
       return {
         id: sale.saleId,
         total: sale.total,
         paymentType: sale.paymentType,
         paymentAmount: sale.paymentAmount,
         staffId: sale.staffId,
-        remitted: sale.remitted === 1,
+        remitted: sale.remitted === 1 || sale.remitted === true,
         createdAt: sale.createdAt,
         staffName: sale.staffName,
         items: items
       };
-    });
+    }));
     return salesWithItems;
   },
 
@@ -1034,7 +1146,14 @@ export const dbService = {
   },
 
   getSessionByToken: (token: string) => {
-    return db.prepare('SELECT * FROM sessions WHERE token = ?').get(token);
+    console.log('DB Service: Looking up session for token:', token);
+    const session = db.prepare('SELECT * FROM sessions WHERE token = ?').get(token);
+    if (session) {
+      console.log('DB Service: Session found for token:', token);
+    } else {
+      console.warn('DB Service: No session found for token:', token);
+    }
+    return session;
   },
 
   getUserSessions: (userId: string) => {

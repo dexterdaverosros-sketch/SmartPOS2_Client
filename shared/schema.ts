@@ -152,14 +152,101 @@ export const remittances = sqliteTable("remittances", {
 export const notifications = sqliteTable("notifications", {
   id: text("id").primaryKey(),
   userId: text("user_id"), // recipient, null for all admins
-  type: text("type").notNull(), // 'remittance', 'system_update', 'inventory_alert'
+  type: text("type").notNull(), // 'remittance', 'system_update', 'inventory_alert', 'security', 'storage'
   message: text("message").notNull(),
   data: text("data"), // JSON string for extra payload
   isRead: integer("is_read", { mode: 'boolean' }).default(false),
   createdAt: integer("created_at", { mode: 'timestamp' }).default(new Date()),
 });
 
+// Activity logs for developer monitoring
+export const activityLogs = sqliteTable("activity_logs", {
+  id: text("id").primaryKey(),
+  eventType: text("event_type").notNull(), // 'login', 'logout', 'product_create', etc.
+  userId: text("user_id"),
+  storeId: text("store_id"),
+  description: text("description").notNull(),
+  metadata: text("metadata"), // JSON string
+  createdAt: integer("created_at", { mode: 'timestamp' }).default(new Date()),
+});
+
+// Security events for defense hub
+export const securityEvents = sqliteTable("security_events", {
+  id: text("id").primaryKey(),
+  type: text("type").notNull(), // 'failed_login', 'multiple_devices', 'suspicious_access'
+  severity: text("severity").notNull(), // 'low', 'medium', 'high'
+  description: text("description").notNull(),
+  ipAddress: text("ip_address"),
+  location: text("location"),
+  userId: text("user_id"),
+  metadata: text("metadata"),
+  resolved: integer("resolved", { mode: 'boolean' }).default(false),
+  createdAt: integer("created_at", { mode: 'timestamp' }).default(new Date()),
+});
+
+// Error logs for system monitoring
+export const errorLogs = sqliteTable("error_logs", {
+  id: text("id").primaryKey(),
+  message: text("message").notNull(),
+  stack: text("stack"),
+  route: text("route"),
+  browser: text("browser"),
+  os: text("os"),
+  userId: text("user_id"),
+  storeId: text("store_id"),
+  timestamp: integer("timestamp", { mode: 'timestamp' }).default(new Date()),
+});
+
+// Feature flags for remote configuration
+export const featureFlags = sqliteTable("feature_flags", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  enabled: integer("enabled", { mode: 'boolean' }).default(false),
+  description: text("description"),
+  updatedAt: integer("updated_at", { mode: 'timestamp' }).default(new Date()),
+});
+
+// System settings for developer console
+export const systemSettings = sqliteTable("system_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(), // JSON string
+  category: text("category").notNull(), // 'general', 'appearance', 'maintenance', etc.
+  updatedAt: integer("updated_at", { mode: 'timestamp' }).default(new Date()),
+});
+
+// Developer sessions for RBAC and audit
+export const developerSessions = sqliteTable("developer_sessions", {
+  id: text("id").primaryKey(),
+  developerId: text("developer_id").notNull(),
+  token: text("token").notNull(),
+  deviceInfo: text("device_info"),
+  ipAddress: text("ip_address"),
+  createdAt: integer("created_at", { mode: 'timestamp' }).default(new Date()),
+  expiresAt: integer("expires_at", { mode: 'timestamp' }),
+});
+
 // Insert schemas
+export const insertActivityLogSchema = createInsertSchema(activityLogs);
+export const insertSecurityEventSchema = createInsertSchema(securityEvents);
+export const insertErrorLogSchema = createInsertSchema(errorLogs);
+export const insertFeatureFlagSchema = createInsertSchema(featureFlags);
+export const insertSystemSettingSchema = createInsertSchema(systemSettings);
+export const insertDeveloperSessionSchema = createInsertSchema(developerSessions);
+
+// Types
+export type ActivityLog = typeof activityLogs.$inferSelect;
+export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
+export type SecurityEvent = typeof securityEvents.$inferSelect;
+export type InsertSecurityEvent = z.infer<typeof insertSecurityEventSchema>;
+export type ErrorLog = typeof errorLogs.$inferSelect;
+export type InsertErrorLog = z.infer<typeof insertErrorLogSchema>;
+export type FeatureFlag = typeof featureFlags.$inferSelect;
+export type InsertFeatureFlag = z.infer<typeof insertFeatureFlagSchema>;
+export type SystemSetting = typeof systemSettings.$inferSelect;
+export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
+export type DeveloperSession = typeof developerSessions.$inferSelect;
+export type InsertDeveloperSession = z.infer<typeof insertDeveloperSessionSchema>;
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   email: true,

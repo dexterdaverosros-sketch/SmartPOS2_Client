@@ -8,6 +8,18 @@ const RoleSelection: React.FC = () => {
   const [, setLocation] = useLocation();
   const { deviceMode, setDeviceMode } = useDevices();
   const [step, setStep] = useState<'device' | 'role'>(deviceMode ? 'role' : 'device');
+  const [clickCount, setClickCount] = useState(0);
+
+  const handleDevClick = () => {
+    const nextCount = clickCount + 1;
+    if (nextCount >= 5) {
+      setLocation('/developer-login');
+    } else {
+      setClickCount(nextCount);
+      // Reset after 3 seconds of inactivity
+      setTimeout(() => setClickCount(0), 3000);
+    }
+  };
 
   const handleDeviceSelect = (mode: DeviceMode) => {
     setDeviceMode(mode);
@@ -109,7 +121,8 @@ const RoleSelection: React.FC = () => {
 
                 <motion.div
                   variants={itemVariants}
-                  className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border border-gray-100 shadow-sm mb-8"
+                  onClick={handleDevClick}
+                  className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border border-gray-100 shadow-sm mb-8 cursor-pointer select-none"
                 >
                   <div className="w-2 h-2 rounded-full bg-[#BF953F] animate-pulse"></div>
                   <span className="text-gray-400 text-[10px] font-black tracking-[0.2em] uppercase">Select Access Mode</span>
