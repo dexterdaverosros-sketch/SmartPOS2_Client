@@ -8,8 +8,7 @@ import { getSupabase } from "./supabase";
 import { 
   Staff, 
   Sale, 
-  SaleItem, 
-  Remittance 
+  SaleItem
 } from '../shared/schema';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1023,13 +1022,13 @@ export const dbService = {
         staffName: sale.staffName || 'Staff',
         items: items.map((it: any) => ({
           id: it.id,
-          saleId: it.saleId,
-          productId: it.productId,
+          saleId: it.saleId || it.sale_id,
+          productId: it.productId || it.product_id,
           quantity: it.quantity,
           price: it.price,
           unit: it.unit,
-          productName: it.productName,
-          isNonInventory: !!it.isNonInventory
+          productName: it.productName || it.product_name,
+          isNonInventory: !!(it.isNonInventory || it.is_non_inventory)
         }))
       };
     }));
