@@ -1035,10 +1035,6 @@ export const dbService = {
     return salesWithItems;
   },
 
-  getProductById: (id: string) => {
-    return db.prepare('SELECT * FROM products WHERE id = ?').get(id);
-  },
-
   getAllVariants: () => {
      return db.prepare('SELECT * FROM variants').all();
   },
