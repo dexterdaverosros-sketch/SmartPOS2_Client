@@ -13,6 +13,7 @@ export const users = sqliteTable("users", {
   staffId: text("staff_id"),
   businessName: text("business_name"),
   ownerName: text("owner_name"),
+  location: text("location"), // City/Region
   profileImage: text("profile_image"), // Base64 encoded profile image
   securityQuestion1: text("security_question_1"),
   securityAnswer1: text("security_answer_1"),
@@ -134,6 +135,38 @@ export const creditors = sqliteTable("creditors", {
     dueDate: integer("dueDate", { mode: 'timestamp' }),
     reminderDate: integer("reminderDate", { mode: 'timestamp' }),
     isPaid: integer("is_paid", { mode: 'boolean' }).default(false),
+});
+
+// Customers table
+export const customers = sqliteTable("customers", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  phone: text("phone").notNull(),
+  address: text("address"),
+  creditRating: text("credit_rating").notNull(), // 'good' or 'bad'
+  photoUrl: text("photo_url"),
+  createdAt: integer("created_at", { mode: 'timestamp' }).notNull(),
+  updatedAt: integer("updated_at", { mode: 'timestamp' }).notNull(),
+});
+
+// Credits table (Loans/Debts per customer)
+export const credits = sqliteTable("credits", {
+  id: text("id").primaryKey(),
+  customerId: text("customer_id").notNull(),
+  amount: real("amount").notNull(),
+  dueDate: integer("due_date", { mode: 'timestamp' }),
+  remarks: text("remarks"),
+  createdAt: integer("created_at", { mode: 'timestamp' }).notNull(),
+});
+
+// Payments table (Customer payments towards credit)
+export const payments = sqliteTable("payments", {
+  id: text("id").primaryKey(),
+  customerId: text("customer_id").notNull(),
+  amount: real("amount").notNull(),
+  paymentMethod: text("payment_method").notNull(),
+  remarks: text("remarks"),
+  createdAt: integer("created_at", { mode: 'timestamp' }).notNull(),
 });
 
 // Remittances table for staff remitting daily sales to admin
@@ -295,6 +328,9 @@ export const insertStaffSchema = createInsertSchema(staff).pick({
 export const insertExpenseSchema = createInsertSchema(expenses);
 export const insertPurchaseSchema = createInsertSchema(purchases);
 export const insertCreditorSchema = createInsertSchema(creditors);
+export const insertCustomerSchema = createInsertSchema(customers);
+export const insertCreditSchema = createInsertSchema(credits);
+export const insertPaymentSchema = createInsertSchema(payments);
 export const insertRemittanceSchema = createInsertSchema(remittances);
 export const insertNotificationSchema = createInsertSchema(notifications);
 
@@ -336,6 +372,12 @@ export type InsertPurchase = z.infer<typeof insertPurchaseSchema>;
 export type Purchase = typeof purchases.$inferSelect;
 export type InsertCreditor = z.infer<typeof insertCreditorSchema>;
 export type Creditor = typeof creditors.$inferSelect;
+export type InsertCustomer = z.infer<typeof insertCustomerSchema>;
+export type Customer = typeof customers.$inferSelect;
+export type InsertCredit = z.infer<typeof insertCreditSchema>;
+export type Credit = typeof credits.$inferSelect;
+export type InsertPayment = z.infer<typeof insertPaymentSchema>;
+export type Payment = typeof payments.$inferSelect;
 export type Remittance = typeof remittances.$inferSelect;
 export type InsertRemittance = z.infer<typeof insertRemittanceSchema>;
 export type Notification = typeof notifications.$inferSelect;

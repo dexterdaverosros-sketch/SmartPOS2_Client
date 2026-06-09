@@ -5,7 +5,12 @@ import { fileURLToPath } from 'url';
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs"; // Import bcryptjs
 import { getSupabase } from "./supabase";
-import { Product, Variant, NonInventoryProduct, Staff, User, Sale, SaleItem } from "../shared/schema";
+import { 
+  Staff, 
+  Sale, 
+  SaleItem, 
+  Remittance 
+} from '../shared/schema';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -257,8 +262,6 @@ export const dbService = {
     const productCols = getColumns('products').map(c => c.name);
     const staffCols = getColumns('staff').map(c => c.name);
     const customerCols = getColumns('customers').map(c => c.name);
-    const creditCols = getColumns('credits').map(c => c.name);
-    const paymentCols = getColumns('payments').map(c => c.name);
     const salesCols = getColumns('sales').map(c => c.name);
 
     const migrate = db.transaction(() => {
@@ -1015,10 +1018,19 @@ export const dbService = {
         paymentType: sale.paymentType,
         paymentAmount: sale.paymentAmount,
         staffId: sale.staffId,
-        remitted: sale.remitted === 1 || sale.remitted === true,
+        remitted: !!sale.remitted,
         createdAt: sale.createdAt,
-        staffName: sale.staffName,
-        items: items
+        staffName: sale.staffName || 'Staff',
+        items: items.map((it: any) => ({
+          id: it.id,
+          saleId: it.saleId,
+          productId: it.productId,
+          quantity: it.quantity,
+          price: it.price,
+          unit: it.unit,
+          productName: it.productName,
+          isNonInventory: !!it.isNonInventory
+        }))
       };
     }));
     return salesWithItems;

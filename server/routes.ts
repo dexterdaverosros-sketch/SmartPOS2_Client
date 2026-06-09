@@ -1626,5 +1626,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get('/api/developer/settings', authenticateDev, async (req, res) => {
+    try {
+      const settings = await DeveloperService.getSystemSettings();
+      res.json(settings);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/developer/settings', authenticateDev, async (req, res) => {
+    try {
+      const { key, value, category } = req.body;
+      await DeveloperService.updateSystemSetting(key, value, category);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/developer/integrations/:integration/test', authenticateDev, async (req, res) => {
+    try {
+      const { integration } = req.params;
+      const credentials = req.body;
+      const result = await DeveloperService.testIntegration(integration, credentials);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/developer/global-logout', authenticateDev, async (req, res) => {
+    try {
+      await DeveloperService.globalLogout();
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/developer/logs/clear', authenticateDev, async (req, res) => {
+    try {
+      await DeveloperService.clearLogs();
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/developer/backup/trigger', authenticateDev, async (req, res) => {
+    try {
+      const result = await DeveloperService.triggerBackup();
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/developer/maintenance/toggle', authenticateDev, async (req, res) => {
+    try {
+      const { enabled } = req.body;
+      await DeveloperService.toggleMaintenance(enabled);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   return httpServer;
 }
