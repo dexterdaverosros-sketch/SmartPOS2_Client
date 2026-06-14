@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Test Tenant Registration</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 500px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    input {
+      width: 100%;
+      padding: 8px;
+      margin: 5px 0;
+      box-sizing: border-box;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #45a049;
+    }
+    #result {
+      margin-top: 20px;
+      padding: 10px;
+      background: #f0f0f0;
+    }
+  </style>
+</head>
+<body>
+  <h1>Register New Tenant</h1>
+  <div id="form">
+    <label>Store Name:</label>
+    <input type="text" id="storeName" value="Test Store">
+    
+    <label>Subdomain (e.g., teststore):</label>
+    <input type="text" id="subdomain" value="teststore">
+    
+    <label>Username:</label>
+    <input type="text" id="username" value="admin">
+    
+    <label>Password:</label>
+    <input type="password" id="password" value="test123">
+    
+    <label>Email:</label>
+    <input type="email" id="email" value="test@example.com">
+    
+    <label>Mobile:</label>
+    <input type="text" id="mobile" value="1234567890">
+    
+    <label>Owner Name:</label>
+    <input type="text" id="ownerName" value="Test Owner">
+    
+    <br><br>
+    <button onclick="registerTenant()">Register Tenant</button>
+  </div>
+  <div id="result"></div>
+
+  <script>
+    async function registerTenant() {
+      const storeName = document.getElementById('storeName').value;
+      const subdomain = document.getElementById('subdomain').value;
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const email = document.getElementById('email').value;
+      const mobile = document.getElementById('mobile').value;
+      const ownerName = document.getElementById('ownerName').value;
+      
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerHTML = '<p>Registering...</p>';
+      
+      try {
+        const response = await fetch('/api/tenants/register', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            storeName,
+            subdomain,
+            username,
+            password,
+            email,
+            mobile,
+            ownerName
+          })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+          resultDiv.innerHTML = `
+            <h3 style="color: green;">Success!</h3>
+            <p>Tenant registered successfully!</p>
+            <p>Now you can login at: <strong>/store/${subdomain}</strong></p>
+            <pre>${JSON.stringify(data, null, 2)}</pre>
+          `;
+        } else {
+          resultDiv.innerHTML = `
+            <h3 style="color: red;">Error!</h3>
+            <pre>${JSON.stringify(data, null, 2)}</pre>
+          `;
+        }
+      } catch (error) {
+        resultDiv.innerHTML = `
+          <h3 style="color: red;">Error!</h3>
+          <pre>${error}</pre>
+        `;
+      }
+    }
+  </script>
+</body>
+</html>
