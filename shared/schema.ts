@@ -2,9 +2,18 @@ import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// Tenants table - single source of truth for all stores
+export const tenants = sqliteTable("tenants", {
+  id: text("id").primaryKey(),
+  storeName: text("store_name").notNull(),
+  subdomain: text("subdomain").unique().notNull(),
+  createdAt: integer("created_at", { mode: 'timestamp' }).default(new Date()),
+});
+
 // Users table for authentication
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
   username: text("username").unique(),
   email: text("email").unique(),
   mobile: text("mobile").unique(),
@@ -31,6 +40,7 @@ export const users = sqliteTable("users", {
 // Products table for inventory
 export const products = sqliteTable("products", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
   name: text("name").notNull().unique(),
   barcode: text("barcode").unique(),
   price: real("price").notNull(),
@@ -46,6 +56,7 @@ export const products = sqliteTable("products", {
 // Variants table for product variants
 export const variants = sqliteTable("variants", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
   productId: text("product_id").notNull(),
   name: text("name").notNull(),
   barcode: text("barcode"),
@@ -60,6 +71,7 @@ export const variants = sqliteTable("variants", {
 // Sales table for transactions
 export const sales = sqliteTable("sales", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
   total: real("total").notNull(),
   paymentType: text("payment_type").notNull(), // 'cash' or 'ewallet'
   paymentAmount: real("payment_amount").notNull(),
@@ -71,6 +83,7 @@ export const sales = sqliteTable("sales", {
 // Sale items table
 export const saleItems = sqliteTable("sale_items", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
   saleId: text("sale_id").notNull(),
   productId: text("product_id").notNull(),
   quantity: integer("quantity").notNull(),
@@ -83,6 +96,7 @@ export const saleItems = sqliteTable("sale_items", {
 // Staff table for management
 export const staff = sqliteTable("staff", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
   name: text("name").notNull(),
   staffId: text("staff_id").notNull().unique(),
   passkey: text("passkey").notNull(),
@@ -93,6 +107,7 @@ export const staff = sqliteTable("staff", {
 // Expenses table
 export const expenses = sqliteTable("expenses", {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
     description: text("description").notNull(),
     amount: real("amount").notNull(),
     category: text("category").notNull(),
@@ -102,6 +117,7 @@ export const expenses = sqliteTable("expenses", {
 // Purchases table
 export const purchases = sqliteTable("purchases", {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
     productName: text("productName").notNull(),
     quantity: integer("quantity").notNull(),
     cost: real("cost").notNull(),
@@ -115,6 +131,7 @@ export const purchases = sqliteTable("purchases", {
 // Non-inventory products table
 export const nonInventoryProducts = sqliteTable("non_inventory_products", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
   name: text("name").notNull().unique(),
   price: real("price").notNull(),
   category: text("category").default("general"),
@@ -129,6 +146,7 @@ export const nonInventoryProducts = sqliteTable("non_inventory_products", {
 // Creditors table
 export const creditors = sqliteTable("creditors", {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
     name: text("name").notNull(),
     amount: real("amount").notNull(),
     description: text("description"),
@@ -140,6 +158,7 @@ export const creditors = sqliteTable("creditors", {
 // Customers table
 export const customers = sqliteTable("customers", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
   name: text("name").notNull(),
   phone: text("phone").notNull(),
   address: text("address"),
@@ -152,6 +171,7 @@ export const customers = sqliteTable("customers", {
 // Credits table (Loans/Debts per customer)
 export const credits = sqliteTable("credits", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
   customerId: text("customer_id").notNull(),
   amount: real("amount").notNull(),
   dueDate: integer("due_date", { mode: 'timestamp' }),
@@ -162,6 +182,7 @@ export const credits = sqliteTable("credits", {
 // Payments table (Customer payments towards credit)
 export const payments = sqliteTable("payments", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
   customerId: text("customer_id").notNull(),
   amount: real("amount").notNull(),
   paymentMethod: text("payment_method").notNull(),
@@ -172,6 +193,7 @@ export const payments = sqliteTable("payments", {
 // Remittances table for staff remitting daily sales to admin
 export const remittances = sqliteTable("remittances", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
   staffId: text("staff_id").notNull(),
   staffName: text("staff_name").notNull(),
   amount: real("amount").notNull(),
@@ -184,6 +206,7 @@ export const remittances = sqliteTable("remittances", {
 // Notifications table for system alerts
 export const notifications = sqliteTable("notifications", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
   userId: text("user_id"), // recipient, null for all admins
   type: text("type").notNull(), // 'remittance', 'system_update', 'inventory_alert', 'security', 'storage'
   message: text("message").notNull(),
@@ -195,6 +218,7 @@ export const notifications = sqliteTable("notifications", {
 // Activity logs for developer monitoring
 export const activityLogs = sqliteTable("activity_logs", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
   eventType: text("event_type").notNull(), // 'login', 'logout', 'product_create', etc.
   userId: text("user_id"),
   storeId: text("store_id"),
@@ -206,6 +230,7 @@ export const activityLogs = sqliteTable("activity_logs", {
 // Security events for defense hub
 export const securityEvents = sqliteTable("security_events", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
   type: text("type").notNull(), // 'failed_login', 'multiple_devices', 'suspicious_access'
   severity: text("severity").notNull(), // 'low', 'medium', 'high'
   description: text("description").notNull(),
@@ -220,6 +245,7 @@ export const securityEvents = sqliteTable("security_events", {
 // Error logs for system monitoring
 export const errorLogs = sqliteTable("error_logs", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
   message: text("message").notNull(),
   stack: text("stack"),
   route: text("route"),

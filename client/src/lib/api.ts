@@ -8,10 +8,35 @@ const getBaseUrl = () => {
   }
 };
 
+const extractTenantFromPath = () => {
+  const pathname = window.location.pathname;
+  const pathParts = pathname.split('/');
+  
+  // Look for /store/{tenant} pattern in the path
+  const storeIndex = pathParts.findIndex(part => part === 'store');
+  if (storeIndex !== -1 && pathParts.length > storeIndex + 1) {
+    return pathParts[storeIndex + 1];
+  }
+  
+  // Fallback: if no /store/ path, try to get first segment as tenant (for backward compatibility)
+  if (pathParts.length >= 2 && pathParts[1]) {
+    return pathParts[1];
+  }
+  
+  // Default fallback
+  console.warn('No tenant found in URL path:', pathname);
+  return 'default';
+};
+
+// Keep the old function name for backward compatibility but use the new logic
+const extractSubdomain = extractTenantFromPath;
+
 const getHeaders = () => {
   const token = localStorage.getItem('smartpos_token');
+  const subdomain = extractSubdomain();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'X-Tenant-ID': subdomain,
   };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
@@ -19,6 +44,7 @@ const getHeaders = () => {
   } else {
     console.log('API: No token found in localStorage, Authorization header not added.');
   }
+  console.log('API: Adding X-Tenant-ID header with subdomain:', subdomain);
   return headers;
 };
 

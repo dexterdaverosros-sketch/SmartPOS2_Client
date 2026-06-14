@@ -26,7 +26,7 @@ const BottomNavigation: React.FC = () => {
   const navItems = [
     { id: 'dashboard', icon: Home, label: 'Dashboard', path: '/admin-main' },
     { id: 'inventory', icon: Package, label: 'Inventory', path: '/inventory' },
-    { id: 'scanner', icon: Scan, label: '', path: '/scanner', isScanner: true },
+    { id: 'scanner', icon: Scan, label: '', path: '/pos', isScanner: true },
     { id: 'staff', icon: Users, label: 'Staff', path: '/staff' },
     { id: 'profile', icon: User, label: 'Profile', path: '/profile' },
   ];

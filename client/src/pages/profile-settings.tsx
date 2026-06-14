@@ -419,16 +419,34 @@ const ProfileSettings: React.FC = () => {
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
       onClick={onClick}
-      className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 text-left flex items-center gap-4 transition-all hover:shadow-md group"
+      className={cn(
+        "bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700 text-left flex items-center gap-3 transition-all hover:shadow-md group",
+        (deviceMode === 'pc' || deviceMode === 'tablet') ? "p-4 rounded-2xl" : "p-3.5 rounded-xl"
+      )}
     >
-      <div className={cn("p-3 rounded-xl flex items-center justify-center transition-colors", `bg-${color}-50 text-${color}-500 group-hover:bg-${color}-500 group-hover:text-white`)}>
-        <Icon className="w-5 h-5" />
+      <div className={cn(
+        "rounded-xl flex items-center justify-center transition-colors",
+        `bg-${color}-50 text-${color}-500 group-hover:bg-${color}-500 group-hover:text-white`,
+        (deviceMode === 'pc' || deviceMode === 'tablet') ? "p-3" : "p-2.5"
+      )}>
+        <Icon className={cn(
+          (deviceMode === 'pc' || deviceMode === 'tablet') ? "w-5 h-5" : "w-4.5 h-4.5"
+        )} />
       </div>
       <div className="flex-1 min-w-0">
-        <h4 className="text-sm font-bold text-gray-900 dark:text-white tracking-tight">{title}</h4>
-        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest truncate">{subtitle}</p>
+        <h4 className={cn(
+          "font-bold text-gray-900 dark:text-white tracking-tight",
+          (deviceMode === 'pc' || deviceMode === 'tablet') ? "text-sm" : "text-xs"
+        )}>{title}</h4>
+        <p className={cn(
+          "font-bold text-gray-400 uppercase tracking-widest truncate",
+          (deviceMode === 'pc' || deviceMode === 'tablet') ? "text-[10px]" : "text-[8px]"
+        )}>{subtitle}</p>
       </div>
-      <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-gray-500 transition-colors" />
+      <ChevronRight className={cn(
+        "text-gray-300 group-hover:text-gray-500 transition-colors",
+        (deviceMode === 'pc' || deviceMode === 'tablet') ? "w-4 h-4" : "w-3.5 h-3.5"
+      )} />
     </motion.button>
   );
 
@@ -453,48 +471,54 @@ const ProfileSettings: React.FC = () => {
           </div>
         </div>
         
-        <div className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-8 space-y-8">
+        <div className={cn(
+          "flex-1 max-w-7xl mx-auto w-full space-y-6",
+          (deviceMode === 'pc' || deviceMode === 'tablet') ? "p-4 md:p-8" : "p-4"
+        )}>
           {/* Profile Section */}
           <div className={cn(
-            "grid gap-6",
+            "grid gap-4",
             (deviceMode === 'pc' || deviceMode === 'tablet') ? "grid-cols-12" : "grid-cols-1"
           )}>
             <motion.div
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               className={cn(
-                "bg-gradient-to-br from-[#BF953F] to-[#B38728] rounded-[2.5rem] shadow-xl text-white relative overflow-hidden flex flex-col items-center justify-center p-8",
-                (deviceMode === 'pc' || deviceMode === 'tablet') ? "col-span-4" : ""
+                "bg-gradient-to-br from-[#BF953F] to-[#B38728] shadow-xl text-white relative overflow-hidden flex flex-col items-center justify-center",
+                (deviceMode === 'pc' || deviceMode === 'tablet') ? "col-span-4 p-8 rounded-[2.5rem]" : "p-6 rounded-2xl"
               )}
             >
               <div className="absolute top-0 right-0 w-48 h-48 bg-white/10 rounded-full -mr-24 -mt-24 blur-3xl" />
               <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/5 rounded-full -ml-24 -mb-24 blur-3xl" />
 
-              <div className="relative group mb-6">
+              <div className={cn("relative group mb-4", (deviceMode === 'pc' || deviceMode === 'tablet') ? "" : "mb-3")}>
                 <div 
-                  className="w-24 h-24 bg-white/20 backdrop-blur-md rounded-full border-4 border-white/30 flex items-center justify-center overflow-hidden cursor-pointer hover:scale-105 transition-transform"
+                  className={cn(
+                    "bg-white/20 backdrop-blur-md rounded-full border-4 border-white/30 flex items-center justify-center overflow-hidden cursor-pointer hover:scale-105 transition-transform",
+                    (deviceMode === 'pc' || deviceMode === 'tablet') ? "w-24 h-24" : "w-20 h-20"
+                  )}
                   onClick={() => (document.querySelector('input[type="file"]') as HTMLInputElement)?.click()}
                 >
-                  {profileImage ? <img src={profileImage} className="w-full h-full object-cover" /> : <User className="w-12 h-12 text-white" />}
+                  {profileImage ? <img src={profileImage} className="w-full h-full object-cover" /> : <User className={cn("text-white", (deviceMode === 'pc' || deviceMode === 'tablet') ? "w-12 h-12" : "w-10 h-10")} />}
                   <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Camera className="w-6 h-6 text-white" />
+                    <Camera className={cn("text-white", (deviceMode === 'pc' || deviceMode === 'tablet') ? "w-6 h-6" : "w-5 h-5")} />
                   </div>
                 </div>
                 <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
               </div>
               
               <div className="text-center z-10">
-                <h3 className="text-2xl font-black tracking-tighter mb-1">{user?.ownerName || user?.username || 'Commander'}</h3>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/20 border border-white/30 text-[10px] font-black uppercase tracking-widest">
-                  <Shield className="w-3 h-3" /> {user?.role || 'Admin'}
+                <h3 className={cn("font-black tracking-tighter mb-1", (deviceMode === 'pc' || deviceMode === 'tablet') ? "text-2xl" : "text-xl")}>{user?.ownerName || user?.username || 'Commander'}</h3>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/20 border border-white/30 text-[9px] font-black uppercase tracking-widest">
+                  <Shield className="w-2.5 h-2.5" /> {user?.role || 'Admin'}
                 </div>
               </div>
             </motion.div>
 
             {/* Stats Cards */}
             <div className={cn(
-              "grid gap-4",
-              (deviceMode === 'pc' || deviceMode === 'tablet') ? "col-span-8 grid-cols-3" : "grid-cols-1 sm:grid-cols-3"
+              "grid gap-3",
+              (deviceMode === 'pc' || deviceMode === 'tablet') ? "col-span-8 grid-cols-3" : "grid-cols-3"
             )}>
               {[
                 { label: 'Total Revenue', value: `₱${totalIncome.toLocaleString()}`, icon: DollarSign, color: 'emerald' },
@@ -506,13 +530,16 @@ const ProfileSettings: React.FC = () => {
                   initial={{ y: 20, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   transition={{ delay: 0.1 * (i + 1) }}
-                  className="bg-white dark:bg-gray-800 p-6 rounded-[2rem] shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center justify-center text-center"
+                  className={cn(
+                    "bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center justify-center text-center",
+                    (deviceMode === 'pc' || deviceMode === 'tablet') ? "p-6 rounded-[2rem]" : "p-4 rounded-2xl"
+                  )}
                 >
-                  <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center mb-4", `bg-${stat.color}-50 text-${stat.color}-500`)}>
-                    <stat.icon className="w-6 h-6" />
+                  <div className={cn("rounded-2xl flex items-center justify-center mb-3", `bg-${stat.color}-50 text-${stat.color}-500`, (deviceMode === 'pc' || deviceMode === 'tablet') ? "w-12 h-12" : "w-10 h-10")}>
+                    <stat.icon className={cn((deviceMode === 'pc' || deviceMode === 'tablet') ? "w-6 h-6" : "w-5 h-5")} />
                   </div>
-                  <div className="text-2xl font-black text-gray-900 dark:text-white tracking-tighter">{stat.value}</div>
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">{stat.label}</div>
+                  <div className={cn("font-black text-gray-900 dark:text-white tracking-tighter", (deviceMode === 'pc' || deviceMode === 'tablet') ? "text-2xl" : "text-lg")}>{stat.value}</div>
+                  <div className={cn("font-bold text-gray-400 uppercase tracking-widest mt-1", (deviceMode === 'pc' || deviceMode === 'tablet') ? "text-[10px]" : "text-[8px]")}>{stat.label}</div>
                 </motion.div>
               ))}
             </div>

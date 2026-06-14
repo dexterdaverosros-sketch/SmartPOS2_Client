@@ -93,8 +93,16 @@ export const dbService = {
 
     // Create base and ledger tables if they don't exist
     sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS tenants (
+        id TEXT PRIMARY KEY,
+        store_name TEXT NOT NULL,
+        subdomain TEXT UNIQUE NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+
       CREATE TABLE IF NOT EXISTS products (
         id TEXT PRIMARY KEY,
+        tenant_id TEXT,
         name TEXT NOT NULL,
         price REAL NOT NULL,
         cost REAL DEFAULT 0,
@@ -108,6 +116,7 @@ export const dbService = {
 
       CREATE TABLE IF NOT EXISTS variants (
         id TEXT PRIMARY KEY,
+        tenant_id TEXT,
         product_id TEXT NOT NULL,
         name TEXT NOT NULL,
         barcode TEXT,
@@ -122,6 +131,7 @@ export const dbService = {
 
       CREATE TABLE IF NOT EXISTS staff (
         id TEXT PRIMARY KEY,
+        tenant_id TEXT,
         name TEXT NOT NULL,
         staffId TEXT UNIQUE NOT NULL,
         passkey TEXT,
@@ -131,6 +141,7 @@ export const dbService = {
 
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
+        tenant_id TEXT,
         username TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
         role TEXT NOT NULL,
@@ -143,6 +154,7 @@ export const dbService = {
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
+        tenant_id TEXT,
         token TEXT UNIQUE NOT NULL,
         device_info TEXT,
         ip_address TEXT,
@@ -153,6 +165,7 @@ export const dbService = {
 
       CREATE TABLE IF NOT EXISTS customers (
         id TEXT PRIMARY KEY,
+        tenant_id TEXT,
         name TEXT NOT NULL,
         phone TEXT NOT NULL,
         address TEXT,
@@ -164,6 +177,7 @@ export const dbService = {
 
       CREATE TABLE IF NOT EXISTS credits (
         id TEXT PRIMARY KEY,
+        tenant_id TEXT,
         customer_id TEXT NOT NULL,
         amount REAL NOT NULL CHECK (amount > 0),
         due_date TEXT,
@@ -174,6 +188,7 @@ export const dbService = {
 
       CREATE TABLE IF NOT EXISTS payments (
         id TEXT PRIMARY KEY,
+        tenant_id TEXT,
         customer_id TEXT NOT NULL,
         amount REAL NOT NULL CHECK (amount > 0),
         payment_method TEXT NOT NULL,
@@ -184,6 +199,7 @@ export const dbService = {
 
       CREATE TABLE IF NOT EXISTS reminders (
         id TEXT PRIMARY KEY,
+        tenant_id TEXT,
         customer_id TEXT NOT NULL,
         message_type TEXT NOT NULL,
         message TEXT NOT NULL,
@@ -199,6 +215,7 @@ export const dbService = {
 
       CREATE TABLE IF NOT EXISTS non_inventory_products (
         id TEXT PRIMARY KEY,
+        tenant_id TEXT,
         name TEXT NOT NULL,
         price REAL NOT NULL,
         category TEXT,
@@ -212,6 +229,7 @@ export const dbService = {
 
       CREATE TABLE IF NOT EXISTS remittances (
         id TEXT PRIMARY KEY,
+        tenant_id TEXT,
         staff_id TEXT NOT NULL,
         staff_name TEXT NOT NULL,
         amount REAL NOT NULL,
@@ -224,6 +242,7 @@ export const dbService = {
 
       CREATE TABLE IF NOT EXISTS notifications (
         id TEXT PRIMARY KEY,
+        tenant_id TEXT,
         user_id TEXT,
         type TEXT NOT NULL,
         message TEXT NOT NULL,
@@ -234,6 +253,7 @@ export const dbService = {
 
       CREATE TABLE IF NOT EXISTS sales (
         id TEXT PRIMARY KEY,
+        tenant_id TEXT,
         total REAL NOT NULL,
         paymentType TEXT NOT NULL,
         paymentAmount REAL NOT NULL,
@@ -244,6 +264,7 @@ export const dbService = {
 
       CREATE TABLE IF NOT EXISTS sale_items (
         id TEXT PRIMARY KEY,
+        tenant_id TEXT,
         saleId TEXT NOT NULL,
         productId TEXT NOT NULL,
         quantity INTEGER NOT NULL,
@@ -259,12 +280,32 @@ export const dbService = {
     const getColumns = (table: string) =>
       db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
 
+    // List of all tables that should have tenant_id
+    const tablesWithTenant = [
+      'products', 'variants', 'staff', 'users', 'sessions',
+      'customers', 'credits', 'payments', 'reminders',
+      'non_inventory_products', 'remittances', 'notifications',
+      'sales', 'sale_items'
+    ];
+
     const productCols = getColumns('products').map(c => c.name);
     const staffCols = getColumns('staff').map(c => c.name);
     const customerCols = getColumns('customers').map(c => c.name);
     const salesCols = getColumns('sales').map(c => c.name);
 
     const migrate = db.transaction(() => {
+      // Add tenant_id to all relevant tables if missing
+      for (const table of tablesWithTenant) {
+        const cols = getColumns(table).map(c => c.name);
+        if (!cols.includes('tenant_id')) {
+          try {
+            db.exec(`ALTER TABLE ${table} ADD COLUMN tenant_id TEXT`);
+            console.log(`Added tenant_id column to ${table} table`);
+          } catch (e) {
+            console.error(`Failed to add tenant_id to ${table}:`, e);
+          }
+        }
+      }
       // Add missing columns to sales
       if (!salesCols.includes('remitted')) {
         try {
@@ -366,6 +407,24 @@ export const dbService = {
         }
       }
     }
+  },
+  // Tenant methods
+  getTenantBySubdomain: (subdomain: string) => {
+    return db.prepare('SELECT * FROM tenants WHERE subdomain = ?').get(subdomain);
+  },
+  getTenantById: (id: string) => {
+    return db.prepare('SELECT * FROM tenants WHERE id = ?').get(id);
+  },
+  createTenant: (input: { id: string; store_name: string; subdomain: string }) => {
+    const now = new Date().toISOString();
+    db.prepare(`
+      INSERT INTO tenants (id, store_name, subdomain, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run(input.id, input.store_name, input.subdomain, now);
+    return db.prepare('SELECT * FROM tenants WHERE id = ?').get(input.id);
+  },
+  listTenants: () => {
+    return db.prepare('SELECT * FROM tenants ORDER BY created_at DESC').all();
   },
   // Ledger: Customers
   createCustomer: (input: { id: string; name: string; phone: string; address?: string | null; credit_rating: 'good'|'bad'; photo_url?: string | null; }) => {
@@ -1177,12 +1236,12 @@ export const dbService = {
     return db.prepare('SELECT * FROM staff WHERE staffId = ? AND passkey = ?').get(staffId, passkey);
   },
 
-  createSession: (session: { id: string; user_id: string; token: string; device_info: string; ip_address: string; created_at: string; last_active_at: string }) => {
+  createSession: (session: { id: string; user_id: string; token: string; tenant_id?: string; device_info: string; ip_address: string; created_at: string; last_active_at: string }) => {
     db.prepare(`
-      INSERT INTO sessions (id, user_id, token, device_info, ip_address, created_at, last_active_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (id, user_id, tenant_id, token, device_info, ip_address, created_at, last_active_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      session.id, session.user_id, session.token, session.device_info, session.ip_address, session.created_at, session.last_active_at
+      session.id, session.user_id, session.tenant_id || null, session.token, session.device_info, session.ip_address, session.created_at, session.last_active_at
     );
     return session;
   },

@@ -88,8 +88,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       .then(data => {
         setUser(data.user);
       })
-      .catch(() => {
-        // Token invalid
+      .catch((error) => {
+        // Token invalid - don't log scary error for 401
+        if (error && error.message && !error.message.includes('401')) {
+          console.error('Session verification failed:', error);
+        }
+        // Token invalid - clear it
         localStorage.removeItem('smartpos_token');
         setToken(null);
         // If we have storedUser (local admin), maybe keep it?

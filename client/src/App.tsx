@@ -36,6 +36,32 @@ import NotFound from "@/pages/not-found";
 function Router() {
   return (
     <Switch>
+      {/* Routes with tenant prefix */}
+      <Route path="/store/:tenant" component={SplashScreen} />
+      <Route path="/store/:tenant/role-selection" component={RoleSelection} />
+      <Route path="/store/:tenant/admin-login" component={AdminLogin} />
+      <Route path="/store/:tenant/admin-signup" component={AdminSignup} />
+      <Route path="/store/:tenant/staff-login" component={StaffLogin} />
+      <Route path="/store/:tenant/developer-login" component={DeveloperLogin} />
+      <Route path="/store/:tenant/developer-console" component={DeveloperConsole} />
+      <Route path="/store/:tenant/account-details" component={() => <ProtectedRoute component={ProfileSettings} />} />
+      <Route path="/store/:tenant/admin-main" component={() => <ProtectedRoute component={AdminMain} role="admin" />} />
+      <Route path="/store/:tenant/admin-dashboard" component={() => <ProtectedRoute component={AdminDashboard} role="admin" />} />
+      <Route path="/store/:tenant/inventory" component={() => <ProtectedRoute component={Inventory} role="admin" />} />
+      <Route path="/store/:tenant/ledger" component={() => <ProtectedRoute component={Ledger} role="admin" />} />
+      <Route path="/store/:tenant/expenses" component={() => <ProtectedRoute component={Expenses} role="admin" />} />
+      <Route path="/store/:tenant/staff" component={() => <ProtectedRoute component={StaffManagement} role="admin" />} />
+      <Route path="/store/:tenant/profile" component={() => <ProtectedRoute component={ProfileSettings} />} />
+      <Route path="/store/:tenant/transaction-history" component={() => <ProtectedRoute component={TransactionHistory} />} />
+      <Route path="/store/:tenant/bookkeeping" component={() => <ProtectedRoute component={BookKeeping} role="admin" />} />
+      <Route path="/store/:tenant/forgot-password" component={ForgotPassword} />
+      <Route path="/store/:tenant/reset-password" component={ResetPassword} />
+      <Route path="/store/:tenant/security-questions" component={SecurityQuestionsPage} />
+      <Route path="/store/:tenant/admin/reports" component={() => <ProtectedRoute component={AdminReports} role="admin" />} />
+      <Route path="/store/:tenant/pos" component={() => <ProtectedRoute component={POS} role="any" />} />
+      <Route path="/store/:tenant/customer" component={CustomerPage} />
+      
+      {/* Original routes for backward compatibility */}
       <Route path="/" component={SplashScreen} />
       <Route path="/role-selection" component={RoleSelection} />
       <Route path="/admin-login" component={AdminLogin} />
