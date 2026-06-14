@@ -130,17 +130,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }, 60 * 60 * 1000);
 
-  // Combine both middlewares: first tenantContext, then allowLocalNetwork
-  app.use('/api', (req, res, next) => {
-    // Skip tenantContext for health check and auth status endpoints
-    if (req.path === '/health' || req.path === '/auth/status') {
-      return next();
+  // Tenant registration (no auth required)
+  app.post('/api/tenants/register', async (req: Request, res: Response) => {
+    try {
+      const { storeName, subdomain, username, password, email, mobile, ownerName } = req.body;
+      
+      const supabase = getSupabase();
+      if (!supabase) {
+        return res.status(500).json({ error: 'Cloud not configured' });
+      }
+      
+      // 1. Create tenant
+      const { data: tenant, error: tenantError } = await supabase
+        .from('tenants')
+        .insert({ id: randomUUID(), store_name: storeName, subdomain: subdomain.toLowerCase() })
+        .select()
+        .single();
+        
+      if (tenantError) {
+        return res.status(400).json({ error: tenantError.message });
+      }
+      
+      // 2. Hash password
+      const hashedPassword = await bcrypt.hash(password, 10);
+      
+      // 3. Create admin user for this tenant
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .insert({
+          id: randomUUID(),
+          tenant_id: tenant.id,
+          username,
+          password: hashedPassword,
+          email,
+          mobile,
+          owner_name: ownerName,
+          business_name: storeName,
+          role: 'admin'
+        })
+        .select()
+        .single();
+        
+      if (userError) {
+        return res.status(400).json({ error: userError.message });
+      }
+      
+      res.status(201).json({ success: true, tenant, user });
+    } catch (error) {
+      console.error('Tenant registration failed:', error);
+      res.status(500).json({ error: 'Tenant registration failed' });
     }
-    // Otherwise apply tenantContext first
-    (tenantContext as any)(req, res, (err?: any) => {
-      if (err) return next(err);
-      allowLocalNetwork(req, res, next);
-    });
   });
 
   // Admin Registration & Status
@@ -184,25 +223,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Tenant context middleware should run after CORS but before protected endpoints
-  app.use('/api', tenantContext);
+  app.use('/api', (req, res, next) => {
+    // Skip tenantContext for non-protected endpoints
+    const publicPaths = ['/health', '/auth/status', '/auth/register-admin', '/auth/login', '/tenants/register'];
+    if (publicPaths.some(p => req.path.startsWith(p))) {
+      return next();
+    }
+    // Otherwise apply tenantContext
+    tenantContext(req, res, next);
+  });
+
+  // Helper function to get tenant from X-Tenant-ID
+  const getTenantFromHeader = async (req: Request) => {
+    const subdomain = req.headers['x-tenant-id'] as string;
+    if (!subdomain) return null;
+    
+    const supabase = getSupabase();
+    if (!supabase) return { id: 'default-tenant-id', subdomain };
+    
+    const { data: tenant } = await supabase
+      .from('tenants')
+      .select('*')
+      .eq('subdomain', subdomain.toLowerCase())
+      .single();
+    
+    return tenant;
+  };
 
   // Auth API
   app.post('/api/auth/admin-login', async (req: Request, res: Response) => {
     try {
       const { username, password } = req.body;
-      const tenantId = (req as any).tenantId;
       
-      // First check locally
-      let admin = dbService.getUserByUsername(username) as User | undefined;
+      // Get tenant from header
+      const tenant = await getTenantFromHeader(req);
       
-      // If not found locally or if local DB doesn't have tenant_id, check Supabase
+      // First check Supabase first (prefer cloud over local)
+      let admin = null;
       const supabase = getSupabase();
-      if (supabase) {
+      if (supabase && tenant) {
         const { data, error } = await supabase
           .from('users')
           .select('*')
           .eq('username', username)
-          .eq('tenant_id', tenantId)
+          .eq('tenant_id', tenant.id)
           .single();
           
         if (!error && data) {
@@ -210,13 +274,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      if (!admin || admin.role !== 'admin') {
-        return res.status(401).json({ error: 'Invalid username or password' });
+      // If not in Supabase, try local
+      if (!admin) {
+        admin = dbService.getUserByUsername(username) as User | undefined;
       }
       
-      // Verify tenant ID matches
-      if ((admin as any).tenant_id && (admin as any).tenant_id !== tenantId) {
-        return res.status(403).json({ error: 'This account does not belong to this store' });
+      if (!admin || admin.role !== 'admin') {
+        return res.status(401).json({ error: 'Invalid username or password' });
       }
 
       const isValid = await bcrypt.compare(password, admin.password);
@@ -230,7 +294,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         id: randomUUID(),
         user_id: admin.id,
         token,
-        tenant_id: tenantId, // Store tenant ID in session too
+        tenant_id: tenant?.id || 'default', // Store tenant ID in session too
         device_info: req.headers['user-agent'] || 'Unknown Device',
         ip_address: req.ip || req.socket.remoteAddress || 'Unknown',
         created_at: new Date().toISOString(),
@@ -251,19 +315,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/auth/login', async (req: Request, res: Response) => {
     try {
       const { staffId, passkey, deviceInfo } = req.body;
-      const tenantId = (req as any).tenantId;
+      
+      // Get tenant from header
+      const tenant = await getTenantFromHeader(req);
 
       // Verify credentials with tenant check
       let staff = null;
       const supabase = getSupabase();
       
-      if (supabase) {
+      if (supabase && tenant) {
         // Check Supabase first with tenant ID validation
         const { data, error } = await supabase
           .from('staff')
           .select('*')
           .eq('staff_id', staffId)
-          .eq('tenant_id', tenantId)
+          .eq('tenant_id', tenant.id)
           .single();
           
         if (!error && data) {
@@ -279,18 +345,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Save to local DB for future offline use
           dbService.saveStaff([staff]);
         }
-      } else {
-        // Fallback to local check if Supabase not available
+      } 
+      
+      // If not in Supabase, try local
+      if (!staff) {
         staff = dbService.getStaffByStaffId(staffId) as any;
       }
 
       if (!staff) {
         return res.status(401).json({ error: 'Invalid credentials' });
-      }
-
-      // Verify tenant ID matches
-      if ((staff as any).tenantId && (staff as any).tenantId !== tenantId) {
-        return res.status(403).json({ error: 'This account does not belong to this store' });
       }
 
       // Verify password using bcrypt
@@ -305,7 +368,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         id: randomUUID(),
         user_id: staff.id,
         token,
-        tenant_id: tenantId, // Store tenant ID in session
+        tenant_id: tenant?.id || 'default', // Store tenant ID in session
         device_info: deviceInfo || 'Unknown Device',
         ip_address: req.ip || req.socket.remoteAddress || 'Unknown',
         created_at: new Date().toISOString(),
