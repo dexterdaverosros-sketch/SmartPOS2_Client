@@ -180,7 +180,7 @@ export class AuthService {
     ownerName: string;
     mobile: string;
     password: string;
-  }): Promise<User> {
+  }): Promise<{ user: User, token?: string }> {
     // Check if mobile number is already used
     const existingUser = await db.users.where('mobile').equals(userData.mobile).first();
     if (existingUser) {
@@ -205,6 +205,7 @@ export class AuthService {
       staffId: null,
       businessName: userData.businessName,
       ownerName: userData.ownerName,
+      location: null,
       profileImage: null,
       securityQuestion1: null,
       securityAnswer1: null,
@@ -220,35 +221,37 @@ export class AuthService {
     await db.users.add(user);
 
     // CRITICAL: Push admin to server to lock the system
+    let token: string | undefined;
     try {
-      await api.post('/api/auth/register-admin', user);
+      const response = await api.post('/api/auth/register-admin', user);
       console.log('Admin account registered on server');
+      token = response.token;
     } catch (err) {
       console.error('Failed to register admin on server:', err);
       // Even if server registration fails, we have it locally,
       // but the server will remain open for others until this succeeds.
     }
 
-    return user;
+    return { user, token };
   }
 
-  static async loginAdmin(username: string, password: string): Promise<User | null> {
+  static async loginAdmin(username: string, password: string): Promise<{ user: User, token?: string } | null> {
     // 1. Try local login first
     const user = await db.users.where('username').equals(username).first() ||
                 await db.users.where('mobile').equals(username).first();
     
     if (user && user.role === 'admin') {
       const isValid = await verifyPassword(password, user.password);
-      if (isValid) return user;
+      if (isValid) return { user };
     }
     
     // 2. If local fails, try server login (important for multi-device support)
     try {
-      const serverUser = await api.post('/api/auth/admin-login', { username, password });
-      if (serverUser) {
+      const response = await api.post('/api/auth/admin-login', { username, password });
+      if (response && response.user) {
         // Save to local DB for offline access next time
-        await db.users.put(serverUser);
-        return serverUser;
+        await db.users.put(response.user);
+        return { user: response.user, token: response.token };
       }
     } catch (e) {
       console.warn('Server login failed or unreachable');
@@ -275,6 +278,7 @@ export class AuthService {
       staffId: staffMember.staffId,
       businessName: '',
       ownerName: staffMember.name,
+      location: null,
       profileImage: null,
       createdAt: staffMember.createdAt,
       securityQuestion1: null,
@@ -325,10 +329,20 @@ export class AuthService {
 
   static async updateUser(id: string, updates: Partial<User>): Promise<void> {
     await db.users.update(id, updates);
+    try {
+      await api.post('/api/auth/update-admin', updates);
+    } catch (e) {
+      console.warn('Failed to sync user updates to server:', e);
+    }
   }
 
   static async updateProfileImage(id: string, profileImage: string): Promise<void> {
     await db.users.update(id, { profileImage });
+    try {
+      await api.post('/api/auth/update-admin', { profileImage });
+    } catch (e) {
+      console.warn('Failed to sync profile image to server:', e);
+    }
   }
 }
 

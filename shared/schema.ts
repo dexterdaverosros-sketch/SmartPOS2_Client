@@ -289,6 +289,7 @@ export const insertUserSchema = createInsertSchema(users).pick({
   staffId: true,
   businessName: true,
   ownerName: true,
+  location: true,
   securityQuestion1: true,
   securityAnswer1: true,
   securityQuestion2: true,

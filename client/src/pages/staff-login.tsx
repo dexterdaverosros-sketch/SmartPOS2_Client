@@ -69,7 +69,7 @@ const StaffLogin: React.FC = () => {
       title: 'Welcome!',
       description: `Logged in as ${user.name || 'Staff Member'}`,
     });
-    setLocation('/scanner');
+    setLocation('/pos');
   };
 
   const onSubmit = async (data: StaffLoginFormData) => {

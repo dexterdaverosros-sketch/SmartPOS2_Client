@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLocation } from 'wouter';
-import { LogOut, DollarSign, Package, Plus, Eye, Calendar, CreditCard, Receipt, User, FileText, Lock, FileSpreadsheet, BarChart3, Bell, CheckCircle, Clock, ArrowRight, Monitor, Tablet, Smartphone, Trash2, Edit } from 'lucide-react';
+import { LogOut, DollarSign, Package, Plus, Eye, Calendar, CreditCard, Receipt, User, FileText, Lock, FileSpreadsheet, BarChart3, Bell, CheckCircle, Clock, ArrowRight, Monitor, Tablet, Smartphone, Trash2, Edit, RefreshCw, History } from 'lucide-react';
 import Layout from '@/components/Layout';
 import FloatingActionButton from '@/components/FloatingActionButton';
 import { useAuth } from '@/contexts/AuthContext';
@@ -110,6 +110,7 @@ const AdminMain: React.FC = () => {
 
   const [chartData, setChartData] = useState<Array<{ date: string; income: number; expenses: number }>>([]);
   const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
+  const [salesHistory, setSalesHistory] = useState<any[]>([]);
   const [topProducts, setTopProducts] = useState<any[]>([]);
   const [staffPerformance, setStaffPerformance] = useState<any[]>([]);
 
@@ -354,19 +355,20 @@ const AdminMain: React.FC = () => {
       setChartData(data);
 
       const staffMap = new Map(allStaff.map(s => [s.id, s.name]));
-      const recent = sales
+      const mappedSales = sales
         .sort((a, b) => {
           const da = new Date(a.createdAt as any).getTime();
           const db = new Date(b.createdAt as any).getTime();
           return (isNaN(db) ? 0 : db) - (isNaN(da) ? 0 : da);
         })
-        .slice(0, 5)
         .map(s => ({
           ...s,
           total: Number(s.total) || 0,
           staffName: s.staffId ? staffMap.get(s.staffId) : 'Owner'
         }));
-      setRecentTransactions(recent);
+
+      setSalesHistory(mappedSales);
+      setRecentTransactions(mappedSales.slice(0, 5));
 
       const productSales = new Map();
       allSaleItems.forEach(item => {
@@ -485,21 +487,31 @@ const AdminMain: React.FC = () => {
     }
   };
 
+  const loadData = async () => {
+    await Promise.all([
+      loadStats(),
+      loadFinancialData(),
+      loadChartData(),
+      loadNotifications(),
+    ]);
+  };
+
   const handleExportCSV = () => {
-    const rows = [
-      ['Report Date', currentDateTime.toLocaleString()],
-      ['Today Sales', stats.todaySales.toFixed(2)],
-      ['Total Income', stats.totalIncome.toFixed(2)],
-      ['Total Expenses', totalExpenses.toFixed(2)],
-      ['Net Profit', (stats.totalIncome - totalExpenses).toFixed(2)],
-      ['Total Products', stats.totalProducts],
-      [],
-      ['Recent Transactions'],
-      ['ID', 'Staff', 'Type', 'Total', 'Date'],
-      ...recentTransactions.map(tx => [tx.id, tx.staffName, tx.paymentType, tx.total.toFixed(2), new Date(tx.createdAt).toLocaleString()])
-    ];
-    const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n");
-    const encodedUri = encodeURI(csvContent);
+      const rows = [
+        ['Report Date', currentDateTime.toLocaleString()],
+        ['Today Sales', stats.todaySales.toFixed(2)],
+        ['Total Income', stats.totalIncome.toFixed(2)],
+        ['Total Expenses', totalExpenses.toFixed(2)],
+        ['Net Profit', (stats.totalIncome - totalExpenses).toFixed(2)],
+        ['Total Products', stats.totalProducts],
+        [],
+        ['Full Transaction History'],
+        ['ID', 'Staff', 'Type', 'Total', 'Date'],
+        ...salesHistory.map(tx => [tx.id, tx.staffName, tx.paymentType, tx.total.toFixed(2), new Date(tx.createdAt).toLocaleString()])
+      ];
+      const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n");
+      
+      const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
     link.setAttribute("download", `SmartPOS_Report_${new Date().toISOString().split('T')[0]}.csv`);
@@ -622,25 +634,29 @@ const AdminMain: React.FC = () => {
               (deviceMode === 'pc' || deviceMode === 'tablet') ? "grid-cols-4" : "grid-cols-2"
             )}>
               {[
-                { icon: DollarSign, color: 'emerald', value: `₱${stats.todaySales.toFixed(0)}`, label: 'Sales', path: '/transaction-history' },
-                { icon: Package, color: 'blue', value: stats.totalProducts, label: 'Items', path: '/inventory' },
-                { icon: CreditCard, color: 'amber', value: getFilteredCreditors().length, label: 'Credits', path: '/ledger' },
-                { icon: Receipt, color: 'purple', value: `₱${totalExpenses.toFixed(0)}`, label: 'Costs', path: '/expenses' }
+                { icon: DollarSign, value: `₱${stats.todaySales.toFixed(0)}`, label: 'Sales', path: '/transaction-history' },
+                { icon: Package, value: stats.totalProducts, label: 'Items', path: '/inventory' },
+                { icon: CreditCard, value: getFilteredCreditors().length, label: 'Credits', path: '/ledger' },
+                { icon: Receipt, value: `₱${totalExpenses.toFixed(0)}`, label: 'Costs', path: '/expenses' }
               ].map((stat, i) => (
                 <motion.div
                   key={stat.label}
                   initial={{ y: 20, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   transition={{ delay: 0.1 * i }}
-                  className="modern-card p-3 flex flex-col justify-center border-l-4 border-l-current transition-all cursor-pointer hover:bg-gray-50"
-                  style={{ color: `var(--${stat.color}-500)` } as any}
+                  className="relative group overflow-hidden bg-white border border-gray-100 shadow-sm p-4 rounded-2xl transition-all duration-300 hover:shadow-md hover:border-[#BF953F]/30 cursor-pointer"
                   onClick={() => setLocation(stat.path)}
                 >
-                  <div className="flex items-center justify-between mb-1">
-                    <stat.icon className="w-3.5 h-3.5 text-gray-400" />
-                    <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest">{stat.label}</span>
+                  <div className="absolute top-0 right-0 w-16 h-16 bg-[#BF953F]/5 rounded-full -mr-8 -mt-8 transition-transform group-hover:scale-150 duration-500"></div>
+                  <div className="relative z-10">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="p-1.5 rounded-lg bg-[#BF953F]/10">
+                        <stat.icon className="w-3.5 h-3.5 text-[#BF953F]" />
+                      </div>
+                      <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{stat.label}</span>
+                    </div>
+                    <div className="text-xl font-black text-gray-900 tracking-tighter">{stat.value}</div>
                   </div>
-                  <div className="text-sm font-black text-gray-900 tracking-tighter">{stat.value}</div>
                 </motion.div>
               ))}
             </div>
@@ -660,10 +676,10 @@ const AdminMain: React.FC = () => {
               <div className="grid grid-cols-2 gap-2 overflow-y-auto pr-1 flex-1">
                 {[
                   { title: 'Inventory', icon: Package, path: '/inventory', color: 'pink' },
-                  { title: 'Non-Inv', icon: Package, path: '/inventory?tab=non-inventory', color: 'orange' },
                   { title: 'Financials', icon: CreditCard, path: '/ledger', color: 'indigo' },
                   { title: 'Expenses', icon: DollarSign, path: '/expenses', color: 'emerald' },
-                  { title: 'Security', icon: Lock, path: '/security-questions', color: 'purple' },
+                  { title: 'Book Keeping', icon: Receipt, path: '/bookkeeping', color: 'blue' },
+                  { title: 'History', icon: History, path: '/transaction-history', color: 'purple' },
                   { title: 'Analytics', icon: BarChart3, path: '/admin/reports', color: 'amber' },
                 ].map((tool) => (
                   <Button
@@ -881,6 +897,8 @@ const AdminMain: React.FC = () => {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Notifications Sheet/Dialog */}
 
       </motion.div>
     </Layout>

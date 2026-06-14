@@ -39,6 +39,7 @@ export class MemStorage implements IStorage {
       staffId: insertUser.staffId || null,
       businessName: insertUser.businessName || null,
       ownerName: insertUser.ownerName || null,
+      location: insertUser.location || null,
       profileImage: null,
       securityQuestion1: insertUser.securityQuestion1 || null,
       securityAnswer1: insertUser.securityAnswer1 || null,

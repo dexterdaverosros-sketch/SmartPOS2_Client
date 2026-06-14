@@ -35,16 +35,16 @@ export class Auth {
   /**
    * Login admin user
    */
-  static async loginAdmin(credentials: LoginCredentials): Promise<User> {
+  static async loginAdmin(credentials: LoginCredentials): Promise<{ user: User, token?: string }> {
     try {
-      const user = await AuthService.loginAdmin(credentials.username, credentials.password);
+      const response = await AuthService.loginAdmin(credentials.username, credentials.password);
       
-      if (!user) {
+      if (!response || !response.user) {
         throw new AuthError('Invalid username or password');
       }
 
-      this.setStoredUser(user);
-      return user;
+      this.setStoredUser(response.user);
+      return response;
     } catch (error) {
       if (error instanceof AuthError) {
         throw error;
@@ -77,7 +77,7 @@ export class Auth {
   /**
    * Create new admin account
    */
-  static async signup(data: SignupData): Promise<User> {
+  static async signup(data: SignupData): Promise<{ user: User, token?: string }> {
     try {
       // Validate data
       if (!data.businessName.trim()) {
@@ -96,9 +96,9 @@ export class Auth {
         throw new AuthError('Password must be at least 6 characters');
       }
 
-      const user = await AuthService.createAdmin(data);
-      this.setStoredUser(user);
-      return user;
+      const response = await AuthService.createAdmin(data);
+      this.setStoredUser(response.user);
+      return response;
     } catch (error) {
       if (error instanceof AuthError) {
         throw error;

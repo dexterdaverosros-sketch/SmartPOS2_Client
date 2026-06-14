@@ -12,11 +12,6 @@ import fs from "fs";
 import bcrypt from "bcryptjs";
 import { getSupabase } from "./supabase";
 import { DeveloperService } from "./developer-service";
-import OpenAI from 'openai';
-
-const openai = process.env.OPENAI_API_KEY ? new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-}) : null;
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize database schema for products and staff
@@ -112,7 +107,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const user = req.body;
       dbService.saveAdmin(user);
-      res.status(201).json({ success: true });
+
+      // Create session for the new admin
+      const token = randomUUID();
+      const session = {
+        id: randomUUID(),
+        user_id: user.id,
+        token,
+        device_info: req.headers['user-agent'] || 'Unknown Device',
+        ip_address: req.ip || req.socket.remoteAddress || 'Unknown',
+        created_at: new Date().toISOString(),
+        last_active_at: new Date().toISOString()
+      };
+      dbService.createSession(session);
+
+      res.status(201).json({ success: true, token });
     } catch (error) {
       console.error('Admin registration failed:', error);
       res.status(500).json({ error: 'Registration failed' });
@@ -134,9 +143,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: 'Invalid username or password' });
       }
 
-      // Return admin info (excluding password)
+      // Create session
+      const token = randomUUID();
+      const session = {
+        id: randomUUID(),
+        user_id: admin.id,
+        token,
+        device_info: req.headers['user-agent'] || 'Unknown Device',
+        ip_address: req.ip || req.socket.remoteAddress || 'Unknown',
+        created_at: new Date().toISOString(),
+        last_active_at: new Date().toISOString()
+      };
+
+      dbService.createSession(session);
+
+      // Return admin info and token
       const { password: _, ...adminInfo } = admin;
-      res.json(adminInfo);
+      res.json({ user: adminInfo, token });
     } catch (error) {
       console.error('Admin login error:', error);
       res.status(500).json({ error: 'Login failed' });
@@ -376,6 +399,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post('/api/auth/update-admin', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId;
+      const updates = req.body;
+
+      if (!userId) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const updatedUser = dbService.updateAdmin(userId, updates);
+      if (!updatedUser) {
+        return res.status(404).json({ error: 'Admin not found' });
+      }
+
+      res.status(200).json({ success: true, user: updatedUser });
+    } catch (error) {
+      console.error('Error updating admin:', error);
+      res.status(500).json({ error: 'Failed to update admin profile.' });
+    }
+  });
+
   app.get('/api/auth/session', (req: Request, res: Response) => {
     try {
       const authHeader = req.headers.authorization;
@@ -494,6 +538,120 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(200).json(mapped);
     } catch {
       res.status(500).json({ error: 'Failed to fetch products' });
+    }
+  });
+
+  app.get('/api/cloud/transactions', async (_req: Request, res: Response) => {
+    try {
+      const supabase = getSupabase();
+      if (!supabase) return res.status(500).json({ error: 'Cloud not configured' });
+      
+      const { data, error } = await supabase
+        .from('sales')
+        .select(`
+          id,
+          total,
+          payment_type,
+          payment_amount,
+          staff_id,
+          remitted,
+          created_at
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Also fetch staff names for these sales
+      const { data: cloudStaff } = await supabase.from('staff').select('staff_id, name');
+      const staffMap = new Map((cloudStaff || []).map(s => [s.staff_id, s.name]));
+
+      const mapped = (data || []).map(s => ({
+        id: s.id,
+        total: s.total,
+        paymentType: s.payment_type,
+        paymentAmount: s.payment_amount,
+        staffId: s.staff_id,
+        remitted: !!s.remitted,
+        createdAt: s.created_at,
+        staffName: staffMap.get(s.staff_id) || 'Staff'
+      }));
+
+      res.status(200).json(mapped);
+    } catch (error) {
+      console.error('Cloud transactions fetch error:', error);
+      res.status(500).json({ error: 'Failed to fetch cloud transactions' });
+    }
+  });
+
+  app.post('/api/cloud/sync-sales', async (req: Request, res: Response) => {
+    try {
+      const supabase = getSupabase();
+      if (!supabase) return res.status(500).json({ error: 'Cloud not configured' });
+      
+      const { sales, items } = req.body;
+      if (!Array.isArray(sales) || !Array.isArray(items)) {
+        return res.status(400).json({ error: 'Invalid data format' });
+      }
+
+      // Upsert sales
+      const mappedSales = sales.map(s => ({
+        id: s.id,
+        total: s.total,
+        payment_type: s.paymentType,
+        payment_amount: s.paymentAmount,
+        staff_id: s.staffId,
+        remitted: !!s.remitted,
+        created_at: s.createdAt
+      }));
+
+      const { error: salesError } = await supabase.from('sales').upsert(mappedSales, { onConflict: 'id' });
+      if (salesError) throw salesError;
+
+      // Upsert items
+      const mappedItems = items.map(it => ({
+        id: it.id,
+        sale_id: it.saleId,
+        product_id: it.productId,
+        quantity: it.quantity,
+        price: it.price,
+        unit: it.unit,
+        product_name: it.productName,
+        is_non_inventory: !!it.isNonInventory
+      }));
+
+      const { error: itemsError } = await supabase.from('sale_items').upsert(mappedItems, { onConflict: 'id' });
+      if (itemsError) throw itemsError;
+
+      res.status(200).json({ success: true, syncedSales: sales.length, syncedItems: items.length });
+    } catch (error) {
+      console.error('Cloud sales sync error:', error);
+      res.status(500).json({ error: 'Failed to sync sales to cloud' });
+    }
+  });
+
+  app.post('/api/cloud/sync-expenses', async (req: Request, res: Response) => {
+    try {
+      const supabase = getSupabase();
+      if (!supabase) return res.status(500).json({ error: 'Cloud not configured' });
+      
+      const { expenses } = req.body;
+      if (!Array.isArray(expenses)) return res.status(400).json({ error: 'Invalid data format' });
+
+      const mappedExpenses = expenses.map(e => ({
+        id: e.id,
+        description: e.description,
+        amount: e.amount,
+        category: e.category,
+        date: e.date
+      }));
+
+      const { error } = await supabase.from('expenses').upsert(mappedExpenses, { onConflict: 'id' });
+      if (error) throw error;
+
+      res.status(200).json({ success: true, syncedExpenses: expenses.length });
+    } catch (error) {
+      console.error('Cloud expenses sync error:', error);
+      res.status(500).json({ error: 'Failed to sync expenses to cloud' });
     }
   });
 
@@ -1619,35 +1777,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/developer/ai-assistant/query', authenticateDev, async (req, res) => {
     try {
       const { query } = req.body;
-      
-      if (!openai) {
-        let response = "I'm analyzing the ecosystem data...";
-        if (query.toLowerCase().includes('storage')) {
-          response = "ABC Store currently consumes 1.8GB, which is 34% of total ecosystem storage. Growth trend suggests they might reach 5GB in 2.4 months.";
-        } else if (query.toLowerCase().includes('inactive')) {
-          response = "There are 5 stores that have been inactive for more than 30 days. Would you like me to generate a summary of these accounts?";
-        } else {
-          response = "AI Assistant is currently in simulation mode. Please ensure OPENAI_API_KEY is correctly set in your .env file to enable full capabilities.";
-        }
-        return res.json({ response });
+      let response = "I'm analyzing the ecosystem data...";
+      if (query.toLowerCase().includes('storage')) {
+        response = "ABC Store currently consumes 1.8GB, which is 34% of total ecosystem storage. Growth trend suggests they might reach 5GB in 2.4 months.";
+      } else if (query.toLowerCase().includes('inactive')) {
+        response = "There are 5 stores that have been inactive for more than 30 days. Would you like me to generate a summary of these accounts?";
       }
-
-      const completion = await openai.chat.completions.create({
-         model: "gpt-4o",
-         messages: [
-           { 
-             role: "system", 
-             content: "You are an expert developer assistant for SmartPOS+, a multi-tenant POS ecosystem. You help developers analyze system health, store activity, and infrastructure metrics. Keep responses concise and professional." 
-           },
-           { role: "user", content: query }
-         ],
-         max_tokens: 500
-       });
-
-      res.json({ response: completion.choices[0].message?.content || "No response generated" });
+      res.json({ response });
     } catch (e: any) {
-      console.error('AI Assistant Error:', e);
-      res.status(500).json({ error: e.message || "Failed to query AI Assistant" });
+      res.status(500).json({ error: e.message });
     }
   });
 

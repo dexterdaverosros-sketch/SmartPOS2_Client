@@ -4,27 +4,7 @@ import { motion } from 'framer-motion';
 import { ScanBarcode } from 'lucide-react';
 
 const TypewriterText = ({ text }: { text: string }) => {
-  const characters = Array.from(text);
-
-  return (
-    <div className="flex justify-center">
-      {characters.map((char, index) => (
-        <motion.span
-          key={index}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{
-            duration: 0.1,
-            delay: index * 0.1,
-            ease: "easeIn"
-          }}
-          className="bg-gradient-to-r from-white via-primary-200 to-white bg-clip-text text-transparent"
-        >
-          {char}
-        </motion.span>
-      ))}
-    </div>
-  );
+  return <div className="flex justify-center">{text}</div>;
 };
 
 const SplashScreen: React.FC = () => {

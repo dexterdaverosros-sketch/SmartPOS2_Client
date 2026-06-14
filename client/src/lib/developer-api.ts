@@ -1,10 +1,14 @@
-import { apiRequest } from "./api";
+import { apiRequest } from "./queryClient";
 
 const getDevHeaders = () => ({
   'x-developer-auth': 'true'
 });
 
 export const developerApi = {
+  broadcastMessage: async (message: string) => {
+    const res = await apiRequest('POST', '/api/developer/broadcast', { message });
+    return res.json();
+  },
   getDashboardStats: async () => {
     const res = await fetch('/api/developer/dashboard-stats', { headers: getDevHeaders() });
     if (!res.ok) throw new Error("Failed to fetch dashboard stats");

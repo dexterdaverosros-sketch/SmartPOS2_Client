@@ -9,6 +9,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -23,6 +24,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
+import ExternalDeviceManager from '@/components/ExternalDeviceManager';
 
 const profileSchema = z.object({
   businessName: z.string().min(1, 'Business name is required'),
@@ -34,13 +36,20 @@ const credentialsSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required'),
   newPassword: z.string().min(6, 'New password must be at least 6 characters'),
   confirmPassword: z.string().min(1, 'Please confirm your password'),
-}).refine((data) => data.newPassword === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
+});
+
+const securityQuestionsSchema = z.object({
+  question1: z.string().min(1, 'Question 1 is required'),
+  answer1: z.string().min(1, 'Answer 1 is required'),
+  question2: z.string().min(1, 'Question 2 is required'),
+  answer2: z.string().min(1, 'Answer 2 is required'),
+  question3: z.string().min(1, 'Question 3 is required'),
+  answer3: z.string().min(1, 'Answer 3 is required'),
 });
 
 type ProfileFormData = z.infer<typeof profileSchema>;
 type CredentialsFormData = z.infer<typeof credentialsSchema>;
+type SecurityQuestionsFormData = z.infer<typeof securityQuestionsSchema>;
 
 type ReceiptSettings = {
   storeName: string;
@@ -85,150 +94,19 @@ const defaultExternalScannerSettings: ExternalScannerSettings = {
 };
 
 const HardwareSettingsDialog: React.FC<{ open: boolean; onOpenChange: (open: boolean) => void }> = ({ open, onOpenChange }) => {
-  const { toast } = useToast();
-  const [receiptSettings, setReceiptSettings] = useState<ReceiptSettings>(defaultReceiptSettings);
-  const [scannerSettings, setScannerSettings] = useState<ExternalScannerSettings>(defaultExternalScannerSettings);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    let mounted = true;
-    (async () => {
-      try {
-        const data: SettingsResponse = await api.get('/api/settings');
-        if (!mounted) return;
-        setReceiptSettings({ ...defaultReceiptSettings, ...(data.receipt || {}) });
-        setScannerSettings({ ...defaultExternalScannerSettings, ...(data.externalScanner || {}) });
-      } catch {
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
-    return () => { mounted = false; };
-  }, [open]);
-
-  const saveAllSettings = async () => {
-    setSaving(true);
-    try {
-      await api.put('/api/settings', { 
-        receipt: receiptSettings,
-        externalScanner: scannerSettings
-      });
-      toast({ title: 'Settings Saved', description: 'Hardware configuration has been updated.' });
-      onOpenChange(false);
-    } catch (error) {
-      toast({ title: 'Save Failed', description: 'Could not save settings', variant: 'destructive' });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const testPrintReceipt = async () => {
-    try {
-      await api.post('/api/print/test-receipt', {});
-      toast({ title: 'Test Receipt Sent', description: 'Check the printer output.' });
-    } catch (error) {
-      toast({ title: 'Test Print Failed', description: 'Could not send test receipt', variant: 'destructive' });
-    }
-  };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Cpu className="w-5 h-5 text-[#FF8882]" />
             Hardware Configuration
           </DialogTitle>
           <DialogDescription>
-            Configure your thermal printer and external barcode scanner settings.
+            Set up your thermal printer, scanner, and external devices.
           </DialogDescription>
         </DialogHeader>
-
-        {loading ? (
-          <div className="py-10 text-center text-gray-500">Loading settings…</div>
-        ) : (
-          <div className="space-y-6 py-4">
-            {/* Receipt Settings Section */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500 flex items-center gap-2">
-                <Printer className="w-4 h-4" /> Receipt Printer
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="receiptStoreName">Store Name</Label>
-                  <Input id="receiptStoreName" value={receiptSettings.storeName} onChange={(e) => setReceiptSettings(s => ({ ...s, storeName: e.target.value }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="receiptStorePhone">Store Phone</Label>
-                  <Input id="receiptStorePhone" value={receiptSettings.storePhone} onChange={(e) => setReceiptSettings(s => ({ ...s, storePhone: e.target.value }))} />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="receiptStoreAddress">Store Address</Label>
-                <Textarea id="receiptStoreAddress" value={receiptSettings.storeAddress} onChange={(e) => setReceiptSettings(s => ({ ...s, storeAddress: e.target.value }))} rows={2} />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="receiptHeaderNote">Header Note</Label>
-                  <Textarea id="receiptHeaderNote" value={receiptSettings.headerNote} onChange={(e) => setReceiptSettings(s => ({ ...s, headerNote: e.target.value }))} rows={2} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="receiptFooterNote">Footer Note</Label>
-                  <Textarea id="receiptFooterNote" value={receiptSettings.footerNote} onChange={(e) => setReceiptSettings(s => ({ ...s, footerNote: e.target.value }))} rows={2} />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="space-y-1.5">
-                  <Label>Paper Width</Label>
-                  <Select value={receiptSettings.paperWidth} onValueChange={(val: any) => setReceiptSettings(s => ({ ...s, paperWidth: val }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent><SelectItem value="58mm">58mm</SelectItem><SelectItem value="80mm">80mm</SelectItem></SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-center justify-between rounded-lg border px-3 py-2 bg-gray-50/50">
-                  <span className="text-sm font-medium">Auto Print</span>
-                  <Switch checked={receiptSettings.autoPrintOnSale} onCheckedChange={(checked) => setReceiptSettings(s => ({ ...s, autoPrintOnSale: checked }))} />
-                </div>
-                <div className="flex items-center justify-between rounded-lg border px-3 py-2 bg-gray-50/50">
-                  <span className="text-sm font-medium">Show Staff</span>
-                  <Switch checked={receiptSettings.showStaffName} onCheckedChange={(checked) => setReceiptSettings(s => ({ ...s, showStaffName: checked }))} />
-                </div>
-              </div>
-            </div>
-
-            <div className="h-px bg-gray-100" />
-
-            {/* Scanner Settings Section */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500 flex items-center gap-2">
-                <Scan className="w-4 h-4" /> External Scanner
-              </h3>
-              <div className="flex items-center justify-between rounded-lg border px-3 py-2 bg-gray-50/50">
-                <div>
-                  <div className="text-sm font-semibold">External Scanner Enabled</div>
-                  <div className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">USB/Bluetooth Support</div>
-                </div>
-                <Switch checked={scannerSettings.enabled} onCheckedChange={(checked) => setScannerSettings(s => ({ ...s, enabled: checked }))} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="scannerTimeout">Buffer Timeout (ms)</Label>
-                <div className="flex items-center gap-3">
-                  <Input id="scannerTimeout" type="number" value={scannerSettings.timeout} onChange={(e) => setScannerSettings(s => ({ ...s, timeout: parseInt(e.target.value) || 150 }))} className="max-w-[120px]" disabled={!scannerSettings.enabled} />
-                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Recommended: 150ms</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={testPrintReceipt} disabled={saving} className="flex-1 sm:flex-none">Test Print</Button>
-          <Button onClick={saveAllSettings} disabled={saving} className="flex-1 sm:flex-none bg-[#FF8882] hover:bg-[#D89D9D]">
-            {saving ? 'Saving...' : 'Save Configuration'}
-          </Button>
-        </DialogFooter>
+        <ExternalDeviceManager />
       </DialogContent>
     </Dialog>
   );
@@ -236,7 +114,7 @@ const HardwareSettingsDialog: React.FC<{ open: boolean; onOpenChange: (open: boo
 
 const ProfileSettings: React.FC = () => {
   const [location, setLocation] = useLocation();
-  const { user, logout } = useAuth();
+  const { user, logout, login } = useAuth();
   const { deviceMode } = useDevices();
   const { toast } = useToast();
   const { connectToRouter, disconnectFromRouter, isConnectedToRouter, syncWithRouter } = useApp();
@@ -248,6 +126,7 @@ const ProfileSettings: React.FC = () => {
   const [showHardwareSettings, setShowHardwareSettings] = useState(false);
   const [showStoreInfoDialog, setShowStoreInfoDialog] = useState(false);
   const [showBackupDialog, setShowBackupDialog] = useState(false);
+  const [showSecurityQuestions, setShowSecurityQuestions] = useState(false);
   
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
@@ -363,6 +242,18 @@ const ProfileSettings: React.FC = () => {
     },
   });
 
+  const securityQuestionsForm = useForm<SecurityQuestionsFormData>({
+    resolver: zodResolver(securityQuestionsSchema),
+    defaultValues: {
+      question1: '',
+      answer1: '',
+      question2: '',
+      answer2: '',
+      question3: '',
+      answer3: '',
+    },
+  });
+
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file && user) {
@@ -392,11 +283,14 @@ const ProfileSettings: React.FC = () => {
   const onSubmitProfile = async (data: ProfileFormData) => {
     setIsLoading(true);
     try {
-      // Mock API call
-      console.log('Profile updated:', data);
-      toast({ title: 'Profile Updated', description: 'Your profile has been updated successfully' });
-      setShowStoreInfoDialog(false);
+      if (user) {
+        await AuthService.updateUser(user.id, data);
+        login({ ...user, ...data });
+        toast({ title: 'Profile Updated', description: 'Your profile has been updated successfully' });
+        setShowStoreInfoDialog(false);
+      }
     } catch (error) {
+      console.error('Profile update error:', error);
       toast({ title: 'Error', description: 'Failed to update profile', variant: 'destructive' });
     } finally {
       setIsLoading(false);
@@ -404,6 +298,10 @@ const ProfileSettings: React.FC = () => {
   };
 
   const onSubmitCredentials = async (data: CredentialsFormData) => {
+    if (data.newPassword !== data.confirmPassword) {
+      toast({ title: 'Error', description: "Passwords don't match", variant: 'destructive' });
+      return;
+    }
     setIsLoading(true);
     try {
       console.log('Password updated:', data);
@@ -412,6 +310,24 @@ const ProfileSettings: React.FC = () => {
       setShowAccountDetails(false);
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to update password', variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const onSubmitSecurityQuestions = async (data: SecurityQuestionsFormData) => {
+    if (!user?.id) return;
+    setIsLoading(true);
+    try {
+      await api.post('/api/auth/set-security-questions', {
+        userId: user.id,
+        questions: [data.question1, data.question2, data.question3],
+        answers: [data.answer1, data.answer2, data.answer3],
+      });
+      toast({ title: 'Security Questions Saved', description: 'Your account is now more secure.' });
+      setShowSecurityQuestions(false);
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to save security questions', variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
@@ -722,40 +638,81 @@ const ProfileSettings: React.FC = () => {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Shield className="w-5 h-5 text-[#FF8882]" />
-                Security Settings
+                Security Center
               </DialogTitle>
             </DialogHeader>
-            <Form {...credentialsForm}>
-              <form onSubmit={credentialsForm.handleSubmit(onSubmitCredentials)} className="space-y-4 py-4">
-                <FormField control={credentialsForm.control} name="currentPassword" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-[10px] font-black uppercase tracking-widest text-gray-400">Current Password</FormLabel>
-                    <FormControl><Input type="password" {...field} className="rounded-xl h-12" /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={credentialsForm.control} name="newPassword" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-[10px] font-black uppercase tracking-widest text-gray-400">New Password</FormLabel>
-                    <FormControl><Input type="password" {...field} className="rounded-xl h-12" /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={credentialsForm.control} name="confirmPassword" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-[10px] font-black uppercase tracking-widest text-gray-400">Confirm Password</FormLabel>
-                    <FormControl><Input type="password" {...field} className="rounded-xl h-12" /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <div className="flex gap-3 pt-4">
-                  <Button type="button" variant="outline" onClick={() => setShowAccountDetails(false)} className="flex-1 h-12 rounded-xl">Cancel</Button>
-                  <Button type="submit" disabled={isLoading} className="flex-1 h-12 rounded-xl bg-[#FF8882] hover:bg-[#D89D9D]">
-                    {isLoading ? 'Updating...' : 'Update Security'}
-                  </Button>
-                </div>
-              </form>
-            </Form>
+            <Tabs defaultValue="password" className="w-full">
+              <TabsList className="grid w-full grid-cols-2 mb-4">
+                <TabsTrigger value="password">Password</TabsTrigger>
+                <TabsTrigger value="questions">Questions</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="password">
+                <Form {...credentialsForm}>
+                  <form onSubmit={credentialsForm.handleSubmit(onSubmitCredentials)} className="space-y-4 py-2">
+                    <FormField control={credentialsForm.control} name="currentPassword" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-[10px] font-black uppercase tracking-widest text-gray-400">Current Password</FormLabel>
+                        <FormControl><Input type="password" {...field} className="rounded-xl h-12" /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={credentialsForm.control} name="newPassword" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-[10px] font-black uppercase tracking-widest text-gray-400">New Password</FormLabel>
+                        <FormControl><Input type="password" {...field} className="rounded-xl h-12" /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={credentialsForm.control} name="confirmPassword" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-[10px] font-black uppercase tracking-widest text-gray-400">Confirm Password</FormLabel>
+                        <FormControl><Input type="password" {...field} className="rounded-xl h-12" /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <div className="flex gap-3 pt-4">
+                      <Button type="button" variant="outline" onClick={() => setShowAccountDetails(false)} className="flex-1 h-12 rounded-xl">Cancel</Button>
+                      <Button type="submit" disabled={isLoading} className="flex-1 h-12 rounded-xl bg-[#FF8882] hover:bg-[#D89D9D]">
+                        {isLoading ? 'Updating...' : 'Update Password'}
+                      </Button>
+                    </div>
+                  </form>
+                </Form>
+              </TabsContent>
+
+              <TabsContent value="questions">
+                <Form {...securityQuestionsForm}>
+                  <form onSubmit={securityQuestionsForm.handleSubmit(onSubmitSecurityQuestions)} className="space-y-4 py-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                    <div className="space-y-4">
+                      {[1, 2, 3].map((num) => (
+                        <div key={num} className="space-y-3 p-3 bg-gray-50 rounded-2xl border border-gray-100">
+                          <h4 className="text-[10px] font-black uppercase tracking-widest text-[#BF953F]">Question {num}</h4>
+                          <FormField control={securityQuestionsForm.control} name={`question${num}` as any} render={({ field }) => (
+                            <FormItem>
+                              <FormControl><Input placeholder={`Security Question ${num}`} {...field} className="rounded-xl" /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                          <FormField control={securityQuestionsForm.control} name={`answer${num}` as any} render={({ field }) => (
+                            <FormItem>
+                              <FormControl><Input type="password" placeholder={`Answer ${num}`} {...field} className="rounded-xl" /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-3 pt-4">
+                      <Button type="button" variant="outline" onClick={() => setShowAccountDetails(false)} className="flex-1 h-12 rounded-xl">Cancel</Button>
+                      <Button type="submit" disabled={isLoading} className="flex-1 h-12 rounded-xl bg-[#BF953F] hover:bg-[#B38728]">
+                        {isLoading ? 'Saving...' : 'Save Questions'}
+                      </Button>
+                    </div>
+                  </form>
+                </Form>
+              </TabsContent>
+            </Tabs>
           </DialogContent>
         </Dialog>
 

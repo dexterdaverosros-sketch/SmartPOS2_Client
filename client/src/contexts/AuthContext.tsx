@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import type { User } from '@shared/schema';
 import { io, Socket } from 'socket.io-client';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from '@/hooks/use-toast';
 import api from '@/lib/api';
 
 interface AuthContextType {
@@ -34,7 +34,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
-  const { toast } = useToast();
 
   useEffect(() => {
     // Initialize socket by asking the server for the correct origin (works across LAN)
@@ -139,7 +138,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         socket.emit('leave-user', user.id);
       };
     }
-  }, [socket, user, toast]);
+  }, [socket, user]);
 
   const login = (userData: User, authToken?: string) => {
     setUser(userData);

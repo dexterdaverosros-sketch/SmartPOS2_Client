@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Search, Calendar, Filter } from 'lucide-react';
+import { ArrowLeft, Search, Calendar, Filter, RefreshCw } from 'lucide-react';
 import { useLocation } from 'wouter';
+import { cn } from '@/lib/utils';
 import Layout from '@/components/Layout';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -25,51 +26,58 @@ const TransactionHistory: React.FC = () => {
   const { toast } = useToast();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [searchQuery, setSearchQuery] = useState('');
   
+  const fetchTransactions = async (fromCloud = false) => {
+    if (fromCloud) setSyncing(true);
+    else setLoading(true);
+    
+    try {
+      const endpoint = fromCloud ? '/api/cloud/transactions' : '/api/sales-history';
+      const response = await api.get(endpoint);
+      const salesHistory = Array.isArray(response) ? response : (response.data || []);
+      
+      if (!Array.isArray(salesHistory)) {
+        throw new Error('Invalid response format from server');
+      }
+
+      const formattedTransactions = salesHistory.map((sale: any) => {
+        const date = sale.createdAt ? new Date(sale.createdAt) : new Date();
+        return {
+          id: sale.id,
+          date: date.toLocaleDateString(),
+          time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          items: Array.isArray(sale.items) ? sale.items.length : 0,
+          amount: Number(sale.total || 0),
+          paymentMethod: (sale.paymentType === 'ewallet' ? 'ewallet' : sale.paymentType === 'credits' ? 'credits' : 'cash') as 'cash' | 'ewallet' | 'credits', 
+          createdAt: date,
+          staffName: sale.staffName || 'Owner'
+        };
+      });
+
+      setTransactions(formattedTransactions.sort((a: any, b: any) => b.createdAt.getTime() - a.createdAt.getTime()));
+      
+      if (fromCloud) {
+        toast({ title: 'Cloud Sync Complete', description: `Successfully retrieved ${formattedTransactions.length} transactions from Supabase.` });
+      }
+    } catch (error) {
+      console.error('Error fetching transactions:', error);
+      toast({
+        title: 'Error',
+        description: fromCloud ? 'Failed to sync with Supabase' : 'Failed to load transaction history from server',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+      setSyncing(false);
+    }
+  };
+
   // Fetch transactions on component mount
   useEffect(() => {
-    const fetchTransactions = async () => {
-      setLoading(true);
-      try {
-        const response = await api.get('/api/sales-history');
-        // Ensure we handle both raw array or {data: []} from different api wrappers
-        const salesHistory = Array.isArray(response) ? response : (response.data || []);
-        
-        if (!Array.isArray(salesHistory)) {
-          throw new Error('Invalid response format from server');
-        }
-
-        const formattedTransactions = salesHistory.map((sale: any) => {
-          const date = sale.createdAt ? new Date(sale.createdAt) : new Date();
-          return {
-            id: sale.id,
-            date: date.toLocaleDateString(),
-            time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            items: Array.isArray(sale.items) ? sale.items.length : 0,
-            amount: Number(sale.total || 0),
-            paymentMethod: (sale.paymentType === 'ewallet' ? 'ewallet' : sale.paymentType === 'credits' ? 'credits' : 'cash') as 'cash' | 'ewallet' | 'credits',
-            createdAt: date,
-            staffName: sale.staffName || 'Owner'
-          };
-        });
-
-        setTransactions(formattedTransactions.sort((a: any, b: any) => b.createdAt.getTime() - a.createdAt.getTime()));
-      } catch (error) {
-        console.error('Error fetching transactions:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to load transaction history from server',
-          variant: 'destructive',
-        });
-        setTransactions([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchTransactions();
   }, [toast]);
   
@@ -133,16 +141,28 @@ const TransactionHistory: React.FC = () => {
       >
         {/* Header */}
         <div className="bg-white dark:bg-gray-800 p-4 shadow-sm">
-          <div className="flex items-center">
-            <button
-              onClick={() => setLocation('/admin-main')}
-              className="mr-4 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <button
+                onClick={() => setLocation('/admin-main')}
+                className="mr-4 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <ArrowLeft className="w-6 h-6" />
+              </button>
+              <h1 className="text-xl font-bold text-gray-800 dark:text-gray-200">
+                Transaction History
+              </h1>
+            </div>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => fetchTransactions(true)} 
+              disabled={syncing}
+              className="border-[#BF953F] text-[#BF953F] hover:bg-[#BF953F]/10"
             >
-              <ArrowLeft className="w-6 h-6" />
-            </button>
-            <h1 className="text-xl font-bold text-gray-800 dark:text-gray-200">
-              Transaction History
-            </h1>
+              <RefreshCw className={cn("w-4 h-4 mr-2", syncing && "animate-spin")} />
+              {syncing ? 'Syncing...' : 'Sync Cloud'}
+            </Button>
           </div>
         </div>
         

@@ -53,8 +53,8 @@ const AdminLogin: React.FC = () => {
   const onSubmit = async (data: LoginFormData) => {
     setIsLoading(true);
     try {
-      const user = await AuthService.loginAdmin(data.username.trim(), data.password);
-      if (user) {
+      const response = await AuthService.loginAdmin(data.username.trim(), data.password);
+      if (response && response.user) {
         if (data.rememberMe) {
           localStorage.setItem('admin_username', data.username.trim());
           localStorage.setItem('admin_password', data.password);
@@ -65,10 +65,10 @@ const AdminLogin: React.FC = () => {
           localStorage.removeItem('admin_remember_me');
         }
         
-        login(user);
+        login(response.user, response.token);
         toast({
           title: 'Welcome back!',
-          description: `Logged in as ${user.businessName || 'Admin'}`,
+          description: `Logged in as ${response.user.businessName || 'Admin'}`,
         });
         setLocation('/admin-dashboard');
       } else {

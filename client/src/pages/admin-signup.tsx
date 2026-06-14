@@ -56,8 +56,8 @@ const AdminSignup: React.FC = () => {
   const onSubmit = async (data: SignupFormData) => {
     setIsLoading(true);
     try {
-      const user = await AuthService.createAdmin(data);
-      login(user);
+      const response = await AuthService.createAdmin(data);
+      login(response.user, response.token);
       toast({
         title: 'Account Created',
         description: 'Welcome to SmartPOS+!',

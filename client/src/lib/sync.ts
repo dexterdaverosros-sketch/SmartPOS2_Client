@@ -64,6 +64,51 @@ export class DatabaseSyncService {
   }
 
   /**
+   * Push all local data to Supabase (Sales, items, expenses, etc.)
+   */
+  async pushToCloud(onProgress?: (progress: number, message: string) => void): Promise<void> {
+    if (this.isSyncing) throw new Error('Sync already in progress');
+    this.isSyncing = true;
+    
+    try {
+      // 1. Fetch local sales
+      onProgress?.(10, 'Fetching local sales...');
+      const sales = await db.sales.toArray();
+      const saleItems = await db.saleItems.toArray();
+      
+      // 2. Sync Sales to Supabase
+      if (sales.length > 0) {
+        onProgress?.(30, `Syncing ${sales.length} sales to Cloud...`);
+        // We'll push in chunks if needed, but for now let's use the API
+        // The API already has logic to push to Supabase if useCloud() is true
+        // But we want a direct push for "Manual Sync"
+        await api.post('/api/cloud/sync-sales', { sales, items: saleItems });
+      }
+
+      // 3. Sync Expenses
+      onProgress?.(60, 'Syncing expenses...');
+      const expenses = await db.expenses.toArray();
+      if (expenses.length > 0) {
+        await api.post('/api/cloud/sync-expenses', { expenses });
+      }
+
+      // 4. Sync Products (ensure latest versions are in cloud)
+      onProgress?.(80, 'Syncing products catalog...');
+      const products = await db.products.toArray();
+      if (products.length > 0) {
+        await api.post('/api/cloud/products', products);
+      }
+
+      onProgress?.(100, 'Cloud synchronization complete.');
+    } catch (error) {
+      console.error('Cloud push failed:', error);
+      throw error;
+    } finally {
+      this.isSyncing = false;
+    }
+  }
+
+  /**
    * Sync the local database with the server
    */
   async syncDatabase(): Promise<boolean> {
