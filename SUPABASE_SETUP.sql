@@ -214,14 +214,86 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 
 -- ==============================================
+-- ADD MISSING COLUMNS TO EXISTING TABLES
+-- ==============================================
+
+-- Add tenant_id to users table if missing
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='tenant_id') THEN
+    ALTER TABLE users ADD COLUMN tenant_id UUID REFERENCES tenants(id);
+  END IF;
+END $$;
+
+-- Add tenant_id to products table if missing
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='products' AND column_name='tenant_id') THEN
+    ALTER TABLE products ADD COLUMN tenant_id UUID REFERENCES tenants(id);
+  END IF;
+END $$;
+
+-- Add barcode to products table if missing
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='products' AND column_name='barcode') THEN
+    ALTER TABLE products ADD COLUMN barcode VARCHAR(100) UNIQUE;
+  END IF;
+END $$;
+
+-- Add tenant_id to variants table if missing
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='variants' AND column_name='tenant_id') THEN
+    ALTER TABLE variants ADD COLUMN tenant_id UUID REFERENCES tenants(id);
+  END IF;
+END $$;
+
+-- Add tenant_id to staff table if missing
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='staff' AND column_name='tenant_id') THEN
+    ALTER TABLE staff ADD COLUMN tenant_id UUID REFERENCES tenants(id);
+  END IF;
+END $$;
+
+-- Add tenant_id to sales table if missing
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sales' AND column_name='tenant_id') THEN
+    ALTER TABLE sales ADD COLUMN tenant_id UUID REFERENCES tenants(id);
+  END IF;
+END $$;
+
+-- Add tenant_id to sale_items table if missing
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sale_items' AND column_name='tenant_id') THEN
+    ALTER TABLE sale_items ADD COLUMN tenant_id UUID REFERENCES tenants(id);
+  END IF;
+END $$;
+
+-- Add tenant_id to customers table if missing
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='customers' AND column_name='tenant_id') THEN
+    ALTER TABLE customers ADD COLUMN tenant_id UUID REFERENCES tenants(id);
+  END IF;
+END $$;
+
+-- Add tenant_id to non_inventory_products table if missing
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='non_inventory_products' AND column_name='tenant_id') THEN
+    ALTER TABLE non_inventory_products ADD COLUMN tenant_id UUID REFERENCES tenants(id);
+  END IF;
+END $$;
+
+-- ==============================================
 -- CREATE INDEXES FOR PERFORMANCE
 -- ==============================================
 
 CREATE INDEX IF NOT EXISTS idx_tenants_subdomain ON tenants(subdomain);
 CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-CREATE INDEX IF NOT EXISTS idx_products_tenant ON products(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
+-- Only create barcode index if barcode column exists
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='products' AND column_name='barcode') THEN
+    CREATE INDEX IF NOT EXISTS idx_products_tenant ON products(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
+  END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_variants_tenant ON variants(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_staff_tenant ON staff(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_staff_id ON staff(staff_id);
@@ -234,6 +306,57 @@ CREATE INDEX IF NOT EXISTS idx_remittances_tenant ON remittances(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_tenant ON notifications(tenant_id);
 
 -- ==============================================
+-- ROW LEVEL SECURITY (RLS) POLICIES
+-- ==============================================
+
+-- Enable RLS on all tables
+ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE variants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE staff ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sale_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE credits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE non_inventory_products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE creditors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE purchases ENABLE ROW LEVEL SECURITY;
+ALTER TABLE remittances ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+
+-- ==============================================
+-- NOTE ABOUT RLS POLICIES
+-- ==============================================
+-- IMPORTANT: Since you're using a backend (Express) to connect to Supabase,
+-- you don't need strict RLS policies because your backend is the one making
+-- requests to Supabase. However, if you want to secure your data, you can use:
+
+-- Option 1: Disable RLS (recommended if using backend only)
+-- ALTER TABLE tenants DISABLE ROW LEVEL SECURITY;
+-- (repeat for other tables)
+
+-- Option 2: Allow full access from backend using service_role
+-- If you're using the service_role key (as you should for backend),
+-- it bypasses RLS anyway! So no need for policies.
+
+-- Option 3: If you want to use RLS for future frontend direct access:
+-- (These are example policies)
+
+-- -- Tenants: Allow public read, but only backend can write
+-- CREATE POLICY "Enable read access for all users" ON tenants FOR SELECT USING (true);
+
+-- -- Users: Only allow access to same tenant
+-- CREATE POLICY "Tenant isolation for users" ON users USING (tenant_id = current_setting('app.current_tenant_id')::uuid);
+
+-- -- Products: Only allow access to same tenant
+-- CREATE POLICY "Tenant isolation for products" ON products USING (tenant_id = current_setting('app.current_tenant_id')::uuid);
+
+-- But again, since your backend is using service_role, RLS won't affect it!
+
+-- ==============================================
 -- INSERT TEST DATA (OPTIONAL)
 -- ==============================================
 
@@ -241,15 +364,3 @@ CREATE INDEX IF NOT EXISTS idx_notifications_tenant ON notifications(tenant_id);
 
 -- INSERT INTO tenants (store_name, subdomain)
 -- VALUES ('Masing Bakery', 'masingbakery');
-
--- ==============================================
--- SECURITY: ENABLE ROW LEVEL SECURITY (RLS)
--- ==============================================
-
--- Enable RLS on all tables (recommended for multi-tenant)
--- ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE users ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE products ENABLE ROW LEVEL SECURITY;
--- ... etc (repeat for all tables)
-
--- Note: You'll need to create RLS policies based on your requirements
