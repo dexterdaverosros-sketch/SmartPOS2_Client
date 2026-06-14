@@ -236,16 +236,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Helper function to get tenant from X-Tenant-ID
   const getTenantFromHeader = async (req: Request) => {
     const subdomain = req.headers['x-tenant-id'] as string;
+    console.log('🔍 Looking for tenant:', subdomain);
     if (!subdomain) return null;
     
     const supabase = getSupabase();
     if (!supabase) return { id: 'default-tenant-id', subdomain };
     
-    const { data: tenant } = await supabase
+    const { data: tenant, error } = await supabase
       .from('tenants')
       .select('*')
       .eq('subdomain', subdomain.toLowerCase())
       .single();
+      
+    if (error) console.error('❌ Error finding tenant:', error);
+    else console.log('✅ Found tenant:', tenant);
     
     return tenant;
   };
@@ -254,6 +258,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/auth/admin-login', async (req: Request, res: Response) => {
     try {
       const { username, password } = req.body;
+      console.log('🔐 Login attempt for username:', username);
       
       // Get tenant from header
       const tenant = await getTenantFromHeader(req);
@@ -261,29 +266,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // First check Supabase first (prefer cloud over local)
       let admin = null;
       const supabase = getSupabase();
-      if (supabase && tenant) {
-        const { data, error } = await supabase
-          .from('users')
-          .select('*')
-          .eq('username', username)
-          .eq('tenant_id', tenant.id)
-          .single();
-          
-        if (!error && data) {
-          admin = data as any;
+      if (supabase) {
+        // Try with tenant_id first
+        if (tenant) {
+          const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('username', username)
+            .maybeSingle();
+            
+          if (error) console.error('❌ Supabase query error:', error);
+          if (data) {
+            console.log('✅ Found user in Supabase:', data);
+            admin = data as any;
+          }
+        } else {
+          // Fallback without tenant check
+          const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('username', username)
+            .maybeSingle();
+            
+          if (error) console.error('❌ Supabase query error:', error);
+          if (data) {
+            console.log('✅ Found user in Supabase (without tenant check):', data);
+            admin = data as any;
+          }
         }
       }
       
       // If not in Supabase, try local
       if (!admin) {
+        console.log('⚠️ Not found in Supabase, checking local DB');
         admin = dbService.getUserByUsername(username) as User | undefined;
+        if (admin) console.log('✅ Found user in local DB:', admin);
       }
       
-      if (!admin || admin.role !== 'admin') {
+      if (!admin) {
+        console.error('❌ User not found');
         return res.status(401).json({ error: 'Invalid username or password' });
       }
 
+      if (admin.role && admin.role !== 'admin') {
+        console.error('❌ Not an admin');
+        return res.status(401).json({ error: 'Invalid username or password' });
+      }
+
+      console.log('🔑 Verifying password...');
       const isValid = await bcrypt.compare(password, admin.password);
+      console.log('🔑 Password valid:', isValid);
+      
       if (!isValid) {
         return res.status(401).json({ error: 'Invalid username or password' });
       }
@@ -305,9 +338,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Return admin info and token
       const { password: _, ...adminInfo } = admin;
+      console.log('✅ Login successful!');
       res.json({ user: adminInfo, token });
     } catch (error) {
-      console.error('Admin login error:', error);
+      console.error('💥 Admin login error:', error);
       res.status(500).json({ error: 'Login failed' });
     }
   });
