@@ -31,11 +31,15 @@ import ForgotPassword from "@/pages/forgot-password";
 import ResetPassword from "@/pages/reset-password";
 import SecurityQuestionsPage from "@/pages/security-questions";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import RegisterTenant from "@/pages/register-tenant";
 import NotFound from "@/pages/not-found";
 
 function Router() {
   return (
     <Switch>
+      {/* Tenant registration route */}
+      <Route path="/register-tenant" component={RegisterTenant} />
+      
       {/* Routes with tenant prefix */}
       <Route path="/store/:tenant" component={SplashScreen} />
       <Route path="/store/:tenant/role-selection" component={RoleSelection} />
