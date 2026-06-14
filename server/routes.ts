@@ -130,54 +130,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }, 60 * 60 * 1000);
 
-  // Tenant registration (no auth required)
+  // Tenant registration (no auth required) - SIMPLE AND EASY!
   app.post('/api/tenants/register', async (req: Request, res: Response) => {
     try {
-      const { storeName, subdomain, username, password, email, mobile, ownerName } = req.body;
+      const { 
+        storeName, 
+        subdomain, 
+        username, 
+        password, 
+        email, 
+        mobile, 
+        ownerName 
+      } = req.body;
+      
+      console.log('📝 New tenant registration:', { storeName, subdomain, username });
       
       const supabase = getSupabase();
       if (!supabase) {
+        console.error('❌ Supabase not configured!');
         return res.status(500).json({ error: 'Cloud not configured' });
       }
       
       // 1. Create tenant
+      console.log('🏪 Creating tenant...');
+      const tenantId = randomUUID();
       const { data: tenant, error: tenantError } = await supabase
         .from('tenants')
-        .insert({ id: randomUUID(), store_name: storeName, subdomain: subdomain.toLowerCase() })
+        .insert({ 
+          id: tenantId, 
+          store_name: storeName, 
+          subdomain: subdomain.toLowerCase() 
+        })
         .select()
         .single();
         
       if (tenantError) {
+        console.error('❌ Tenant error:', tenantError);
         return res.status(400).json({ error: tenantError.message });
       }
       
-      // 2. Hash password
+      console.log('✅ Tenant created:', tenantId);
+      
+      // 2. Hash password AUTOMATICALLY!
+      console.log('🔐 Hashing password...');
       const hashedPassword = await bcrypt.hash(password, 10);
       
       // 3. Create admin user for this tenant
+      console.log('👤 Creating admin user...');
       const { data: user, error: userError } = await supabase
         .from('users')
         .insert({
           id: randomUUID(),
-          tenant_id: tenant.id,
+          tenant_id: tenantId,
           username,
           password: hashedPassword,
           email,
           mobile,
           owner_name: ownerName,
           business_name: storeName,
-          role: 'admin'
+          role: 'admin',
+          created_at: new Date().toISOString()
         })
         .select()
         .single();
         
       if (userError) {
+        console.error('❌ User error:', userError);
         return res.status(400).json({ error: userError.message });
       }
       
+      console.log('✅ All done! Registration successful!');
       res.status(201).json({ success: true, tenant, user });
     } catch (error) {
-      console.error('Tenant registration failed:', error);
+      console.error('💥 Tenant registration failed:', error);
       res.status(500).json({ error: 'Tenant registration failed' });
     }
   });
