@@ -130,11 +130,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }, 60 * 60 * 1000);
 
+  // Quick test endpoint to check what's in Supabase (for debugging)
+  app.get('/api/test/supabase-users', async (req, res) => {
+    const supabase = getSupabase();
+    if (!supabase) return res.status(500).json({ error: 'No Supabase' });
+    
+    const { data: tenants } = await supabase.from('tenants').select('*');
+    const { data: users } = await supabase.from('users').select('id, username, tenant_id, role');
+    
+    console.log('=== TEST: Supabase Data ===');
+    console.log('Tenants:', tenants);
+    console.log('Users:', users);
+    
+    res.json({ tenants, users });
+  });
+
   // Tenant registration (no auth required)
   app.post('/api/tenants/register', async (req: Request, res: Response) => {
     try {
       const { storeName, subdomain, username, password } = req.body;
-      console.log('Registering tenant:', { storeName, subdomain, username });
+      console.log('=== REGISTERING TENANT ===');
+      console.log('Data:', { storeName, subdomain, username });
       
       const supabase = getSupabase();
       if (!supabase) {
@@ -142,33 +158,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // 1. Create tenant
+      const tenantId = randomUUID();
+      console.log('Creating tenant with ID:', tenantId);
       const { data: tenant, error: tenantError } = await supabase
         .from('tenants')
-        .insert({ id: randomUUID(), store_name: storeName, subdomain: subdomain.toLowerCase() })
+        .insert({ id: tenantId, store_name: storeName, subdomain: subdomain.toLowerCase() })
         .select()
         .single();
       
       if (tenantError) {
-        console.error('Tenant creation error:', tenantError);
+        console.error('TENANT ERROR:', tenantError);
         return res.status(400).json({ error: tenantError.message });
       }
-      console.log('Created tenant:', tenant);
+      console.log('TENANT CREATED:', tenant);
       
       // 2. Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
-      console.log('Password hashed successfully');
+      console.log('Password hashed, starts with:', hashedPassword.substring(0, 20));
       
       // 3. Create admin user - ONLY the minimal data we KNOW is in your users table!
       // Your users table only has: id, tenant_id, username, password, role
+      const userId = randomUUID();
       const minimalUserData: any = {
-        id: randomUUID(),
+        id: userId,
         tenant_id: tenant.id,
         username,
         password: hashedPassword,
         role: 'admin'
       };
       
-      console.log('Trying to create user with minimal data:', minimalUserData);
+      console.log('Creating user with data:', minimalUserData);
       
       const { data: user, error: userError } = await supabase
         .from('users')
@@ -177,19 +196,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .single();
       
       if (userError) {
-        console.error('User creation failed:', userError);
+        console.error('USER ERROR:', userError);
         return res.status(400).json({ 
           error: 'Failed to create user.',
           details: userError 
         });
       }
       
-      console.log('Created user successfully:', user);
+      console.log('USER CREATED:', user);
       
       res.status(201).json({ success: true, tenant, user });
     } catch (error) {
-      console.error('Tenant registration failed:', error);
-      res.status(500).json({ error: 'Tenant registration failed' });
+      console.error('TENANT REGISTRATION ERROR:', error);
+      res.status(500).json({ error: 'Tenant registration failed', details: error });
     }
   });
 
@@ -281,35 +300,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log('In tenant ID:', tenant.id);
         console.log('In tenant subdomain:', tenant.subdomain);
         
-        // Try query with tenant_id first
-        console.log('First query: with tenant_id');
-        let { data, error } = await supabase
-          .from('users')
-          .select('*')
-          .eq('username', username)
-          .eq('tenant_id', tenant.id)
-          .single();
-        
-        if (error) {
-          console.log('First query error:', error.message);
-          console.log('Trying without tenant_id...');
-          
-          // Try without tenant_id
-          const result = await supabase
-            .from('users')
-            .select('*')
-            .eq('username', username)
-            .single();
-          
-          data = result.data;
-          error = result.error;
-          
-          if (error) {
-            console.log('Second query error:', error.message);
+        // Try all possible ways to find the user
+        let attempts = [
+          // 1. Exact match with tenant_id
+          async () => {
+            console.log('Attempt 1: with tenant_id');
+            return await supabase
+              .from('users')
+              .select('*')
+              .eq('username', username)
+              .eq('tenant_id', tenant.id)
+              .single();
+          },
+          // 2. Case-insensitive username with tenant_id
+          async () => {
+            console.log('Attempt 2: with tenant_id, case-insensitive');
+            const { data: users } = await supabase
+              .from('users')
+              .select('*')
+              .eq('tenant_id', tenant.id);
+            const user = users?.find(u => u.username.toLowerCase() === username.toLowerCase());
+            return { data: user, error: user ? null : new Error('Not found') };
+          },
+          // 3. Without tenant_id
+          async () => {
+            console.log('Attempt 3: without tenant_id');
+            return await supabase
+              .from('users')
+              .select('*')
+              .eq('username', username)
+              .single();
+          },
+          // 4. Case-insensitive without tenant_id
+          async () => {
+            console.log('Attempt 4: without tenant_id, case-insensitive');
+            const { data: users } = await supabase
+              .from('users')
+              .select('*');
+            const user = users?.find(u => u.username.toLowerCase() === username.toLowerCase());
+            return { data: user, error: user ? null : new Error('Not found') };
           }
+        ];
+        
+        // Try each attempt until one works
+        let data: any = null;
+        for (let i = 0; i < attempts.length; i++) {
+          const result = await attempts[i]();
+          if (!result.error && result.data) {
+            data = result.data;
+            console.log(`SUCCESS with attempt ${i+1}!`);
+            break;
+          }
+          console.log(`Attempt ${i+1} failed:`, result.error?.message || 'No data');
         }
         
-        console.log('Supabase data found:', data ? 'YES' : 'NO');
         if (data) {
           console.log('User data from Supabase:');
           console.log('  - id:', data.id);
@@ -317,11 +361,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log('  - role:', data.role);
           console.log('  - tenant_id:', data.tenant_id);
           console.log('  - password starts with:', data.password.substring(0, 20));
-        }
-        
-        if (!error && data) {
+          
           admin = data as any;
           console.log('Successfully found user in Supabase');
+        } else {
+          console.log('All attempts failed to find user in Supabase');
         }
       }
       
@@ -354,7 +398,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log('=== CHECKING PASSWORD ===');
       console.log('Password entered:', password);
-      console.log('Stored hash:', admin.password.substring(0, 30) + '...');
+      console.log('Stored hash:', (admin.password || '').substring(0, 30) + '...');
       
       const isValid = await bcrypt.compare(password, admin.password);
       console.log('Password valid:', isValid);
@@ -371,7 +415,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         id: randomUUID(),
         user_id: admin.id,
         token,
-        tenant_id: tenant?.id || 'default', // Store tenant ID in session too
+        tenant_id: tenant?.id || admin.tenant_id || 'default', // Store tenant ID in session too
         device_info: req.headers['user-agent'] || 'Unknown Device',
         ip_address: req.ip || req.socket.remoteAddress || 'Unknown',
         created_at: new Date().toISOString(),
@@ -388,7 +432,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('=== LOGIN ERROR ===');
       console.error(error);
-      res.status(500).json({ error: 'Login failed' });
+      res.status(500).json({ error: 'Login failed', details: error });
     }
   });
 
