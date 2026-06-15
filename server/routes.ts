@@ -155,7 +155,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .single();
 
       if (error || !tenant) {
-        console.error(`Tenant not found for subdomain: ${subdomain}`, error);
+        console.error('Tenant not found for subdomain: ' + subdomain, error);
         return res.status(404).json({ error: 'Store not found' });
       }
 
@@ -164,7 +164,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       (req as any).tenantId = tenant.id;
       (req as any).subdomain = subdomain;
       
-      console.log(`Tenant identified: ${tenant.store_name} (${subdomain})`);
+      console.log('Tenant identified: ' + tenant.store_name + ' (' + subdomain + ')');
       next();
     } catch (error) {
       console.error('Tenant context error:', error);
@@ -211,7 +211,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const result = dbService.cleanupExpiredSessions(24); // 24 hours inactivity
       if (result.changes > 0) {
-        console.log(`Cleaned up ${result.changes} expired sessions`);
+        console.log('Cleaned up ' + result.changes + ' expired sessions');
       }
     } catch (e) {
       console.error('Session cleanup failed:', e);
@@ -315,10 +315,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const result = await attempts[i]();
           if (!result.error && result.data) {
             data = result.data;
-            console.log(`SUCCESS with attempt ${i+1}!');
+            console.log('SUCCESS with attempt ' + (i+1) + '!');
             break;
           }
-          console.log(`Attempt ${i+1} failed:`, result.error?.message || 'No data');
+          console.log('Attempt ' + (i+1) + ' failed:', result.error?.message || 'No data');
         }
         
         if (data) {
