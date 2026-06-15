@@ -35,7 +35,100 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }));
   app.use(express.json());
 
-  // Tenant Context Middleware
+  // Health check for Render
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  // Quick test endpoint to check what's in Supabase (for debugging) - NO TENANT CHECK!
+  app.get("/api/test/supabase-users", async (req, res) => {
+    try {
+      console.log("=== TEST ENDPOINT HIT ===");
+      const supabase = getSupabase();
+      if (!supabase) return res.status(500).json({ error: "No Supabase connection" });
+      
+      const { data: tenants } = await supabase.from("tenants").select("*");
+      const { data: users } = await supabase.from("users").select("id, username, tenant_id, role");
+      
+      console.log("=== TEST: Supabase Data ===");
+      console.log("Tenants:", tenants);
+      console.log("Users:", users);
+      
+      res.json({ tenants, users });
+    } catch (error) {
+      console.error("Test endpoint error:", error);
+      res.status(500).json({ error: "Test endpoint failed", details: error });
+    }
+  });
+
+  // Tenant registration (no auth required, no tenant check needed)
+  app.post("/api/tenants/register", async (req: Request, res: Response) => {
+    try {
+      console.log("=== REGISTERING TENANT ===");
+      const { storeName, subdomain, username, password } = req.body;
+      console.log("Data:", { storeName, subdomain, username });
+      
+      const supabase = getSupabase();
+      if (!supabase) {
+        return res.status(500).json({ error: "Cloud not configured" });
+      }
+      
+      // 1. Create tenant
+      const tenantId = randomUUID();
+      console.log("Creating tenant with ID:", tenantId);
+      const { data: tenant, error: tenantError } = await supabase
+        .from("tenants")
+        .insert({ id: tenantId, store_name: storeName, subdomain: subdomain.toLowerCase() })
+        .select()
+        .single();
+      
+      if (tenantError) {
+        console.error("TENANT ERROR:", tenantError);
+        return res.status(400).json({ error: tenantError.message });
+      }
+      console.log("TENANT CREATED:", tenant);
+      
+      // 2. Hash password
+      const hashedPassword = await bcrypt.hash(password, 10);
+      console.log("Password hashed, starts with:", hashedPassword.substring(0, 20));
+      
+      // 3. Create admin user - ONLY the minimal data we KNOW is in your users table!
+      // Your users table only has: id, tenant_id, username, password, role
+      const userId = randomUUID();
+      const minimalUserData: any = {
+        id: userId,
+        tenant_id: tenant.id,
+        username,
+        password: hashedPassword,
+        role: "admin"
+      };
+      
+      console.log("Creating user with data:", minimalUserData);
+      
+      const { data: user, error: userError } = await supabase
+        .from("users")
+        .insert(minimalUserData)
+        .select()
+        .single();
+      
+      if (userError) {
+        console.error("USER ERROR:", userError);
+        return res.status(400).json({ 
+          error: "Failed to create user.",
+          details: userError 
+        });
+      }
+      
+      console.log("USER CREATED:", user);
+      
+      res.status(201).json({ success: true, tenant, user });
+    } catch (error) {
+      console.error("TENANT REGISTRATION ERROR:", error);
+      res.status(500).json({ error: "Tenant registration failed", details: error });
+    }
+  });
+
+  // Tenant Context Middleware (APPLIES TO ALL SUBSEQUENT ROUTES!)
   const tenantContext = async (req: Request, res: Response, next: NextFunction) => {
     try {
       // Get tenant identifier from X-Tenant-ID header
@@ -78,11 +171,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: 'Failed to identify store' });
     }
   };
-
-  // Health check for Render
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
-  });
 
   const allowLocalNetwork: (req: Request, res: Response, next: NextFunction) => void = (req, res, next) => {
     // Prefer X-Forwarded-For when present (proxies), otherwise use socket remote address
@@ -130,139 +218,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }, 60 * 60 * 1000);
 
-  // Quick test endpoint to check what's in Supabase (for debugging)
-  app.get('/api/test/supabase-users', async (req, res) => {
-    const supabase = getSupabase();
-    if (!supabase) return res.status(500).json({ error: 'No Supabase' });
-    
-    const { data: tenants } = await supabase.from('tenants').select('*');
-    const { data: users } = await supabase.from('users').select('id, username, tenant_id, role');
-    
-    console.log('=== TEST: Supabase Data ===');
-    console.log('Tenants:', tenants);
-    console.log('Users:', users);
-    
-    res.json({ tenants, users });
-  });
-
-  // Tenant registration (no auth required)
-  app.post('/api/tenants/register', async (req: Request, res: Response) => {
-    try {
-      const { storeName, subdomain, username, password } = req.body;
-      console.log('=== REGISTERING TENANT ===');
-      console.log('Data:', { storeName, subdomain, username });
-      
-      const supabase = getSupabase();
-      if (!supabase) {
-        return res.status(500).json({ error: 'Cloud not configured' });
-      }
-      
-      // 1. Create tenant
-      const tenantId = randomUUID();
-      console.log('Creating tenant with ID:', tenantId);
-      const { data: tenant, error: tenantError } = await supabase
-        .from('tenants')
-        .insert({ id: tenantId, store_name: storeName, subdomain: subdomain.toLowerCase() })
-        .select()
-        .single();
-      
-      if (tenantError) {
-        console.error('TENANT ERROR:', tenantError);
-        return res.status(400).json({ error: tenantError.message });
-      }
-      console.log('TENANT CREATED:', tenant);
-      
-      // 2. Hash password
-      const hashedPassword = await bcrypt.hash(password, 10);
-      console.log('Password hashed, starts with:', hashedPassword.substring(0, 20));
-      
-      // 3. Create admin user - ONLY the minimal data we KNOW is in your users table!
-      // Your users table only has: id, tenant_id, username, password, role
-      const userId = randomUUID();
-      const minimalUserData: any = {
-        id: userId,
-        tenant_id: tenant.id,
-        username,
-        password: hashedPassword,
-        role: 'admin'
-      };
-      
-      console.log('Creating user with data:', minimalUserData);
-      
-      const { data: user, error: userError } = await supabase
-        .from('users')
-        .insert(minimalUserData)
-        .select()
-        .single();
-      
-      if (userError) {
-        console.error('USER ERROR:', userError);
-        return res.status(400).json({ 
-          error: 'Failed to create user.',
-          details: userError 
-        });
-      }
-      
-      console.log('USER CREATED:', user);
-      
-      res.status(201).json({ success: true, tenant, user });
-    } catch (error) {
-      console.error('TENANT REGISTRATION ERROR:', error);
-      res.status(500).json({ error: 'Tenant registration failed', details: error });
-    }
-  });
-
-  // Admin Registration & Status
-  app.get('/api/auth/status', (req: Request, res: Response) => {
-    try {
-      const admins = dbService.getAdmins();
-      res.json({ configured: admins.length > 0 });
-    } catch (e) {
-      res.status(500).json({ error: 'System check failed' });
-    }
-  });
-
-  app.post('/api/auth/register-admin', async (req: Request, res: Response) => {
-    try {
-      const existingAdmins = dbService.getAdmins();
-      if (existingAdmins.length > 0) {
-        return res.status(403).json({ error: 'System already configured. Only one admin allowed in single-tenant mode.' });
-      }
-
-      const user = req.body;
-      dbService.saveAdmin(user);
-
-      // Create session for the new admin
-      const token = randomUUID();
-      const session = {
-        id: randomUUID(),
-        user_id: user.id,
-        token,
-        device_info: req.headers['user-agent'] || 'Unknown Device',
-        ip_address: req.ip || req.socket.remoteAddress || 'Unknown',
-        created_at: new Date().toISOString(),
-        last_active_at: new Date().toISOString()
-      };
-      dbService.createSession(session);
-
-      res.status(201).json({ success: true, token });
-    } catch (error) {
-      console.error('Admin registration failed:', error);
-      res.status(500).json({ error: 'Registration failed' });
-    }
-  });
-
-  // Tenant context middleware should run after CORS but before protected endpoints
-  app.use('/api', (req, res, next) => {
-    // Skip tenantContext for non-protected endpoints
-    const publicPaths = ['/health', '/auth/status', '/auth/register-admin', '/auth/login', '/tenants/register'];
-    if (publicPaths.some(p => req.path.startsWith(p))) {
-      return next();
-    }
-    // Otherwise apply tenantContext
-    tenantContext(req, res, next);
-  });
-
   // Helper function to get tenant from X-Tenant-ID
   const getTenantFromHeader = async (req: Request) => {
     const subdomain = req.headers['x-tenant-id'] as string;
@@ -280,6 +235,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return tenant;
   };
 
+  // Admin Status
+  app.get('/api/auth/status', async (req: Request, res: Response) => {
+    try {
+      const tenant = await getTenantFromHeader(req);
+      const admin = dbService.getAdmin();
+      const adminExists = !!admin;
+      console.log('/api/auth/status hit, tenant:', tenant);
+      console.log('/api/auth/status, admin exists:', adminExists);
+      
+      if (!adminExists) {
+        return res.json({ adminExists: false, tenant: tenant || null });
+      }
+      
+      const { password, ...adminWithoutPassword } = admin;
+      
+      res.json({ adminExists: true, admin: adminWithoutPassword, tenant: tenant || null });
+    } catch (error) {
+      console.error('Error in /api/auth/status:', error);
+      res.status(500).json({ error: 'Failed to get status' });
+    }
+  });
+
   // Auth API
   app.post('/api/auth/admin-login', async (req: Request, res: Response) => {
     try {
@@ -294,53 +271,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // First check Supabase first (prefer cloud over local)
       let admin = null;
       const supabase = getSupabase();
-      if (supabase && tenant) {
+      if (supabase) {
         console.log('=== CHECKING SUPABASE ===');
         console.log('Looking for user:', username);
-        console.log('In tenant ID:', tenant.id);
-        console.log('In tenant subdomain:', tenant.subdomain);
         
         // Try all possible ways to find the user
-        let attempts = [
-          // 1. Exact match with tenant_id
-          async () => {
-            console.log('Attempt 1: with tenant_id');
-            return await supabase
-              .from('users')
-              .select('*')
-              .eq('username', username)
-              .eq('tenant_id', tenant.id)
-              .single();
-          },
-          // 2. Case-insensitive username with tenant_id
-          async () => {
-            console.log('Attempt 2: with tenant_id, case-insensitive');
-            const { data: users } = await supabase
-              .from('users')
-              .select('*')
-              .eq('tenant_id', tenant.id);
-            const user = users?.find(u => u.username.toLowerCase() === username.toLowerCase());
-            return { data: user, error: user ? null : new Error('Not found') };
-          },
+        let attempts = [];
+        if (tenant) {
+          attempts.push(
+            // 1. Exact match with tenant_id
+            async () => {
+              console.log('Attempt 1: with tenant_id');
+              return await supabase.from('users').select('*').eq('username', username).eq('tenant_id', tenant.id).single();
+            },
+            // 2. Case-insensitive username with tenant_id
+            async () => {
+              console.log('Attempt 2: with tenant_id, case-insensitive');
+              const { data: users } = await supabase.from('users').select('*').eq('tenant_id', tenant.id);
+              const user = users?.find(u => u.username.toLowerCase() === username.toLowerCase());
+              return { data: user, error: user ? null : new Error('Not found') };
+            }
+          );
+        }
+        // Also add attempts without tenant_id
+        attempts.push(
           // 3. Without tenant_id
           async () => {
             console.log('Attempt 3: without tenant_id');
-            return await supabase
-              .from('users')
-              .select('*')
-              .eq('username', username)
-              .single();
+            return await supabase.from('users').select('*').eq('username', username).single();
           },
           // 4. Case-insensitive without tenant_id
           async () => {
             console.log('Attempt 4: without tenant_id, case-insensitive');
-            const { data: users } = await supabase
-              .from('users')
-              .select('*');
+            const { data: users } = await supabase.from('users').select('*');
             const user = users?.find(u => u.username.toLowerCase() === username.toLowerCase());
             return { data: user, error: user ? null : new Error('Not found') };
           }
-        ];
+        );
         
         // Try each attempt until one works
         let data: any = null;
@@ -348,7 +315,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const result = await attempts[i]();
           if (!result.error && result.data) {
             data = result.data;
-            console.log(`SUCCESS with attempt ${i+1}!`);
+            console.log(`SUCCESS with attempt ${i+1}!');
             break;
           }
           console.log(`Attempt ${i+1} failed:`, result.error?.message || 'No data');
@@ -360,7 +327,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log('  - username:', data.username);
           console.log('  - role:', data.role);
           console.log('  - tenant_id:', data.tenant_id);
-          console.log('  - password starts with:', data.password.substring(0, 20));
+          console.log('  - password starts with:', (data.password || '').substring(0, 20));
           
           admin = data as any;
           console.log('Successfully found user in Supabase');
@@ -415,7 +382,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         id: randomUUID(),
         user_id: admin.id,
         token,
-        tenant_id: tenant?.id || admin.tenant_id || 'default', // Store tenant ID in session too
+        tenant_id: tenant?.id || admin.tenant_id || 'default',
         device_info: req.headers['user-agent'] || 'Unknown Device',
         ip_address: req.ip || req.socket.remoteAddress || 'Unknown',
         created_at: new Date().toISOString(),
@@ -434,6 +401,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error(error);
       res.status(500).json({ error: 'Login failed', details: error });
     }
+  });
+
+  // Apply tenantContext middleware to all protected API endpoints
+  app.use('/api', (req, res, next) => {
+    // Skip tenantContext for public endpoints
+    const publicEndpoints = [
+      '/health',
+      '/test/supabase-users',
+      '/tenants/register',
+      '/auth/status',
+      '/auth/login',
+      '/auth/admin-login'
+    ];
+    
+    if (publicEndpoints.some(p => req.path.startsWith(p))) {
+      return next();
+    }
+    
+    // Otherwise require tenant context
+    tenantContext(req, res, next);
   });
 
   app.post('/api/auth/login', async (req: Request, res: Response) => {
