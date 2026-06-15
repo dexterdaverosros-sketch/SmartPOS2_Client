@@ -1,16 +1,12 @@
 import React, { useState } from 'react';
 import { useLocation } from 'wouter';
-import api from '../lib/api';
 
 const RegisterTenant: React.FC = () => {
   const [formData, setFormData] = useState({
     storeName: '',
     subdomain: '',
     username: '',
-    password: '',
-    email: '',
-    mobile: '',
-    ownerName: ''
+    password: ''
   });
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string; tenantUrl?: string } | null>(null);
@@ -79,7 +75,7 @@ const RegisterTenant: React.FC = () => {
         <h1 className="text-2xl font-bold mb-6 text-center">Register Your Store</h1>
         
         {result && (
-          <div className={`p-4 mb-4 rounded ${result.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+          <div className={`p-4 mb-4 rounded ${result.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
             {result.message}
             {result.tenantUrl && (
               <p className="mt-2">
@@ -96,7 +92,7 @@ const RegisterTenant: React.FC = () => {
               type="text"
               required
               value={formData.storeName}
-              onChange={(e) => setFormData({ ...formData, storeName: e.target.value })}
+              onChange={(e) => setFormData({ ...formData, storeName: e.target.value})}
               placeholder="e.g., Masing Bakery"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -110,20 +106,8 @@ const RegisterTenant: React.FC = () => {
               type="text"
               required
               value={formData.subdomain}
-              onChange={(e) => setFormData({ ...formData, subdomain: e.target.value.toLowerCase() })}
+              onChange={(e) => setFormData({ ...formData, subdomain: e.target.value.toLowerCase()})}
               placeholder="e.g., masingbakery"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Owner Name</label>
-            <input
-              type="text"
-              required
-              value={formData.ownerName}
-              onChange={(e) => setFormData({ ...formData, ownerName: e.target.value })}
-              placeholder="Your full name"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -134,7 +118,7 @@ const RegisterTenant: React.FC = () => {
               type="text"
               required
               value={formData.username}
-              onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+              onChange={(e) => setFormData({ ...formData, username: e.target.value})}
               placeholder="e.g., admin"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -146,37 +130,13 @@ const RegisterTenant: React.FC = () => {
               type="password"
               required
               value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value})}
               placeholder="Choose a secure password"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <p className="text-xs text-gray-500 mt-1">
               Remember this password - you will use it to login!
             </p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input
-              type="email"
-              required
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              placeholder="email@example.com"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number</label>
-            <input
-              type="text"
-              required
-              value={formData.mobile}
-              onChange={(e) => setFormData({ ...formData, mobile: e.target.value })}
-              placeholder="e.g., 1234567890"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
           </div>
 
           <button
