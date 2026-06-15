@@ -236,17 +236,9 @@ export class AuthService {
   }
 
   static async loginAdmin(username: string, password: string): Promise<{ user: User, token?: string } | null> {
-    // 1. Try local login first
-    const user = await db.users.where('username').equals(username).first() ||
-                await db.users.where('mobile').equals(username).first();
-    
-    if (user && user.role === 'admin') {
-      const isValid = await verifyPassword(password, user.password);
-      if (isValid) return { user };
-    }
-    
-    // 2. If local fails, try server login (important for multi-device support)
+    // 1. Try SERVER login FIRST (multi-tenant support)
     try {
+      console.log('Attempting server login first...');
       const response = await api.post('/api/auth/admin-login', { username, password });
       if (response && response.user) {
         // Save to local DB for offline access next time
@@ -254,7 +246,16 @@ export class AuthService {
         return { user: response.user, token: response.token };
       }
     } catch (e) {
-      console.warn('Server login failed or unreachable');
+      console.warn('Server login failed or unreachable, trying local...', e);
+    }
+    
+    // 2. Fall back to local login if server fails
+    const user = await db.users.where('username').equals(username).first() ||
+                await db.users.where('mobile').equals(username).first();
+    
+    if (user && user.role === 'admin') {
+      const isValid = await verifyPassword(password, user.password);
+      if (isValid) return { user };
     }
 
     return null;
