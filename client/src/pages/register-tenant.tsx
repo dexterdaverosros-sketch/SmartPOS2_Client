@@ -18,11 +18,9 @@ const RegisterTenant: React.FC = () => {
     setResult(null);
 
     try {
-      // First, set the X-Tenant-ID header to our new subdomain
       const originalTenantId = localStorage.getItem('smartpos_subdomain');
       localStorage.setItem('smartpos_subdomain', formData.subdomain);
 
-      // Call the registration endpoint
       const response = await fetch('/api/tenants/register', {
         method: 'POST',
         headers: {
@@ -38,12 +36,11 @@ const RegisterTenant: React.FC = () => {
         setResult({
           success: true,
           message: 'Tenant registered successfully!',
-          tenantUrl: `/store/${formData.subdomain}`
+          tenantUrl: '/store/' + formData.subdomain
         });
 
-        // After 3 seconds, redirect to the new tenant
         setTimeout(() => {
-          setLocation(`/store/${formData.subdomain}`);
+          setLocation('/store/' + formData.subdomain);
         }, 3000);
       } else {
         setResult({
@@ -51,7 +48,6 @@ const RegisterTenant: React.FC = () => {
           message: data.error || 'Registration failed'
         });
 
-        // Restore original subdomain
         if (originalTenantId) {
           localStorage.setItem('smartpos_subdomain', originalTenantId);
         } else {
@@ -75,7 +71,7 @@ const RegisterTenant: React.FC = () => {
         <h1 className="text-2xl font-bold mb-6 text-center">Register Your Store</h1>
         
         {result && (
-          <div className={`p-4 mb-4 rounded ${result.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
+          <div className={'p-4 mb-4 rounded ' + (result.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700')}>
             {result.message}
             {result.tenantUrl && (
               <p className="mt-2">
@@ -92,7 +88,7 @@ const RegisterTenant: React.FC = () => {
               type="text"
               required
               value={formData.storeName}
-              onChange={(e) => setFormData({ ...formData, storeName: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, storeName: e.target.value })}
               placeholder="e.g., Masing Bakery"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -106,7 +102,7 @@ const RegisterTenant: React.FC = () => {
               type="text"
               required
               value={formData.subdomain}
-              onChange={(e) => setFormData({ ...formData, subdomain: e.target.value.toLowerCase()})}
+              onChange={(e) => setFormData({ ...formData, subdomain: e.target.value.toLowerCase() })}
               placeholder="e.g., masingbakery"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -118,7 +114,7 @@ const RegisterTenant: React.FC = () => {
               type="text"
               required
               value={formData.username}
-              onChange={(e) => setFormData({ ...formData, username: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, username: e.target.value })}
               placeholder="e.g., admin"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -130,7 +126,7 @@ const RegisterTenant: React.FC = () => {
               type="password"
               required
               value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
               placeholder="Choose a secure password"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
