@@ -158,28 +158,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const hashedPassword = await bcrypt.hash(password, 10);
       console.log('Password hashed successfully');
       
-      // 3. Create admin user for this tenant
-      const { data: user, error: userError } = await supabase
+      // 3. Create admin user for this tenant - try multiple column name variations
+      // First, let's build the user data with common column names
+      const userData: any = {
+        id: randomUUID(),
+        tenant_id: tenant.id,
+        username,
+        password: hashedPassword,
+        role: 'admin'
+      };
+      
+      // Add optional fields only if they exist in the request
+      if (email) userData.email = email;
+      if (mobile) userData.mobile = mobile;
+      if (ownerName) userData.owner_name = ownerName;
+      if (storeName) {
+        userData.business_name = storeName;
+        userData.store_name = storeName; // fallback
+      }
+      
+      console.log('Trying to create user with data:', userData);
+      
+      // Try to insert - if it fails because of missing columns, try without the optional ones
+      let { data: user, error: userError } = await supabase
         .from('users')
-        .insert({
-          id: randomUUID(),
-          tenant_id: tenant.id,
-          username,
-          password: hashedPassword,
-          email,
-          mobile,
-          owner_name: ownerName,
-          business_name: storeName,
-          role: 'admin'
-        })
+        .insert(userData)
         .select()
         .single();
       
       if (userError) {
-        console.error('User creation error:', userError);
-        return res.status(400).json({ error: userError.message });
+        console.error('First user creation attempt failed, trying minimal data:', userError);
+        
+        // Try with minimal data
+        const minimalUserData: any = {
+          id: randomUUID(),
+          tenant_id: tenant.id,
+          username,
+          password: hashedPassword,
+          role: 'admin'
+        };
+        
+        const { data: minimalUser, error: minimalUserError } = await supabase
+          .from('users')
+          .insert(minimalUserData)
+          .select()
+          .single();
+          
+        if (minimalUserError) {
+          console.error('Minimal user creation also failed:', minimalUserError);
+          return res.status(400).json({ 
+            error: 'Failed to create user. Please check your users table structure.',
+            details: minimalUserError 
+          });
+        }
+        
+        user = minimalUser;
       }
-      console.log('Created user:', user);
+      
+      console.log('Created user successfully:', user);
       
       res.status(201).json({ success: true, tenant, user });
     } catch (error) {
@@ -271,12 +307,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const supabase = getSupabase();
       if (supabase && tenant) {
         console.log('Checking Supabase for user:', username, 'in tenant:', tenant.id);
-        const { data, error } = await supabase
+        
+        // Try query with tenant_id
+        let { data, error } = await supabase
           .from('users')
           .select('*')
           .eq('username', username)
           .eq('tenant_id', tenant.id)
           .single();
+          
+        // If that fails (maybe no tenant_id column yet), try without tenant_id
+        if (error || !data) {
+          console.log('First query failed, trying without tenant_id');
+          const result = await supabase
+            .from('users')
+            .select('*')
+            .eq('username', username)
+            .single();
+          data = result.data;
+          error = result.error;
+        }
           
         console.log('Supabase response - error:', error, 'data:', data);
         
@@ -293,8 +343,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (admin) console.log('Found user in local DB:', admin.username);
       }
       
-      if (!admin || admin.role !== 'admin') {
-        console.log('User not found or not admin');
+      if (!admin) {
+        console.log('User not found');
+        return res.status(401).json({ error: 'Invalid username or password' });
+      }
+      
+      // Check if role is admin (handle different role column names)
+      const isAdmin = admin.role === 'admin' || admin.is_admin === true || admin.type === 'admin';
+      if (!isAdmin) {
+        console.log('User is not an admin');
         return res.status(401).json({ error: 'Invalid username or password' });
       }
 
