@@ -265,73 +265,106 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/auth/admin-login', async (req: Request, res: Response) => {
     try {
       const { username, password } = req.body;
-      console.log('Login attempt for username:', username);
+      console.log('=== LOGIN ATTEMPT ===');
+      console.log('Username:', username);
       
       // Get tenant from header
       const tenant = await getTenantFromHeader(req);
-      console.log('Tenant found:', tenant);
+      console.log('Tenant:', tenant);
       
       // First check Supabase first (prefer cloud over local)
       let admin = null;
       const supabase = getSupabase();
       if (supabase && tenant) {
-        console.log('Checking Supabase for user:', username, 'in tenant:', tenant.id);
+        console.log('=== CHECKING SUPABASE ===');
+        console.log('Looking for user:', username);
+        console.log('In tenant ID:', tenant.id);
+        console.log('In tenant subdomain:', tenant.subdomain);
         
-        // Try query with tenant_id
+        // Try query with tenant_id first
+        console.log('First query: with tenant_id');
         let { data, error } = await supabase
           .from('users')
           .select('*')
           .eq('username', username)
           .eq('tenant_id', tenant.id)
           .single();
+        
+        if (error) {
+          console.log('First query error:', error.message);
+          console.log('Trying without tenant_id...');
           
-        // If that fails (maybe no tenant_id column yet), try without tenant_id
-        if (error || !data) {
-          console.log('First query failed, trying without tenant_id');
+          // Try without tenant_id
           const result = await supabase
             .from('users')
             .select('*')
             .eq('username', username)
             .single();
+          
           data = result.data;
           error = result.error;
-        }
           
-        console.log('Supabase response - error:', error, 'data:', data);
+          if (error) {
+            console.log('Second query error:', error.message);
+          }
+        }
+        
+        console.log('Supabase data found:', data ? 'YES' : 'NO');
+        if (data) {
+          console.log('User data from Supabase:');
+          console.log('  - id:', data.id);
+          console.log('  - username:', data.username);
+          console.log('  - role:', data.role);
+          console.log('  - tenant_id:', data.tenant_id);
+          console.log('  - password starts with:', data.password.substring(0, 20));
+        }
         
         if (!error && data) {
           admin = data as any;
-          console.log('Found user in Supabase:', admin.username);
+          console.log('Successfully found user in Supabase');
         }
       }
       
       // If not in Supabase, try local
       if (!admin) {
-        console.log('User not in Supabase, checking local DB');
+        console.log('User not found in Supabase, checking local DB');
         admin = dbService.getUserByUsername(username) as User | undefined;
-        if (admin) console.log('Found user in local DB:', admin.username);
+        if (admin) {
+          console.log('Found user in local DB:', admin.username);
+        }
       }
       
       if (!admin) {
-        console.log('User not found');
+        console.log('ERROR: User not found anywhere');
         return res.status(401).json({ error: 'Invalid username or password' });
       }
       
+      console.log('=== CHECKING ROLE ===');
       // Check if role is admin (handle different role column names)
       const isAdmin = admin.role === 'admin' || admin.is_admin === true || admin.type === 'admin';
+      console.log('Role check:', isAdmin ? 'PASS' : 'FAIL');
+      console.log('  - admin.role:', admin.role);
+      console.log('  - admin.is_admin:', admin.is_admin);
+      console.log('  - admin.type:', admin.type);
+      
       if (!isAdmin) {
-        console.log('User is not an admin');
+        console.log('ERROR: User is not an admin');
         return res.status(401).json({ error: 'Invalid username or password' });
       }
 
-      console.log('Checking password validity');
+      console.log('=== CHECKING PASSWORD ===');
+      console.log('Password entered:', password);
+      console.log('Stored hash:', admin.password.substring(0, 30) + '...');
+      
       const isValid = await bcrypt.compare(password, admin.password);
+      console.log('Password valid:', isValid);
+      
       if (!isValid) {
-        console.log('Password invalid');
+        console.log('ERROR: Password invalid');
         return res.status(401).json({ error: 'Invalid username or password' });
       }
-      console.log('Password valid');
-
+      
+      console.log('=== CREATING SESSION ===');
       // Create session
       const token = randomUUID();
       const session = {
@@ -346,13 +379,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       dbService.createSession(session);
-      console.log('Session created');
+      console.log('Session created successfully');
 
       // Return admin info and token
       const { password: _, ...adminInfo } = admin;
+      console.log('=== LOGIN SUCCESSFUL ===');
       res.json({ user: adminInfo, token });
     } catch (error) {
-      console.error('Admin login error:', error);
+      console.error('=== LOGIN ERROR ===');
+      console.error(error);
       res.status(500).json({ error: 'Login failed' });
     }
   });
