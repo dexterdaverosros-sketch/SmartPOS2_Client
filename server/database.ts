@@ -159,8 +159,7 @@ export const dbService = {
         device_info TEXT,
         ip_address TEXT,
         created_at TEXT NOT NULL,
-        last_active_at TEXT NOT NULL,
-        FOREIGN KEY(user_id) REFERENCES staff(id) ON DELETE CASCADE
+        last_active_at TEXT NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS customers (

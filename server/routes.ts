@@ -412,7 +412,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       '/tenants/register',
       '/auth/status',
       '/auth/login',
-      '/auth/admin-login'
+      '/auth/admin-login',
+      '/server-info',
+      '/wifi/status',
+      '/wifi/connect'
     ];
     
     if (publicEndpoints.some(p => req.path.startsWith(p))) {

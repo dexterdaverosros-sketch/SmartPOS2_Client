@@ -12,7 +12,7 @@ const SplashScreen: React.FC = () => {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setLocation('/role-selection');
+      setLocation('/role-selection', { replace: true });
     }, 4500); // Increased slightly to allow typing animation to finish
 
     return () => clearTimeout(timer);

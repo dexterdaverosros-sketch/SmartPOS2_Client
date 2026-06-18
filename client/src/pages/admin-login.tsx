@@ -152,6 +152,7 @@ const AdminLogin: React.FC = () => {
                         </div>
                         <Input
                           placeholder="Enter username"
+                          autoComplete="username"
                           className="h-11 pl-11 bg-gray-50 border-gray-100 rounded-2xl focus:ring-2 focus:ring-[#BF953F]/20 focus:border-[#BF953F] transition-all text-sm font-bold placeholder:text-gray-300"
                           {...field}
                         />
@@ -176,6 +177,7 @@ const AdminLogin: React.FC = () => {
                         <Input
                           type={showPassword ? 'text' : 'password'}
                           placeholder="••••••••"
+                          autoComplete="current-password"
                           className="h-11 pl-11 pr-12 bg-gray-50 border-gray-100 rounded-2xl focus:ring-2 focus:ring-[#BF953F]/20 focus:border-[#BF953F] transition-all text-sm font-bold placeholder:text-gray-300"
                           {...field}
                         />
