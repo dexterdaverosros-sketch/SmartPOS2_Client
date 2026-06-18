@@ -798,19 +798,19 @@ export const dbService = {
   },
 
   // Non-inventory product methods
-  getNonInventoryProducts: () => {
-    return db.prepare('SELECT * FROM non_inventory_products').all();
+  getNonInventoryProducts: (tenantId: string) => {
+    return db.prepare('SELECT * FROM non_inventory_products WHERE tenant_id = ?').all(tenantId);
   },
 
-  getNonInventoryProductByBarcode: (barcode: string) => {
-    return db.prepare('SELECT * FROM non_inventory_products WHERE barcode = ?').get(barcode);
+  getNonInventoryProductByBarcode: (barcode: string, tenantId: string) => {
+    return db.prepare('SELECT * FROM non_inventory_products WHERE barcode = ? AND tenant_id = ?').get(barcode, tenantId);
   },
 
-  saveNonInventoryProducts: (products: any[]) => {
+  saveNonInventoryProducts: (products: any[], tenantId: string) => {
     const insert = db.prepare(`
       INSERT OR REPLACE INTO non_inventory_products 
-      (id, name, price, category, description, image, barcode, barcode_data, created_at, updated_at) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, tenant_id, name, price, category, description, image, barcode, barcode_data, created_at, updated_at) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     
     const insertMany = db.transaction((products: any[]) => {
@@ -818,6 +818,7 @@ export const dbService = {
         try {
           insert.run(
             product.id,
+            tenantId,
             product.name,
             product.price,
             product.category || 'general',
@@ -842,6 +843,7 @@ export const dbService = {
     //   if (supabase) {
     //     const cloudProducts = products.map(p => ({
     //       id: String(p.id),
+    //       tenant_id: tenantId,
     //       name: String(p.name || ''),
     //       price: Number(p.price || 0),
     //       category: p.category || 'general',
@@ -862,8 +864,8 @@ export const dbService = {
     return products;
   },
 
-  deleteNonInventoryProduct: (id: string) => {
-    return db.prepare('DELETE FROM non_inventory_products WHERE id = ?').run(id);
+  deleteNonInventoryProduct: (id: string, tenantId: string) => {
+    return db.prepare('DELETE FROM non_inventory_products WHERE id = ? AND tenant_id = ?').run(id, tenantId);
   },
 
   // Clear all table data (products, staff)
@@ -876,27 +878,27 @@ export const dbService = {
     };
   },
   // Product methods
-  getProducts: () => {
-    return db.prepare('SELECT * FROM products').all();
+  getProducts: (tenantId: string) => {
+    return db.prepare('SELECT * FROM products WHERE tenant_id = ?').all(tenantId);
   },
 
-  getProductByBarcode: (barcode: string) => {
-    return db.prepare('SELECT * FROM products WHERE barcode = ?').get(barcode);
+  getProductByBarcode: (barcode: string, tenantId: string) => {
+    return db.prepare('SELECT * FROM products WHERE barcode = ? AND tenant_id = ?').get(barcode, tenantId);
   },
 
-  getProductById: (id: string) => {
-    return db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+  getProductById: (id: string, tenantId: string) => {
+    return db.prepare('SELECT * FROM products WHERE id = ? AND tenant_id = ?').get(id, tenantId);
   },
 
-  updateStock: (id: string, quantity: number) => {
-    return db.prepare('UPDATE products SET quantity = ?, updatedAt = ? WHERE id = ?').run(quantity, new Date().toISOString(), id);
+  updateStock: (id: string, quantity: number, tenantId: string) => {
+    return db.prepare('UPDATE products SET quantity = ?, updatedAt = ? WHERE id = ? AND tenant_id = ?').run(quantity, new Date().toISOString(), id, tenantId);
   },
 
-  saveProducts: (products: any[]) => {
+  saveProducts: (products: any[], tenantId: string) => {
     const insert = db.prepare(`
       INSERT OR REPLACE INTO products 
-      (id, name, price, cost, barcode, category, image, quantity, createdAt, updatedAt) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, tenant_id, name, price, cost, barcode, category, image, quantity, createdAt, updatedAt) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     
     const insertMany = db.transaction((products: any[]) => {
@@ -915,6 +917,7 @@ export const dbService = {
 
           insert.run(
             id,
+            tenantId,
             name,
             price,
             cost,
@@ -940,6 +943,7 @@ export const dbService = {
         // Map to snake_case for Supabase
         const cloudProducts = products.map(p => ({
           id: String(p.id),
+          tenant_id: tenantId,
           name: String(p.name || ''),
           price: Number(p.price || 0),
           cost: Number(p.cost || 0),
@@ -962,12 +966,12 @@ export const dbService = {
     return products;
   },
 
-  getProductsSince: (timestamp: Date) => {
-    return db.prepare('SELECT * FROM products WHERE datetime(updatedAt) > datetime(?)').all(timestamp.toISOString());
+  getProductsSince: (timestamp: Date, tenantId: string) => {
+    return db.prepare('SELECT * FROM products WHERE datetime(updatedAt) > datetime(?) AND tenant_id = ?').all(timestamp.toISOString(), tenantId);
   },
 
-  getVariantsSince: (timestamp: Date) => {
-    const rows = db.prepare('SELECT * FROM variants WHERE datetime(updated_at) > datetime(?)').all(timestamp.toISOString()) as any[];
+  getVariantsSince: (timestamp: Date, tenantId: string) => {
+    const rows = db.prepare('SELECT * FROM variants WHERE datetime(updated_at) > datetime(?) AND tenant_id = ?').all(timestamp.toISOString(), tenantId) as any[];
     return rows.map(r => ({
       id: r.id,
       productId: r.product_id,
@@ -983,9 +987,9 @@ export const dbService = {
   },
 
   // Variant methods
-  getVariants: (productId: string) => {
+  getVariants: (productId: string, tenantId: string) => {
     // Map snake_case columns to camelCase properties to match shared/schema
-    const rows = db.prepare('SELECT * FROM variants WHERE product_id = ?').all(productId) as any[];
+    const rows = db.prepare('SELECT * FROM variants WHERE product_id = ? AND tenant_id = ?').all(productId, tenantId) as any[];
     return rows.map(r => ({
       id: r.id,
       productId: r.product_id,
@@ -1000,8 +1004,8 @@ export const dbService = {
     }));
   },
 
-  getVariantById: (id: string) => {
-    const r = db.prepare('SELECT * FROM variants WHERE id = ?').get(id) as any;
+  getVariantById: (id: string, tenantId: string) => {
+    const r = db.prepare('SELECT * FROM variants WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any;
     if (!r) return undefined;
     return {
       id: r.id,
@@ -1132,11 +1136,11 @@ export const dbService = {
      return db.prepare('SELECT * FROM variants').all();
   },
 
-  saveVariants: (variants: any[]) => {
+  saveVariants: (variants: any[], tenantId: string) => {
     const insert = db.prepare(`
       INSERT OR REPLACE INTO variants 
-      (id, product_id, name, barcode, price, cost, image, quantity, created_at, updated_at) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, tenant_id, product_id, name, barcode, price, cost, image, quantity, created_at, updated_at) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     
     const insertMany = db.transaction((variants: any[]) => {
@@ -1144,6 +1148,7 @@ export const dbService = {
         try {
           insert.run(
             v.id,
+            tenantId,
             v.productId || v.product_id,
             v.name,
             v.barcode || null,

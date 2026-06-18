@@ -743,7 +743,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Products API - Sync products with connected devices
   app.get('/api/products', (req: Request, res: Response) => {
     try {
-      const products = dbService.getProducts();
+      const tenantId = (req as any).tenantId;
+      const products = dbService.getProducts(tenantId);
       res.status(200).json(products);
     } catch (error) {
       console.error('Error fetching products:', error);
@@ -933,7 +934,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/products/:barcode', (req: Request, res: Response) => {
     try {
       const { barcode } = req.params;
-      const product = dbService.getProductByBarcode(barcode) as any;
+      const tenantId = (req as any).tenantId;
+      const product = dbService.getProductByBarcode(barcode, tenantId) as any;
       
       if (!product) {
         return res.status(404).json({ error: 'Product not found' });
@@ -949,7 +951,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Non-inventory products API
   app.get('/api/non-inventory-products', (req: Request, res: Response) => {
     try {
-      const products = dbService.getNonInventoryProducts();
+      const tenantId = (req as any).tenantId;
+      const products = dbService.getNonInventoryProducts(tenantId);
       res.status(200).json(products);
     } catch (error) {
       console.error('Error fetching non-inventory products:', error);
@@ -959,8 +962,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/non-inventory-products', (req: Request, res: Response) => {
     try {
+      const tenantId = (req as any).tenantId;
       const products = Array.isArray(req.body) ? req.body : [req.body];
-      dbService.saveNonInventoryProducts(products);
+      dbService.saveNonInventoryProducts(products, tenantId);
       res.status(200).json({ message: 'Non-inventory products saved successfully' });
     } catch (error) {
       console.error('Error saving non-inventory products:', error);
@@ -971,7 +975,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete('/api/non-inventory-products/:id', (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      dbService.deleteNonInventoryProduct(id);
+      const tenantId = (req as any).tenantId;
+      dbService.deleteNonInventoryProduct(id, tenantId);
       res.status(200).json({ message: 'Non-inventory product deleted' });
     } catch (error) {
       console.error('Error deleting non-inventory product:', error);
@@ -983,11 +988,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/products/barcode/:barcode', (req: Request, res: Response) => {
     try {
       const { barcode } = req.params;
-      let product = dbService.getProductByBarcode(barcode) as any;
+      const tenantId = (req as any).tenantId;
+      let product = dbService.getProductByBarcode(barcode, tenantId) as any;
       
       if (!product) {
         // Try to find in non-inventory products
-        const niProduct = dbService.getNonInventoryProductByBarcode(barcode) as any;
+        const niProduct = dbService.getNonInventoryProductByBarcode(barcode, tenantId) as any;
         if (niProduct) {
           product = {
             ...niProduct,
@@ -1019,7 +1025,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/products/:id/variants', (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      const variants = dbService.getVariants(id);
+      const tenantId = (req as any).tenantId;
+      const variants = dbService.getVariants(id, tenantId);
       res.status(200).json(variants);
     } catch (error) {
       console.error('Error fetching variants:', error);
@@ -1054,6 +1061,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/variants', (req: Request, res: Response) => {
     try {
+      const tenantId = (req as any).tenantId;
       const variants = req.body;
       if (!Array.isArray(variants)) {
         return res.status(400).json({ error: 'Invalid variants data: expected an array' });
@@ -1066,7 +1074,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return false;
         }
         const productId = v.productId || v.product_id;
-        const productExists = dbService.getProductById(productId);
+        const productExists = dbService.getProductById(productId, tenantId);
         if (!productExists) {
           console.warn(`Variant ${v.id} skipped: product with ID ${productId} does not exist`);
           return false;
@@ -1075,7 +1083,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       if (validVariants.length > 0) {
-        dbService.saveVariants(validVariants);
+        dbService.saveVariants(validVariants, tenantId);
         res.status(200).json({ message: `Successfully updated ${validVariants.length} variants` });
       } else {
         res.status(200).json({ message: 'No valid variants to update' });
@@ -1089,12 +1097,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Sync endpoint - allows clients to sync their database with the server
   app.post('/api/sync', (req: Request, res: Response) => {
     try {
+      const tenantId = (req as any).tenantId;
       const { lastSyncTimestamp } = req.body;
       const timestamp = lastSyncTimestamp ? new Date(lastSyncTimestamp) : new Date(0);
       
       // Get all products updated since the last sync
-      const products = dbService.getProductsSince(timestamp);
-      const variants = dbService.getVariantsSince(timestamp);
+      const products = dbService.getProductsSince(timestamp, tenantId);
+      const variants = dbService.getVariantsSince(timestamp, tenantId);
       
       res.status(200).json({
         products,
@@ -1274,9 +1283,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // List all products (server database)
-  app.get('/api/products', (_req: Request, res: Response) => {
+  app.get('/api/products', (req: Request, res: Response) => {
     try {
-      const products = dbService.getProducts();
+      const tenantId = (req as any).tenantId;
+      const products = dbService.getProducts(tenantId);
       res.status(200).json(products);
     } catch (error) {
       console.error('Error listing products:', error);
@@ -1811,9 +1821,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Products update
   app.post('/api/products', (req: Request, res: Response) => {
     try {
+      const tenantId = (req as any).tenantId;
       const products = req.body;
       if (Array.isArray(products)) {
-        dbService.saveProducts(products);
+        dbService.saveProducts(products, tenantId);
         io.emit('inventory-update'); // Emit update
         res.status(200).json({ message: 'Products updated successfully' });
       } else {
