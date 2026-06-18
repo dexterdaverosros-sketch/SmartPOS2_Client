@@ -10,16 +10,20 @@ const extractTenantFromPath = () => {
   // Look for /store/{tenant} pattern in the path
   const storeIndex = pathParts.findIndex(part => part === 'store');
   if (storeIndex !== -1 && pathParts.length > storeIndex + 1) {
-    return pathParts[storeIndex + 1];
+    const tenant = pathParts[storeIndex + 1];
+    // Store in localStorage for future use
+    localStorage.setItem('smartpos_tenant', tenant);
+    return tenant;
   }
   
-  // Fallback: if no /store/ path, try to get first segment as tenant (for backward compatibility)
-  if (pathParts.length >= 2 && pathParts[1]) {
-    return pathParts[1];
+  // If path doesn't have /store/, check localStorage for stored tenant
+  const storedTenant = localStorage.getItem('smartpos_tenant');
+  if (storedTenant) {
+    return storedTenant;
   }
   
   // Default fallback
-  console.warn('No tenant found in URL path:', pathname);
+  console.warn('No tenant found in URL path or localStorage:', pathname);
   return 'default';
 };
 

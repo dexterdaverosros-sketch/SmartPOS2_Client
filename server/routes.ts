@@ -413,6 +413,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       '/auth/status',
       '/auth/login',
       '/auth/admin-login',
+      '/auth/session',
       '/server-info',
       '/wifi/status',
       '/wifi/connect'

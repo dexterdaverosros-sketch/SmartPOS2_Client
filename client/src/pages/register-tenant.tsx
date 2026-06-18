@@ -18,8 +18,8 @@ const RegisterTenant: React.FC = () => {
     setResult(null);
 
     try {
-      const originalTenantId = localStorage.getItem('smartpos_subdomain');
-      localStorage.setItem('smartpos_subdomain', formData.subdomain);
+      const originalTenantId = localStorage.getItem('smartpos_tenant');
+      localStorage.setItem('smartpos_tenant', formData.subdomain);
 
       const response = await fetch('/api/tenants/register', {
         method: 'POST',
@@ -40,7 +40,7 @@ const RegisterTenant: React.FC = () => {
         });
 
         setTimeout(() => {
-          setLocation('/store/' + formData.subdomain);
+          setLocation('/store/' + formData.subdomain, { replace: true });
         }, 3000);
       } else {
         setResult({
@@ -49,9 +49,9 @@ const RegisterTenant: React.FC = () => {
         });
 
         if (originalTenantId) {
-          localStorage.setItem('smartpos_subdomain', originalTenantId);
+          localStorage.setItem('smartpos_tenant', originalTenantId);
         } else {
-          localStorage.removeItem('smartpos_subdomain');
+          localStorage.removeItem('smartpos_tenant');
         }
       }
     } catch (error) {
@@ -83,9 +83,12 @@ const RegisterTenant: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Store Name</label>
+            <label htmlFor="storeName" className="block text-sm font-medium text-gray-700 mb-1">Store Name</label>
             <input
+              id="storeName"
+              name="storeName"
               type="text"
+              autoComplete="organization"
               required
               value={formData.storeName}
               onChange={(e) => setFormData({ ...formData, storeName: e.target.value })}
@@ -95,11 +98,14 @@ const RegisterTenant: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="subdomain" className="block text-sm font-medium text-gray-700 mb-1">
               Subdomain (e.g., masingbakery)
             </label>
             <input
+              id="subdomain"
+              name="subdomain"
               type="text"
+              autoComplete="off"
               required
               value={formData.subdomain}
               onChange={(e) => setFormData({ ...formData, subdomain: e.target.value.toLowerCase() })}
@@ -109,9 +115,12 @@ const RegisterTenant: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Admin Username</label>
+            <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">Admin Username</label>
             <input
+              id="username"
+              name="username"
               type="text"
+              autoComplete="username"
               required
               value={formData.username}
               onChange={(e) => setFormData({ ...formData, username: e.target.value })}
@@ -121,9 +130,12 @@ const RegisterTenant: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">Password</label>
             <input
+              id="password"
+              name="password"
               type="password"
+              autoComplete="new-password"
               required
               value={formData.password}
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
