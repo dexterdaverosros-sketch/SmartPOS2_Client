@@ -501,11 +501,19 @@ export class ProductService {
     };
 
     await db.products.add(product);
-    try {
-      await ProductService.syncAllProductsToServer();
-    } catch (error) {
-      console.error('Error syncing products after add:', error);
-    }
+    // Sync ONLY this product in background
+    api.post('/api/products', [{
+      id: product.id,
+      name: product.name,
+      price: product.price,
+      cost: (product as any).cost ?? 0,
+      barcode: product.barcode,
+      category: product.category ?? 'general',
+      image: null,
+      quantity: product.quantity ?? 0,
+      createdAt: (product as any).createdAt instanceof Date ? (product as any).createdAt.toISOString() : new Date().toISOString(),
+      updatedAt: (product as any).updatedAt instanceof Date ? (product as any).updatedAt.toISOString() : new Date().toISOString(),
+    }]).catch(error => console.error('Error syncing products after add:', error));
     return product;
   }
 
@@ -542,20 +550,28 @@ export class ProductService {
     if (cleanUpdates.quantity) cleanUpdates.quantity = Math.floor(cleanUpdates.quantity);
 
     await db.products.update(id, { ...cleanUpdates, updatedAt: new Date() });
-    try {
-      await ProductService.syncAllProductsToServer();
-    } catch (error) {
-      console.error('Error syncing products after update:', error);
+    // Sync ONLY this product in background
+    const updatedProduct = await db.products.get(id);
+    if (updatedProduct) {
+      api.post('/api/products', [{
+        id: updatedProduct.id,
+        name: updatedProduct.name,
+        price: updatedProduct.price,
+        cost: (updatedProduct as any).cost ?? 0,
+        barcode: updatedProduct.barcode,
+        category: updatedProduct.category ?? 'general',
+        image: null,
+        quantity: updatedProduct.quantity ?? 0,
+        createdAt: (updatedProduct as any).createdAt instanceof Date ? (updatedProduct as any).createdAt.toISOString() : new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }]).catch(error => console.error('Error syncing products after update:', error));
     }
   }
 
   static async deleteProduct(id: string): Promise<void> {
     await db.products.delete(id);
-    try {
-      await ProductService.syncAllProductsToServer();
-    } catch (error) {
-      console.error('Error syncing products after delete:', error);
-    }
+    // For delete, we'll rely on periodic sync
+    console.warn('Product deleted locally, sync with server will be handled in periodic sync');
   }
 
   static async updateStock(productId: string, quantityChange: number): Promise<void> {
@@ -574,16 +590,12 @@ export class ProductService {
       updatedAt: new Date(),
     });
 
-    // Immediate sync to server for stock changes
-    try {
-      await api.post('/api/products', [{
-        ...product,
-        quantity: newQuantity,
-        updatedAt: new Date().toISOString()
-      }]);
-    } catch (e) {
-      console.warn('Immediate stock sync failed, will rely on periodic sync', e);
-    }
+    // Immediate sync to server for stock changes - FIRE IN BACKGROUND
+    api.post('/api/products', [{
+      ...product,
+      quantity: newQuantity,
+      updatedAt: new Date().toISOString()
+    }]).catch(e => console.warn('Immediate stock sync failed, will rely on periodic sync', e));
   }
 
   static async addVariant(productId: string, data: { name: string; price: number; cost: number; quantity?: number; barcode?: string; image?: string | null }): Promise<Variant> {
@@ -600,11 +612,19 @@ export class ProductService {
       updatedAt: new Date(),
     } as Variant;
     await db.variants.add(variant);
-    try {
-      await ProductService.syncVariantsToServer();
-    } catch (e) {
-      console.error('Failed to sync variant', e);
-    }
+    // Sync ONLY this variant in background
+    api.post('/api/variants', [{
+      id: variant.id,
+      productId: variant.productId,
+      name: variant.name,
+      price: variant.price,
+      cost: variant.cost,
+      barcode: variant.barcode,
+      image: null,
+      quantity: variant.quantity ?? 0,
+      createdAt: (variant as any).createdAt instanceof Date ? (variant as any).createdAt.toISOString() : new Date().toISOString(),
+      updatedAt: (variant as any).updatedAt instanceof Date ? (variant as any).updatedAt.toISOString() : new Date().toISOString(),
+    }]).catch(e => console.error('Failed to sync variant', e));
     return variant;
   }
 
@@ -618,16 +638,13 @@ export class ProductService {
 
   static async updateVariant(id: string, updates: Partial<Variant>): Promise<void> {
     await db.variants.update(id, { ...updates, updatedAt: new Date() });
-    try {
-      const updated = await db.variants.get(id);
-      if (updated) {
-        await api.post('/api/variants', [{
-          ...updated,
-          updatedAt: new Date().toISOString()
-        }]);
-      }
-    } catch (e) {
-      console.error('Failed to sync variant update', e);
+    // Fire sync in background
+    const updated = await db.variants.get(id);
+    if (updated) {
+      api.post('/api/variants', [{
+        ...updated,
+        updatedAt: new Date().toISOString()
+      }]).catch(e => console.error('Failed to sync variant update', e));
     }
   }
 }
@@ -801,22 +818,44 @@ export class SalesService {
         const multiplier = getUnitMultiplier(item.unit);
         const actualQuantity = item.quantity * multiplier;
         try {
-          await ProductService.updateStock(item.productId, -actualQuantity);
-        } catch (e) {
-          // If product update fails, try updating variant stock
-          const variant = await db.variants.get(item.productId);
-          if (variant) {
-            const currentQty = (variant as any).quantity ?? 0;
-            const newQty = currentQty - actualQuantity;
-            if (newQty < 0) throw new Error(`Insufficient stock for variant ${variant.name}`);
-            await ProductService.updateVariant(variant.id, { quantity: newQty });
+          // Update stock locally ONLY first, don't wait for server sync
+          const product = await db.products.get(item.productId);
+          if (product) {
+            const newQuantity = product.quantity - actualQuantity;
+            if (newQuantity < 0) throw new Error(`Insufficient stock for ${product.name}`);
+            await db.products.update(product.id, { quantity: newQuantity, updatedAt: new Date() });
+            // Fire sync in background
+            api.post('/api/products', [{
+              ...product,
+              quantity: newQuantity,
+              updatedAt: new Date().toISOString()
+            }]).catch(err => console.warn('Stock sync failed, will sync later:', err));
           } else {
-            throw e;
+            // Check if it's a variant
+            const variant = await db.variants.get(item.productId);
+            if (variant) {
+              const currentQty = (variant as any).quantity ?? 0;
+              const newQty = currentQty - actualQuantity;
+              if (newQty < 0) throw new Error(`Insufficient stock for variant ${variant.name}`);
+              await db.variants.update(variant.id, { quantity: newQty, updatedAt: new Date() });
+              // Fire sync in background
+              const updatedVariant = await db.variants.get(variant.id);
+              if (updatedVariant) {
+                api.post('/api/variants', [{
+                  ...updatedVariant,
+                  updatedAt: new Date().toISOString()
+                }]).catch(err => console.warn('Variant stock sync failed, will sync later:', err));
+              }
+            } else {
+              throw new Error(`Product/variant ${item.name} not found`);
+            }
           }
+        } catch (e) {
+          throw e;
         }
       }
       
-      // CRITICAL: Push sale to server for admin visibility
+      // CRITICAL: Push sale to server for admin visibility - FIRE IN BACKGROUND, DON'T AWAIT
       try {
         const saleDataForServer = {
           sale: {
@@ -832,8 +871,9 @@ export class SalesService {
             isNonInventory: item.isNonInventory
           }))
         };
-        await api.post('/api/sales', saleDataForServer);
-        console.log('Sale pushed to server successfully');
+        api.post('/api/sales', saleDataForServer)
+          .then(() => console.log('Sale pushed to server successfully'))
+          .catch(err => console.warn('Failed to push sale to server immediately, will sync later:', err));
       } catch (err) {
         console.warn('Failed to push sale to server immediately, will sync later:', err);
       }
@@ -877,24 +917,20 @@ export class SalesService {
     } as Sale;
     await db.sales.add(sale);
     
-    // CRITICAL: Push income to server for admin visibility
-    try {
-      await api.post('/api/sales', {
-        sale: {
-          ...sale,
-          staffId: staffId || 'unknown'
-        },
-        items: [{
-          productId: 'income-adjustment',
-          quantity: 1,
-          price: total,
-          unit: 'total',
-          name: `Income (${paymentType})`
-        }]
-      });
-    } catch (err) {
-      console.warn('Failed to push income to server immediately:', err);
-    }
+    // CRITICAL: Push income to server for admin visibility - FIRE IN BACKGROUND
+    api.post('/api/sales', {
+      sale: {
+        ...sale,
+        staffId: staffId || 'unknown'
+      },
+      items: [{
+        productId: 'income-adjustment',
+        quantity: 1,
+        price: total,
+        unit: 'total',
+        name: `Income (${paymentType})`
+      }]
+    }).catch(err => console.warn('Failed to push income to server immediately:', err));
     
     return sale;
   }
