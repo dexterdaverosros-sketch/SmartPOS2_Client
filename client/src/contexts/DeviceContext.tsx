@@ -432,8 +432,21 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     return chunks;
   };
 
+  // Helper function to clean receipt content for thermal printers
+  const cleanReceiptContent = (content: string): string => {
+    return content
+      .replace(/₱/g, '₱') // Ensure consistent peso sign
+      .replace(/[^\x20-\x7E₱\s]/g, (char) => {
+        if (char === '₱') return '₱';
+        return ''; // Remove any other non-ASCII or problematic characters
+      })
+      .replace(/\u00A0/g, ' ') // Replace non-breaking spaces with regular spaces
+      .replace(/[\u200B-\u200D\uFEFF]/g, ''); // Remove zero-width characters
+  };
+
   const printToThermalPrinter = async (content: string): Promise<boolean> => {
-    console.log('[PRINT]: Starting print request with content:', content);
+    const cleanedContent = cleanReceiptContent(content);
+    console.log('[PRINT]: Starting print request with cleaned content:', cleanedContent);
     const printer = connectedDevices.find(d => d.type === 'printer' && d.isDefault) || connectedDevices.find(d => d.type === 'printer');
     if (!printer) {
       toast({ title: 'No Printer', description: 'Please connect and set a default printer first.', variant: 'destructive' });
@@ -458,12 +471,14 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       let device = printer.device;
       
       // Prepare ESC/POS data
-      const encoder = new TextEncoder();
+      const encoder = new TextEncoder('utf-8'); // Explicitly use UTF-8
       const escPosInit = new Uint8Array([0x1B, 0x40]);
-      const textData = encoder.encode(content);
+      // Explicitly set character set to support peso sign if possible
+      const escPosCharSet = new Uint8Array([0x1B, 0x74, 0x00]); // Select character set 0 (PC437)
+      const textData = encoder.encode(cleanedContent);
       const lineFeeds = new Uint8Array([0x0A, 0x0A, 0x0A, 0x0A]);
       const cutCommand = new Uint8Array([0x1D, 0x56, 0x42, 0x00]); // Partial cut
-      const fullData = new Uint8Array([...escPosInit, ...textData, ...lineFeeds, ...cutCommand]);
+      const fullData = new Uint8Array([...escPosInit, ...escPosCharSet, ...textData, ...lineFeeds, ...cutCommand]);
       console.log('[PRINT]: ESC/POS data prepared, total bytes:', fullData.length);
       
       // Ensure USB device is still open and configured
