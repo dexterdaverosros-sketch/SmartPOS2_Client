@@ -298,6 +298,7 @@ export class AuthService {
     staffId: string;
     passkey: string;
     createdBy: string;
+    tenantId: string;
   }): Promise<Staff> {
     // Check if staff ID already exists
     const existingStaff = await db.staff.where('staffId').equals(staffData.staffId).first();
@@ -307,8 +308,9 @@ export class AuthService {
 
     const hashedPasskey = await hashPassword(staffData.passkey);
     
-    const staff: Staff = {
+    const staff: any = {
       id: generateUUID(),
+      tenantId: staffData.tenantId,
       name: staffData.name,
       staffId: staffData.staffId,
       passkey: hashedPasskey,

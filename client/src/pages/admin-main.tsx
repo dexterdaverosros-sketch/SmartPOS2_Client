@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLocation } from 'wouter';
-import { LogOut, DollarSign, Package, Plus, Eye, Calendar, CreditCard, Receipt, User, FileText, Lock, FileSpreadsheet, BarChart3, Bell, CheckCircle, Clock, ArrowRight, Monitor, Tablet, Smartphone, Trash2, Edit, RefreshCw, History, Cloud } from 'lucide-react';
+import { LogOut, DollarSign, Package, Plus, Eye, Calendar, CreditCard, Receipt, User, FileText, Lock, FileSpreadsheet, BarChart3, Bell, CheckCircle, Clock, ArrowRight, Monitor, Tablet, Smartphone, Trash2, Edit, RefreshCw, History, Cloud, Settings } from 'lucide-react';
 import Layout from '@/components/Layout';
 import FloatingActionButton from '@/components/FloatingActionButton';
 import { useAuth } from '@/contexts/AuthContext';
@@ -9,6 +9,7 @@ import { useDevices } from '@/contexts/DeviceContext';
 import {
     SalesService, ProductService, ExpenseService, PurchaseService, CreditorService, NotificationService, RemittanceService, db
 } from '@/lib/db';
+import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -586,11 +587,7 @@ const AdminMain: React.FC = () => {
                       try {
                         toast({ title: 'Syncing to Cloud', description: 'Pushing all data to Supabase...' });
                         // Call server endpoint to sync
-                        const response = await fetch('/api/sync/push-all', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' }
-                        });
-                        const result = await response.json();
+                        const result = await api.post('/api/sync/push-all', {});
                         if (result.success) {
                           toast({ title: 'Success!', description: 'All data backed up to the cloud' });
                         } else {
@@ -706,6 +703,7 @@ const AdminMain: React.FC = () => {
                   { title: 'Book Keeping', icon: Receipt, path: '/bookkeeping', color: 'blue' },
                   { title: 'History', icon: History, path: '/transaction-history', color: 'purple' },
                   { title: 'Analytics', icon: BarChart3, path: '/admin/reports', color: 'amber' },
+                  { title: 'Settings', icon: Settings, path: '/admin/settings', color: 'gray' },
                 ].map((tool) => (
                   <Button
                     key={tool.title}

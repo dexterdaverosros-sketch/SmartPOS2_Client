@@ -126,7 +126,7 @@ export default function AdminSettings() {
           </TabsList>
 
           <TabsContent value="receipt">
-            <Card className="p-4 space-y-4 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+            <Card className="p-3 space-y-3 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
               <div>
                 <h2 className="text-lg font-semibold text-gray-800 dark:text-white">Receipt Configuration</h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -137,10 +137,10 @@ export default function AdminSettings() {
               {loading ? (
                 <div className="text-sm text-gray-500">Loading settings…</div>
               ) : (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="storeName" className="dark:text-gray-300">Store Name</Label>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="storeName" className="dark:text-gray-300 text-sm">Store Name</Label>
                       <Input
                         id="storeName"
                         value={receiptSettings.storeName}
@@ -148,11 +148,11 @@ export default function AdminSettings() {
                           setReceiptSettings((s) => ({ ...s, storeName: e.target.value }))
                         }
                         placeholder="SmartPOS+ Store"
-                        className="dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        className="dark:bg-gray-700 dark:border-gray-600 dark:text-white h-9"
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="storePhone" className="dark:text-gray-300">Store Phone</Label>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="storePhone" className="dark:text-gray-300 text-sm">Store Phone</Label>
                       <Input
                         id="storePhone"
                         value={receiptSettings.storePhone}
@@ -160,13 +160,13 @@ export default function AdminSettings() {
                           setReceiptSettings((s) => ({ ...s, storePhone: e.target.value }))
                         }
                         placeholder="+63 900 000 0000"
-                        className="dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        className="dark:bg-gray-700 dark:border-gray-600 dark:text-white h-9"
                       />
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="storeAddress" className="dark:text-gray-300">Store Address</Label>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="storeAddress" className="dark:text-gray-300 text-sm">Store Address</Label>
                     <Textarea
                       id="storeAddress"
                       value={receiptSettings.storeAddress}
@@ -174,41 +174,41 @@ export default function AdminSettings() {
                         setReceiptSettings((s) => ({ ...s, storeAddress: e.target.value }))
                       }
                       placeholder="Street, City, Province, ZIP"
-                      rows={2}
+                      rows={1.5}
                       className="dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="headerNote" className="dark:text-gray-300">Header Note</Label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="headerNote" className="dark:text-gray-300 text-sm">Header Note</Label>
                       <Textarea
                         id="headerNote"
                         value={receiptSettings.headerNote}
                         onChange={(e) =>
                           setReceiptSettings((s) => ({ ...s, headerNote: e.target.value }))
                         }
-                        rows={2}
+                        rows={1.5}
                         className="dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="footerNote" className="dark:text-gray-300">Footer Note</Label>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="footerNote" className="dark:text-gray-300 text-sm">Footer Note</Label>
                       <Textarea
                         id="footerNote"
                         value={receiptSettings.footerNote}
                         onChange={(e) =>
                           setReceiptSettings((s) => ({ ...s, footerNote: e.target.value }))
                         }
-                        rows={2}
+                        rows={1.5}
                         className="dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                       />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="printerDeviceName" className="dark:text-gray-300">Printer Name</Label>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="printerDeviceName" className="dark:text-gray-300 text-sm">Printer Name</Label>
                       <Input
                         id="printerDeviceName"
                         value={receiptSettings.printerDeviceName}
@@ -216,21 +216,21 @@ export default function AdminSettings() {
                           setReceiptSettings((s) => ({ ...s, printerDeviceName: e.target.value }))
                         }
                         placeholder="Leave empty for system default"
-                        className="dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        className="dark:bg-gray-700 dark:border-gray-600 dark:text-white h-9"
                       />
                       <p className="text-xs text-gray-500">
                         Optional. Use the exact printer name from your system.
                       </p>
                     </div>
-                    <div className="space-y-2">
-                      <Label className="dark:text-gray-300">Paper Width</Label>
+                    <div className="space-y-1.5">
+                      <Label className="dark:text-gray-300 text-sm">Paper Width</Label>
                       <Select
                         value={receiptSettings.paperWidth}
                         onValueChange={(value: '58mm' | '80mm') =>
                           setReceiptSettings((s) => ({ ...s, paperWidth: value }))
                         }
                       >
-                        <SelectTrigger className="dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        <SelectTrigger className="dark:bg-gray-700 dark:border-gray-600 dark:text-white h-9">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="dark:bg-gray-800 dark:border-gray-700">
@@ -239,10 +239,10 @@ export default function AdminSettings() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-2">
-                      <Label className="dark:text-gray-300">Auto Print on Sale</Label>
-                      <div className="flex items-center justify-between rounded-lg border dark:border-gray-600 px-3 py-2">
-                        <span className="text-sm text-gray-700 dark:text-gray-300">Automatically print after confirm</span>
+                    <div className="space-y-1.5">
+                      <Label className="dark:text-gray-300 text-sm">Auto Print on Sale</Label>
+                      <div className="flex items-center justify-between rounded-lg border dark:border-gray-600 px-3 py-2 h-9">
+                        <span className="text-xs text-gray-700 dark:text-gray-300">Auto print</span>
                         <Switch
                           checked={receiptSettings.autoPrintOnSale}
                           onCheckedChange={(checked) =>
@@ -253,13 +253,10 @@ export default function AdminSettings() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex items-center justify-between rounded-lg border dark:border-gray-600 px-3 py-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="flex items-center justify-between rounded-lg border dark:border-gray-600 px-3 py-2 h-10">
                       <div>
-                        <div className="text-sm font-medium text-gray-800 dark:text-white">Show Date & Time</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                          Include transaction timestamp on receipt.
-                        </div>
+                        <div className="text-xs font-medium text-gray-800 dark:text-white">Show Date & Time</div>
                       </div>
                       <Switch
                         checked={receiptSettings.showDateTime}
@@ -268,12 +265,9 @@ export default function AdminSettings() {
                         }
                       />
                     </div>
-                    <div className="flex items-center justify-between rounded-lg border dark:border-gray-600 px-3 py-2">
+                    <div className="flex items-center justify-between rounded-lg border dark:border-gray-600 px-3 py-2 h-10">
                       <div>
-                        <div className="text-sm font-medium text-gray-800 dark:text-white">Show Staff Name</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                          Print the staff name who processed the sale.
-                        </div>
+                        <div className="text-xs font-medium text-gray-800 dark:text-white">Show Staff Name</div>
                       </div>
                       <Switch
                         checked={receiptSettings.showStaffName}
@@ -284,17 +278,17 @@ export default function AdminSettings() {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-end gap-2 pt-2">
+                  <div className="flex items-center justify-end gap-2 pt-1">
                     <Button
                       type="button"
                       variant="outline"
                       onClick={handleTestPrint}
                       disabled={saving}
-                      className="dark:text-white dark:border-gray-600"
+                      className="dark:text-white dark:border-gray-600 h-9"
                     >
                       Print Test Receipt
                     </Button>
-                    <Button type="button" onClick={handleSave} disabled={saving} className="bg-[#FF8882] hover:bg-[#FF7770] text-white">
+                    <Button type="button" onClick={handleSave} disabled={saving} className="bg-[#FF8882] hover:bg-[#FF7770] text-white h-9">
                       {saving ? 'Saving…' : 'Save Settings'}
                     </Button>
                   </div>

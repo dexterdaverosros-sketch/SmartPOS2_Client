@@ -265,6 +265,7 @@ const StaffManagement: React.FC = () => {
       const newStaff = await AuthService.createStaff({
         ...data,
         createdBy: user?.id || '',
+        tenantId: user?.tenantId || '',
       });
       
       if (newStaff) {

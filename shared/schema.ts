@@ -18,7 +18,7 @@ export const users = sqliteTable("users", {
   email: text("email").unique(),
   mobile: text("mobile").unique(),
   password: text("password").notNull(),
-  role: text("role").notNull(), // 'admin' or 'staff'
+  role: text("role").notNull(), // 'owner', 'admin', 'manager', 'staff', 'cashier'
   staffId: text("staff_id"),
   businessName: text("business_name"),
   ownerName: text("owner_name"),
@@ -97,6 +97,7 @@ export const saleItems = sqliteTable("sale_items", {
 export const staff = sqliteTable("staff", {
   id: text("id").primaryKey(),
   tenantId: text("tenant_id").notNull(),
+  userId: text("user_id"),
   name: text("name").notNull(),
   staffId: text("staff_id").notNull().unique(),
   passkey: text("passkey").notNull(),

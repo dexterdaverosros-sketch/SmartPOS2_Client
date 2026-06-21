@@ -159,7 +159,8 @@ export const dbService = {
 
       CREATE TABLE IF NOT EXISTS staff (
         id TEXT PRIMARY KEY,
-        tenant_id TEXT,
+        tenant_id TEXT NOT NULL,
+        user_id TEXT,
         name TEXT NOT NULL,
         staffId TEXT UNIQUE NOT NULL,
         passkey TEXT,
@@ -169,7 +170,7 @@ export const dbService = {
 
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
-        tenant_id TEXT,
+        tenant_id TEXT NOT NULL,
         username TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
         role TEXT NOT NULL,
@@ -612,11 +613,12 @@ export const dbService = {
     return db.prepare('SELECT * FROM users WHERE role = ?').all('admin');
   },
   saveAdmin: (user: any) => {
+    const effectiveTenantId = user.tenantId || user.tenant_id;
     const stmt = db.prepare(`
       INSERT OR REPLACE INTO users (id, username, password, role, businessName, ownerName, mobile, createdAt, tenant_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(user.id, user.username, user.password, user.role, user.businessName, user.ownerName, user.mobile, user.createdAt, user.tenantId || user.tenant_id);
+    stmt.run(user.id, user.username, user.password, user.role, user.businessName, user.ownerName, user.mobile, user.createdAt, effectiveTenantId);
     
     // Sync to Cloud (Supabase) if available
     if (useCloud()) {
@@ -631,7 +633,7 @@ export const dbService = {
           owner_name: user.ownerName || user.owner_name,
           mobile: user.mobile,
           profile_image: user.profileImage || user.profile_image,
-          tenant_id: user.tenantId || user.tenant_id,
+          tenant_id: effectiveTenantId,
           created_at: user.createdAt || new Date().toISOString()
         };
         supabase.from('users').upsert(cloudUser).then(({ error }) => {
@@ -1214,29 +1216,32 @@ export const dbService = {
   },
 
   // Staff methods
-  getStaff: () => {
-    return db.prepare('SELECT * FROM staff').all();
+  getStaff: (tenantId: string) => {
+    return db.prepare('SELECT * FROM staff WHERE tenant_id = ?').all(tenantId);
   },
 
-  saveStaff: (staff: Staff[]) => {
+  saveStaff: (staff: any[], tenantId: string) => {
     // Debug schema
     console.log('Staff table schema:', db.prepare('PRAGMA table_info(staff)').all());
 
     const insert = db.prepare(`
       INSERT OR REPLACE INTO staff 
-      (id, name, staffId, passkey, createdBy, createdAt) 
-      VALUES (?, ?, ?, ?, ?, ?)
+      (id, tenant_id, user_id, name, staffId, passkey, createdBy, createdAt) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
     
-    const insertMany = db.transaction((staffMembers: Staff[]) => {
+    const insertMany = db.transaction((staffMembers: any[]) => {
       for (const member of staffMembers) {
+        const effectiveTenantId = tenantId || member.tenantId || member.tenant_id;
         insert.run(
           member.id,
+          effectiveTenantId,
+          member.userId || member.user_id || null,
           member.name,
-          member.staffId,
+          member.staffId || member.staff_id,
           member.passkey,
-          member.createdBy,
-          member.createdAt || new Date().toISOString()
+          member.createdBy || member.created_by,
+          member.createdAt || member.created_at || new Date().toISOString()
         );
       }
     });
@@ -1248,14 +1253,19 @@ export const dbService = {
       const supabase = getSupabase();
       if (supabase) {
         // Map to snake_case for Supabase
-        const cloudStaff = staff.map(m => ({
-          id: String(m.id),
-          name: String(m.name || ''),
-          staff_id: String(m.staffId || ''),
-          passhash: String(m.passkey || ''),
-          created_by: m.createdBy ?? null,
-          created_at: m.createdAt ?? new Date().toISOString()
-        }));
+        const cloudStaff = staff.map(m => {
+          const effectiveTenantId = tenantId || m.tenantId || m.tenant_id;
+          return {
+            id: String(m.id),
+            tenant_id: effectiveTenantId,
+            user_id: m.userId || m.user_id || null,
+            name: String(m.name || ''),
+            staff_id: String(m.staffId || m.staff_id || ''),
+            passkey: String(m.passkey || ''),
+            created_by: m.createdBy || m.created_by || null,
+            created_at: m.createdAt || m.created_at || new Date().toISOString()
+          };
+        });
         
         supabase.from('staff').upsert(cloudStaff, { onConflict: 'id' }).then(({ error }) => {
           if (error) console.error('Cloud staff sync error:', error);
@@ -1267,17 +1277,17 @@ export const dbService = {
     return staff;
   },
 
-  getStaffSince: (timestamp: Date) => {
-    return db.prepare('SELECT * FROM staff WHERE datetime(createdAt) > datetime(?)').all(timestamp.toISOString());
+  getStaffSince: (timestamp: Date, tenantId: string) => {
+    return db.prepare('SELECT * FROM staff WHERE datetime(createdAt) > datetime(?) AND tenant_id = ?').all(timestamp.toISOString(), tenantId);
   },
 
   // Auth & Session methods
-  getStaffByStaffId: (staffId: string) => {
-    return db.prepare('SELECT * FROM staff WHERE staffId = ?').get(staffId);
+  getStaffByStaffId: (staffId: string, tenantId: string) => {
+    return db.prepare('SELECT * FROM staff WHERE staffId = ? AND tenant_id = ?').get(staffId, tenantId);
   },
 
-  verifyStaffCredentials: (staffId: string, passkey: string) => {
-    return db.prepare('SELECT * FROM staff WHERE staffId = ? AND passkey = ?').get(staffId, passkey);
+  verifyStaffCredentials: (staffId: string, passkey: string, tenantId: string) => {
+    return db.prepare('SELECT * FROM staff WHERE staffId = ? AND tenant_id = ?').get(staffId, tenantId);
   },
 
   createSession: (session: { id: string; user_id: string; token: string; tenant_id?: string; device_info: string; ip_address: string; created_at: string; last_active_at: string }) => {
@@ -1498,6 +1508,7 @@ export const dbService = {
       const cloudStaff = staff.map(s => ({
         id: s.id,
         tenant_id: tenantId,
+        user_id: s.userId || null,
         name: s.name,
         staff_id: s.staffId,
         passkey: s.passkey || null,
@@ -1771,6 +1782,8 @@ export const dbService = {
     if (cloudStaff && cloudStaff.length > 0) {
       dbService.saveStaff(cloudStaff.map(s => ({
         id: s.id,
+        tenantId: s.tenant_id,
+        userId: s.user_id,
         name: s.name,
         staffId: s.staff_id,
         passkey: s.passkey,
@@ -1787,6 +1800,7 @@ export const dbService = {
       for (const u of cloudUsers) {
         dbService.saveAdmin({
           id: u.id,
+          tenantId: u.tenant_id,
           username: u.username,
           password: u.password,
           role: u.role,
