@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import cors from "cors";
 import type { Staff, Sale, SaleItem, User } from "@shared/schema"; // Import Sale and SaleItem types
-import dbService from "./database";
+import dbService, { useCloud } from "./database";
 import { scanWifiNetworks, getWifiStatus } from "./network";
 import { randomUUID } from "crypto";
 import { z } from "zod";
@@ -1617,6 +1617,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Test receipt print failed:', error);
       res.status(500).json({ error: 'Failed to print test receipt' });
+    }
+  });
+
+  // Sync endpoints for Push to Cloud and Pull from Cloud
+  app.post('/api/sync/push-all', async (req, res) => {
+    try {
+      const tenant = await getTenantFromHeader(req);
+      const tenantId = tenant?.id || 'default-tenant-id';
+      const result = await dbService.pushAllToCloud(tenantId);
+      res.status(200).json(result);
+    } catch (error: any) {
+      console.error('Push to cloud failed:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.post('/api/sync/pull-all', async (req, res) => {
+    try {
+      const tenant = await getTenantFromHeader(req);
+      const tenantId = tenant?.id || 'default-tenant-id';
+      const result = await dbService.pullAllFromCloud(tenantId);
+      res.status(200).json(result);
+    } catch (error: any) {
+      console.error('Pull from cloud failed:', error);
+      res.status(500).json({ success: false, error: error.message });
     }
   });
 
