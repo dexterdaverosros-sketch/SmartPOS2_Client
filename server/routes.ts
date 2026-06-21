@@ -226,13 +226,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const supabase = getSupabase();
     if (!supabase) return { id: 'default-tenant-id', subdomain };
     
-    const { data: tenant } = await supabase
-      .from('tenants')
-      .select('*')
-      .eq('subdomain', subdomain.toLowerCase())
-      .single();
-    
-    return tenant;
+    try {
+      const { data: tenant, error } = await supabase
+        .from('tenants')
+        .select('*')
+        .eq('subdomain', subdomain.toLowerCase())
+        .single();
+      
+      if (error || !tenant) {
+        console.log('Tenant not found in Supabase, returning default tenant');
+        return { id: 'default-tenant-id', subdomain };
+      }
+      return tenant;
+    } catch (e) {
+      console.error('Error fetching tenant from Supabase:', e);
+      return { id: 'default-tenant-id', subdomain };
+    }
   };
 
   // Admin Status
@@ -313,21 +322,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log('=== CHECKING SUPABASE ===');
         console.log('Looking for user:', username);
         
-        // Try all possible ways to find the user
+        // Try all possible ways to find the user, safely
         let attempts = [];
-        if (tenant) {
+        if (tenant && tenant.id !== 'default-tenant-id') {
           attempts.push(
             // 1. Exact match with tenant_id
             async () => {
               console.log('Attempt 1: with tenant_id');
-              return await supabase.from('users').select('*').eq('username', username).eq('tenant_id', tenant.id).single();
+              const { data, error } = await supabase.from('users').select('*').eq('username', username).eq('tenant_id', tenant.id).single();
+              return { data, error };
             },
             // 2. Case-insensitive username with tenant_id
             async () => {
               console.log('Attempt 2: with tenant_id, case-insensitive');
-              const { data: users } = await supabase.from('users').select('*').eq('tenant_id', tenant.id);
+              const { data: users, error } = await supabase.from('users').select('*').eq('tenant_id', tenant.id);
               const user = users?.find(u => u.username.toLowerCase() === username.toLowerCase());
-              return { data: user, error: user ? null : new Error('Not found') };
+              return { data: user, error: user ? null : error || new Error('Not found') };
             }
           );
         }
@@ -336,14 +346,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // 3. Without tenant_id
           async () => {
             console.log('Attempt 3: without tenant_id');
-            return await supabase.from('users').select('*').eq('username', username).single();
+            const { data, error } = await supabase.from('users').select('*').eq('username', username).single();
+            return { data, error };
           },
           // 4. Case-insensitive without tenant_id
           async () => {
             console.log('Attempt 4: without tenant_id, case-insensitive');
-            const { data: users } = await supabase.from('users').select('*');
+            const { data: users, error } = await supabase.from('users').select('*');
             const user = users?.find(u => u.username.toLowerCase() === username.toLowerCase());
-            return { data: user, error: user ? null : new Error('Not found') };
+            return { data: user, error: user ? null : error || new Error('Not found') };
           }
         );
         
@@ -405,6 +416,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('Password entered:', password);
       console.log('Stored hash:', (admin.password || '').substring(0, 30) + '...');
       
+      if (!admin.password) {
+        console.log('ERROR: No stored password for user');
+        return res.status(401).json({ error: 'Invalid username or password' });
+      }
+      
       const isValid = await bcrypt.compare(password, admin.password);
       console.log('Password valid:', isValid);
       
@@ -430,8 +446,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       dbService.createSession(session);
       console.log('Session created successfully');
 
-      // Auto-pull all data from cloud on login for multi-device sync
-      if (useCloud()) {
+      // Auto-pull all data from cloud on login for multi-device sync ONLY IF we have a real tenant in Supabase
+      if (useCloud() && tenant && tenant.id !== 'default-tenant-id') {
         try {
           const tenantId = session.tenant_id;
           console.log('=== AUTO-PULLING DATA FROM CLOUD ===');
