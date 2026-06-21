@@ -2,25 +2,6 @@
 -- SmartPOS v2 Supabase Multi-Tenant Schema
 -- ============================================
 
--- Enable Row Level Security (RLS)
-ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE products ENABLE ROW LEVEL SECURITY;
-ALTER TABLE variants ENABLE ROW LEVEL SECURITY;
-ALTER TABLE staff ENABLE ROW LEVEL SECURITY;
-ALTER TABLE sales ENABLE ROW LEVEL SECURITY;
-ALTER TABLE sale_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE credits ENABLE ROW LEVEL SECURITY;
-ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE non_inventory_products ENABLE ROW LEVEL SECURITY;
-ALTER TABLE remittances ENABLE ROW LEVEL SECURITY;
-ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
-ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
-ALTER TABLE purchases ENABLE ROW LEVEL SECURITY;
-ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
-
 -- ============================================
 -- Helper Function to get current tenant ID
 -- ============================================
@@ -45,7 +26,269 @@ CREATE TABLE IF NOT EXISTS tenants (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ============================================
+-- Table: users (admins)
+-- ============================================
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    username TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'admin',
+    business_name TEXT,
+    owner_name TEXT,
+    mobile TEXT,
+    profile_image TEXT,
+    security_question_1 TEXT,
+    security_answer_1 TEXT,
+    security_question_2 TEXT,
+    security_answer_2 TEXT,
+    security_question_3 TEXT,
+    security_answer_3 TEXT,
+    failed_attempt_count INTEGER DEFAULT 0,
+    lockout_until TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- Table: staff
+-- ============================================
+CREATE TABLE IF NOT EXISTS staff (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    staff_id TEXT UNIQUE NOT NULL,
+    passkey TEXT,
+    created_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- Table: products
+-- ============================================
+CREATE TABLE IF NOT EXISTS products (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    price NUMERIC NOT NULL,
+    cost NUMERIC DEFAULT 0,
+    barcode TEXT UNIQUE NOT NULL,
+    category TEXT,
+    image TEXT,
+    quantity INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- Table: variants
+-- ============================================
+CREATE TABLE IF NOT EXISTS variants (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    product_id UUID REFERENCES products(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    barcode TEXT,
+    price NUMERIC NOT NULL,
+    cost NUMERIC NOT NULL,
+    image TEXT,
+    quantity INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- Table: customers
+-- ============================================
+CREATE TABLE IF NOT EXISTS customers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    address TEXT,
+    credit_rating TEXT NOT NULL CHECK (credit_rating IN ('good','bad')),
+    photo_url TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- Table: credits (ledger)
+-- ============================================
+CREATE TABLE IF NOT EXISTS credits (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    customer_id UUID REFERENCES customers(id) ON DELETE CASCADE,
+    amount NUMERIC NOT NULL CHECK (amount > 0),
+    due_date TIMESTAMPTZ,
+    remarks TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- Table: payments (ledger)
+-- ============================================
+CREATE TABLE IF NOT EXISTS payments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    customer_id UUID REFERENCES customers(id) ON DELETE CASCADE,
+    amount NUMERIC NOT NULL CHECK (amount > 0),
+    payment_method TEXT NOT NULL,
+    remarks TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- Table: reminders
+-- ============================================
+CREATE TABLE IF NOT EXISTS reminders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    customer_id UUID REFERENCES customers(id) ON DELETE CASCADE,
+    message_type TEXT NOT NULL,
+    message TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- Table: non_inventory_products
+-- ============================================
+CREATE TABLE IF NOT EXISTS non_inventory_products (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    price NUMERIC NOT NULL,
+    category TEXT,
+    description TEXT,
+    image TEXT,
+    barcode TEXT UNIQUE NOT NULL,
+    barcode_data TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- Table: sales
+-- ============================================
+CREATE TABLE IF NOT EXISTS sales (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    total NUMERIC NOT NULL,
+    payment_type TEXT NOT NULL,
+    payment_amount NUMERIC NOT NULL,
+    staff_id TEXT,
+    remitted BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- Table: sale_items
+-- ============================================
+CREATE TABLE IF NOT EXISTS sale_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    sale_id UUID REFERENCES sales(id) ON DELETE CASCADE,
+    product_id TEXT NOT NULL,
+    quantity INTEGER NOT NULL,
+    price NUMERIC NOT NULL,
+    unit TEXT DEFAULT 'pieces',
+    product_name TEXT,
+    is_non_inventory BOOLEAN DEFAULT FALSE
+);
+
+-- ============================================
+-- Table: remittances
+-- ============================================
+CREATE TABLE IF NOT EXISTS remittances (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    staff_id TEXT NOT NULL,
+    staff_name TEXT NOT NULL,
+    amount NUMERIC NOT NULL,
+    transaction_count INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    confirmed_at TIMESTAMPTZ
+);
+
+-- ============================================
+-- Table: notifications
+-- ============================================
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    user_id TEXT,
+    type TEXT NOT NULL,
+    message TEXT NOT NULL,
+    data TEXT,
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- Table: expenses
+-- ============================================
+CREATE TABLE IF NOT EXISTS expenses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    description TEXT,
+    category TEXT,
+    amount NUMERIC NOT NULL,
+    date TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- Table: purchases
+-- ============================================
+CREATE TABLE IF NOT EXISTS purchases (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    product_name TEXT,
+    supplier TEXT,
+    amount NUMERIC,
+    date TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- Table: settings
+-- ============================================
+CREATE TABLE IF NOT EXISTS settings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(tenant_id, key)
+);
+
+-- ============================================
+-- Enable Row Level Security (RLS) for all tables
+-- ============================================
+ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE variants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE staff ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sale_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE credits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE non_inventory_products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE remittances ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE purchases ENABLE ROW LEVEL SECURITY;
+ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+
+-- ============================================
 -- RLS Policies for tenants
+-- ============================================
 CREATE POLICY "Tenants can view their own data" 
   ON tenants 
   FOR SELECT 
