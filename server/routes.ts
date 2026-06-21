@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import cors from "cors";
 import type { Staff, Sale, SaleItem, User } from "@shared/schema"; // Import Sale and SaleItem types
-import dbService, { useCloud } from "./database";
+import dbService, { useCloud, initSQLite } from "./database";
 import { scanWifiNetworks, getWifiStatus } from "./network";
 import { randomUUID } from "crypto";
 import { z } from "zod";
@@ -338,7 +338,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               // 1. Exact match with tenant_id
               async () => {
                 console.log('Attempt 1: with tenant_id');
-                const { data, error } = await supabase.from('users').select('*').eq('username', username).eq('tenant_id', tenant.id).single();
+                const { data, error } = await supabase.from('users').select('*').eq('username', username).eq('tenant_id', tenant.id).maybeSingle();
                 return { data, error };
               },
               // 2. Case-insensitive username with tenant_id
@@ -355,7 +355,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // 3. Without tenant_id
             async () => {
               console.log('Attempt 3: without tenant_id');
-              const { data, error } = await supabase.from('users').select('*').eq('username', username).single();
+              const { data, error } = await supabase.from('users').select('*').eq('username', username).maybeSingle();
               return { data, error };
             },
             // 4. Case-insensitive without tenant_id
@@ -389,6 +389,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
             
             admin = data as any;
             console.log('Successfully found user in Supabase');
+            
+            // SAVE THIS USER TO LOCAL DB for future logins!
+            console.log('=== SAVING SUPABASE USER TO LOCAL DB ===');
+            try {
+              // Convert snake_case to camelCase as needed
+              const localUser: any = {
+                id: String(data.id),
+                username: data.username,
+                password: data.password, // IMPORTANT: keep hashed password!
+                role: data.role || 'admin',
+                // Optional fields that might be in Supabase
+                businessName: data.business_name || data.businessName,
+                ownerName: data.owner_name || data.ownerName,
+                mobile: data.mobile,
+                profileImage: data.profile_image || data.profileImage,
+                tenantId: data.tenant_id
+              };
+              
+              // Use dbService to save/update the user
+              const existingLocalUser = dbService.getUserByUsername(username);
+              if (existingLocalUser) {
+                console.log('User already exists locally, updating...');
+                // Update existing user
+                const updateStmt = initSQLite().prepare(`
+                  UPDATE users 
+                  SET password = COALESCE(?, password),
+                      role = COALESCE(?, role),
+                      businessName = COALESCE(?, businessName),
+                      ownerName = COALESCE(?, ownerName),
+                      mobile = COALESCE(?, mobile),
+                      profileImage = COALESCE(?, profileImage)
+                  WHERE username = ?
+                `);
+                updateStmt.run(
+                  localUser.password,
+                  localUser.role,
+                  localUser.businessName,
+                  localUser.ownerName,
+                  localUser.mobile,
+                  localUser.profileImage,
+                  username
+                );
+              } else {
+                console.log('Inserting new user to local DB...');
+                // Insert new user
+                const insertStmt = initSQLite().prepare(`
+                  INSERT OR IGNORE INTO users (id, username, password, role, businessName, ownerName, mobile, profileImage)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                `);
+                insertStmt.run(
+                  localUser.id,
+                  localUser.username,
+                  localUser.password,
+                  localUser.role,
+                  localUser.businessName,
+                  localUser.ownerName,
+                  localUser.mobile,
+                  localUser.profileImage
+                );
+              }
+              console.log('Successfully saved user to local DB');
+            } catch (saveError) {
+              console.warn('Failed to save user to local DB (login will still work):', saveError);
+            }
           } else {
             console.log('All attempts failed to find user in Supabase');
           }

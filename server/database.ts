@@ -17,7 +17,7 @@ const __dirname = path.dirname(__filename);
 
 // Initialize SQLite only if needed (not on Render in some cases, but for now we keep it)
 let db: any;
-const initSQLite = () => {
+export const initSQLite = () => {
   if (db) return db;
   const dataDir = path.resolve(__dirname, 'data');
   if (!fs.existsSync(dataDir)) {
