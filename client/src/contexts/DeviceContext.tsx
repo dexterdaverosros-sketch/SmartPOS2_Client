@@ -11,6 +11,10 @@ interface ExternalDevice {
   device?: any; // The raw USBDevice, BluetoothDevice, or PrinterInfo
   isDefault?: boolean;
   isOperational?: boolean;
+  // Printer-specific cached resources
+  bluetoothServer?: any;
+  bluetoothCharacteristic?: any;
+  usbEndpoint?: any;
 }
 
 interface DeviceContextType {
@@ -301,13 +305,31 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (device.configuration === null) await device.selectConfiguration(1);
       await device.claimInterface(0);
 
+      // Find and store endpoint for printers
+      let usbEndpoint = null;
+      if (type === 'printer') {
+        const config = device.configuration;
+        if (config?.interfaces?.length > 0) {
+          const iface = config.interfaces[0];
+          if (iface.alternate?.endpoints) {
+            usbEndpoint = iface.alternate.endpoints.find(
+              ep => ep.type === 'bulk' && ep.direction === 'out'
+            );
+          }
+        }
+        if (!usbEndpoint) {
+          usbEndpoint = { endpointNumber: 1 };
+        }
+      }
+
       const newDevice: ExternalDevice = {
         id: `usb-${device.productId}-${device.vendorId}`,
         name: device.productName || `USB Device ${device.productId}`,
         type,
         connection: 'usb',
         device,
-        isOperational: true
+        isOperational: true,
+        usbEndpoint
       };
 
       // Check if already connected
@@ -342,6 +364,13 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       });
 
       const server = await device.gatt.connect();
+      let bluetoothCharacteristic = null;
+      
+      // For printers, get the characteristic now
+      if (type === 'printer') {
+        const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+        bluetoothCharacteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+      }
       
       const newDevice: ExternalDevice = {
         id: `bt-${device.id}`,
@@ -349,7 +378,9 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         type,
         connection: 'bluetooth',
         device,
-        isOperational: true
+        isOperational: true,
+        bluetoothServer: server,
+        bluetoothCharacteristic
       };
 
       // Check if already connected
@@ -402,37 +433,36 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     try {
       console.log('[PRINT LOG]: Attempting to print to', printer.name, content);
       
-      if (printer.connection === 'system') {
-        const printWindow = window.open('', '_blank');
-        if (printWindow) {
-          printWindow.document.write('<!DOCTYPE html><html><head><title>Receipt</title><style>pre{font-family:monospace;white-space:pre-wrap;font-size:12px;}@media print{body{margin:0;}}</style></head><body><pre>' + content + '</pre><script>window.print();window.onafterprint=window.close;</script></body></html>');
-          printWindow.document.close();
+      if (!printer.device) {
+        toast({ title: 'Print Failed', description: 'No hardware printer connected. Please connect via USB or Bluetooth.', variant: 'destructive' });
+        return false;
+      }
+      
+      let device = printer.device;
+      
+      // Ensure USB device is still open and configured
+      if (printer.connection === 'usb') {
+        if (!device.opened) {
+          console.log('[PRINT LOG]: Reopening USB device...');
+          await device.open();
         }
-      } else if (printer.device) {
-        let device = printer.device;
+        if (device.configuration === null) {
+          console.log('[PRINT LOG]: Selecting USB configuration...');
+          await device.selectConfiguration(1);
+        }
+        // Check if interface is claimed
+        const config = device.configuration;
+        if (config?.interfaces?.length > 0) {
+          const iface = config.interfaces[0];
+          if (!iface.claimed) {
+            console.log('[PRINT LOG]: Claiming USB interface...');
+            await device.claimInterface(0);
+          }
+        }
         
-        // Ensure USB device is still open and configured
-        if (printer.connection === 'usb') {
-          if (!device.opened) {
-            console.log('[PRINT LOG]: Reopening USB device...');
-            await device.open();
-          }
-          if (device.configuration === null) {
-            console.log('[PRINT LOG]: Selecting USB configuration...');
-            await device.selectConfiguration(1);
-          }
-          // Check if interface is claimed
-          const config = device.configuration;
-          if (config?.interfaces?.length > 0) {
-            const iface = config.interfaces[0];
-            if (!iface.claimed) {
-              console.log('[PRINT LOG]: Claiming USB interface...');
-              await device.claimInterface(0);
-            }
-          }
-          
-          // Find the correct output endpoint
-          let outEndpoint: USBEndpoint | undefined;
+        // Use cached endpoint if available, else find again
+        let outEndpoint = printer.usbEndpoint;
+        if (!outEndpoint) {
           const currentConfig = device.configuration;
           if (currentConfig?.interfaces?.length > 0) {
             const iface = currentConfig.interfaces[0];
@@ -443,52 +473,72 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             }
           }
           if (!outEndpoint) {
-            // Fallback to endpoint 1 if not found
-            outEndpoint = { endpointNumber: 1 } as USBEndpoint;
+            outEndpoint = { endpointNumber: 1 };
           }
+        }
 
-          // Prepare ESC/POS data
-          const encoder = new TextEncoder();
-          // ESC @ (initialize printer), then content, then line feeds, then cut (optional)
-          const escPosInit = new Uint8Array([0x1B, 0x40]);
-          const textData = encoder.encode(content);
-          const lineFeeds = new Uint8Array([0x0A, 0x0A, 0x0A, 0x0A]);
-          const cutCommand = new Uint8Array([0x1D, 0x56, 0x42, 0x00]); // Partial cut
-          const fullData = new Uint8Array([...escPosInit, ...textData, ...lineFeeds, ...cutCommand]);
-          
-          await device.transferOut(outEndpoint.endpointNumber, fullData);
-        } else if (printer.connection === 'bluetooth') {
-          // Ensure Bluetooth is connected
-          let server;
-          try {
-            if (!device.gatt.connected) {
-              console.log('[PRINT LOG]: Reconnecting Bluetooth...');
-              server = await device.gatt.connect();
-            } else {
-              server = device.gatt;
-            }
-          } catch (e) {
-            console.log('[PRINT LOG]: Bluetooth not connected, connecting fresh...');
+        // Prepare ESC/POS data
+        const encoder = new TextEncoder();
+        // ESC @ (initialize printer), then content, then line feeds, then cut (optional)
+        const escPosInit = new Uint8Array([0x1B, 0x40]);
+        const textData = encoder.encode(content);
+        const lineFeeds = new Uint8Array([0x0A, 0x0A, 0x0A, 0x0A]);
+        const cutCommand = new Uint8Array([0x1D, 0x56, 0x42, 0x00]); // Partial cut
+        const fullData = new Uint8Array([...escPosInit, ...textData, ...lineFeeds, ...cutCommand]);
+        
+        await device.transferOut(outEndpoint.endpointNumber, fullData);
+      } else if (printer.connection === 'bluetooth') {
+        // Ensure Bluetooth is connected
+        let server = printer.bluetoothServer;
+        let characteristic = printer.bluetoothCharacteristic;
+        
+        try {
+          if (!device.gatt.connected || !server) {
+            console.log('[PRINT LOG]: Reconnecting Bluetooth...');
             server = await device.gatt.connect();
+            // Update cached server
+            setConnectedDevices(prev => prev.map(d => 
+              d.id === printer.id ? { ...d, bluetoothServer: server } : d
+            ));
+            
+            // Re-fetch characteristic if needed
+            if (!characteristic) {
+              const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+              characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+              // Update cached characteristic
+              setConnectedDevices(prev => prev.map(d => 
+                d.id === printer.id ? { ...d, bluetoothCharacteristic: characteristic } : d
+              ));
+            }
+          } else {
+            server = device.gatt;
           }
-          
-          const encoder = new TextEncoder();
-          const escPosInit = new Uint8Array([0x1B, 0x40]);
-          const textData = encoder.encode(content);
-          const lineFeeds = new Uint8Array([0x0A, 0x0A, 0x0A, 0x0A]);
-          const cutCommand = new Uint8Array([0x1D, 0x56, 0x42, 0x00]);
-          const fullData = new Uint8Array([...escPosInit, ...textData, ...lineFeeds, ...cutCommand]);
-
+        } catch (e) {
+          console.log('[PRINT LOG]: Bluetooth not connected, connecting fresh...');
+          server = await device.gatt.connect();
           const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
-          const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
-          await characteristic.writeValue(fullData);
+          characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+          // Update both server and characteristic in state
+          setConnectedDevices(prev => prev.map(d => 
+            d.id === printer.id ? { 
+              ...d, 
+              bluetoothServer: server, 
+              bluetoothCharacteristic: characteristic 
+            } : d
+          ));
         }
+        
+        const encoder = new TextEncoder();
+        const escPosInit = new Uint8Array([0x1B, 0x40]);
+        const textData = encoder.encode(content);
+        const lineFeeds = new Uint8Array([0x0A, 0x0A, 0x0A, 0x0A]);
+        const cutCommand = new Uint8Array([0x1D, 0x56, 0x42, 0x00]);
+        const fullData = new Uint8Array([...escPosInit, ...textData, ...lineFeeds, ...cutCommand]);
+
+        await characteristic.writeValue(fullData);
       } else {
-        const printWindow = window.open('', '_blank');
-        if (printWindow) {
-          printWindow.document.write('<!DOCTYPE html><html><head><title>Receipt</title><style>pre{font-family:monospace;white-space:pre-wrap;font-size:12px;}@media print{body{margin:0;}}</style></head><body><pre>' + content + '</pre><script>window.print();window.onafterprint=window.close;</script></body></html>');
-          printWindow.document.close();
-        }
+        toast({ title: 'Print Failed', description: 'Unsupported printer connection type.', variant: 'destructive' });
+        return false;
       }
 
       toast({ title: 'Print Successful', description: 'Receipt sent to printer.' });
