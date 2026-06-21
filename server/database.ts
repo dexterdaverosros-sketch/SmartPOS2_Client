@@ -771,10 +771,14 @@ export const dbService = {
 
       // Insert sale items and update product/variant quantities
       for (const item of saleItems) {
+        // Ensure we have an id and saleId
+        const itemId = item.id || randomUUID();
+        const itemSaleId = item.saleId || sale.id;
+        
         db.prepare(`
           INSERT INTO sale_items (id, saleId, productId, quantity, price, unit, productName, isNonInventory)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(item.id, item.saleId, item.productId, item.quantity, item.price, item.unit, item.productName, item.isNonInventory ? 1 : 0);
+        `).run(itemId, itemSaleId, item.productId, item.quantity, item.price, item.unit, item.productName, item.isNonInventory ? 1 : 0);
 
         if (!item.isNonInventory) {
           // Deduct from product or variant
@@ -815,16 +819,20 @@ export const dbService = {
             if (saleError) throw saleError;
 
             // Sync Sale Items
-            const cloudItems = saleItems.map(item => ({
-              id: item.id,
-              sale_id: item.saleId,
-              product_id: item.productId,
-              quantity: item.quantity,
-              price: item.price,
-              unit: item.unit,
-              product_name: item.productName,
-              is_non_inventory: !!item.isNonInventory
-            }));
+            const cloudItems = saleItems.map(item => {
+              const itemId = item.id || randomUUID();
+              const itemSaleId = item.saleId || sale.id;
+              return {
+                id: itemId,
+                sale_id: itemSaleId,
+                product_id: item.productId,
+                quantity: item.quantity,
+                price: item.price,
+                unit: item.unit,
+                product_name: item.productName,
+                is_non_inventory: !!item.isNonInventory
+              };
+            });
 
             const { error: itemsError } = await supabase.from('sale_items').upsert(cloudItems);
             if (itemsError) throw itemsError;

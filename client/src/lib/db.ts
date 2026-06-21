@@ -857,19 +857,24 @@ export class SalesService {
       
       // CRITICAL: Push sale to server for admin visibility - FIRE IN BACKGROUND, DON'T AWAIT
       try {
+        // Build proper sale items array with all required fields (id, saleId, productName, etc)
+        const saleItemsForServer = saleData.items.map(item => ({
+          id: generateUUID(),
+          saleId: sale.id,
+          productId: item.productId,
+          quantity: item.quantity,
+          price: item.price,
+          unit: item.unit,
+          productName: item.name,
+          isNonInventory: item.isNonInventory
+        }));
+
         const saleDataForServer = {
           sale: {
             ...sale,
             staffId: sale.staffId || 'unknown'
           },
-          items: saleData.items.map(item => ({
-            productId: item.productId,
-            quantity: item.quantity,
-            price: item.price,
-            unit: item.unit,
-            name: item.name,
-            isNonInventory: item.isNonInventory
-          }))
+          items: saleItemsForServer
         };
         api.post('/api/sales', saleDataForServer)
           .then(() => console.log('Sale pushed to server successfully'))
