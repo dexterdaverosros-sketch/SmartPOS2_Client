@@ -419,7 +419,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       businessName = COALESCE(?, businessName),
                       ownerName = COALESCE(?, ownerName),
                       mobile = COALESCE(?, mobile),
-                      profileImage = COALESCE(?, profileImage)
+                      profileImage = COALESCE(?, profileImage),
+                      tenant_id = COALESCE(?, tenant_id)
                   WHERE username = ?
                 `);
                 updateStmt.run(
@@ -429,14 +430,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   localUser.ownerName,
                   localUser.mobile,
                   localUser.profileImage,
+                  localUser.tenantId,
                   username
                 );
               } else {
                 console.log('Inserting new user to local DB...');
                 // Insert new user
                 const insertStmt = initSQLite().prepare(`
-                  INSERT OR IGNORE INTO users (id, username, password, role, businessName, ownerName, mobile, profileImage)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                  INSERT OR IGNORE INTO users (id, username, password, role, businessName, ownerName, mobile, profileImage, tenant_id)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 `);
                 insertStmt.run(
                   localUser.id,
@@ -446,7 +448,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   localUser.businessName,
                   localUser.ownerName,
                   localUser.mobile,
-                  localUser.profileImage
+                  localUser.profileImage,
+                  localUser.tenantId
                 );
               }
               console.log('Successfully saved user to local DB');

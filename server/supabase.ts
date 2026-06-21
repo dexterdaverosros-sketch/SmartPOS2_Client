@@ -1,18 +1,19 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 const url = process.env.SUPABASE_URL || "https://yvtdagbiuxmvlesaikts.supabase.co";
-const anon = process.env.SUPABASE_ANON_KEY || "sb_publishable_9Wwym8pGkJCa_C1xnDtVBQ_F-QFylwk";
+// Prefer service role key over anon key for backend (bypasses RLS)
+const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "sb_publishable_9Wwym8pGkJCa_C1xnDtVBQ_F-QFylwk";
 
 let client: SupabaseClient | null = null;
 
 export function getSupabase(): SupabaseClient | null {
-  if (!url || !anon) {
+  if (!url || !key) {
     console.warn('Supabase credentials missing. Cloud persistence disabled.');
     return null;
   }
   try {
     if (!client) {
-      client = createClient(url, anon, {
+      client = createClient(url, key, {
         auth: {
           persistSession: false
         }

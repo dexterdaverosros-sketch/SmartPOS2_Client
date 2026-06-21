@@ -31,7 +31,7 @@ export const initSQLite = () => {
     // Helper to determine if we should use Cloud (Supabase)
 export const useCloud = () => {
   const url = process.env.SUPABASE_URL || "https://yvtdagbiuxmvlesaikts.supabase.co";
-  const key = process.env.SUPABASE_ANON_KEY || "sb_publishable_9Wwym8pGkJCa_C1xnDtVBQ_F-QFylwk";
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "sb_publishable_9Wwym8pGkJCa_C1xnDtVBQ_F-QFylwk";
   return !!url && !!key && url !== "" && key !== "";
 };
 
@@ -613,16 +613,28 @@ export const dbService = {
   },
   saveAdmin: (user: any) => {
     const stmt = db.prepare(`
-      INSERT OR REPLACE INTO users (id, username, password, role, businessName, ownerName, mobile, createdAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO users (id, username, password, role, businessName, ownerName, mobile, createdAt, tenant_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(user.id, user.username, user.password, user.role, user.businessName, user.ownerName, user.mobile, user.createdAt);
+    stmt.run(user.id, user.username, user.password, user.role, user.businessName, user.ownerName, user.mobile, user.createdAt, user.tenantId || user.tenant_id);
     
     // Sync to Cloud (Supabase) if available
     if (useCloud()) {
       const supabase = getSupabase();
       if (supabase) {
-        supabase.from('users').upsert(user).then(({ error }) => {
+        const cloudUser = {
+          id: user.id,
+          username: user.username,
+          password: user.password,
+          role: user.role,
+          business_name: user.businessName || user.business_name,
+          owner_name: user.ownerName || user.owner_name,
+          mobile: user.mobile,
+          profile_image: user.profileImage || user.profile_image,
+          tenant_id: user.tenantId || user.tenant_id,
+          created_at: user.createdAt || new Date().toISOString()
+        };
+        supabase.from('users').upsert(cloudUser).then(({ error }) => {
           if (error) console.error('Cloud admin sync error:', error);
           else console.log('Cloud admin sync: 1 admin updated.');
         });
