@@ -315,82 +315,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const tenant = await getTenantFromHeader(req);
       console.log('Tenant:', tenant);
       
-      // First check Supabase first (prefer cloud over local)
+      // First check LOCAL DB (prioritize local for reliability)
       let admin = null;
-      const supabase = getSupabase();
-      if (supabase) {
-        console.log('=== CHECKING SUPABASE ===');
-        console.log('Looking for user:', username);
-        
-        // Try all possible ways to find the user, safely
-        let attempts = [];
-        if (tenant && tenant.id !== 'default-tenant-id') {
+      console.log('=== CHECKING LOCAL DB FIRST ===');
+      admin = dbService.getUserByUsername(username) as User | undefined;
+      if (admin) {
+        console.log('Found user in local DB:', admin.username);
+      }
+      
+      // If not found locally, try Supabase (cloud fallback)
+      if (!admin) {
+        console.log('User not found in local DB, checking Supabase');
+        const supabase = getSupabase();
+        if (supabase) {
+          console.log('=== CHECKING SUPABASE ===');
+          console.log('Looking for user:', username);
+          
+          // Try all possible ways to find the user, safely
+          let attempts = [];
+          if (tenant && tenant.id !== 'default-tenant-id') {
+            attempts.push(
+              // 1. Exact match with tenant_id
+              async () => {
+                console.log('Attempt 1: with tenant_id');
+                const { data, error } = await supabase.from('users').select('*').eq('username', username).eq('tenant_id', tenant.id).single();
+                return { data, error };
+              },
+              // 2. Case-insensitive username with tenant_id
+              async () => {
+                console.log('Attempt 2: with tenant_id, case-insensitive');
+                const { data: users, error } = await supabase.from('users').select('*').eq('tenant_id', tenant.id);
+                const user = users?.find(u => u.username.toLowerCase() === username.toLowerCase());
+                return { data: user, error: user ? null : error || new Error('Not found') };
+              }
+            );
+          }
+          // Also add attempts without tenant_id
           attempts.push(
-            // 1. Exact match with tenant_id
+            // 3. Without tenant_id
             async () => {
-              console.log('Attempt 1: with tenant_id');
-              const { data, error } = await supabase.from('users').select('*').eq('username', username).eq('tenant_id', tenant.id).single();
+              console.log('Attempt 3: without tenant_id');
+              const { data, error } = await supabase.from('users').select('*').eq('username', username).single();
               return { data, error };
             },
-            // 2. Case-insensitive username with tenant_id
+            // 4. Case-insensitive without tenant_id
             async () => {
-              console.log('Attempt 2: with tenant_id, case-insensitive');
-              const { data: users, error } = await supabase.from('users').select('*').eq('tenant_id', tenant.id);
+              console.log('Attempt 4: without tenant_id, case-insensitive');
+              const { data: users, error } = await supabase.from('users').select('*');
               const user = users?.find(u => u.username.toLowerCase() === username.toLowerCase());
               return { data: user, error: user ? null : error || new Error('Not found') };
             }
           );
-        }
-        // Also add attempts without tenant_id
-        attempts.push(
-          // 3. Without tenant_id
-          async () => {
-            console.log('Attempt 3: without tenant_id');
-            const { data, error } = await supabase.from('users').select('*').eq('username', username).single();
-            return { data, error };
-          },
-          // 4. Case-insensitive without tenant_id
-          async () => {
-            console.log('Attempt 4: without tenant_id, case-insensitive');
-            const { data: users, error } = await supabase.from('users').select('*');
-            const user = users?.find(u => u.username.toLowerCase() === username.toLowerCase());
-            return { data: user, error: user ? null : error || new Error('Not found') };
-          }
-        );
-        
-        // Try each attempt until one works
-        let data: any = null;
-        for (let i = 0; i < attempts.length; i++) {
-          const result = await attempts[i]();
-          if (!result.error && result.data) {
-            data = result.data;
-            console.log('SUCCESS with attempt ' + (i+1) + '!');
-            break;
-          }
-          console.log('Attempt ' + (i+1) + ' failed:', result.error?.message || 'No data');
-        }
-        
-        if (data) {
-          console.log('User data from Supabase:');
-          console.log('  - id:', data.id);
-          console.log('  - username:', data.username);
-          console.log('  - role:', data.role);
-          console.log('  - tenant_id:', data.tenant_id);
-          console.log('  - password starts with:', (data.password || '').substring(0, 20));
           
-          admin = data as any;
-          console.log('Successfully found user in Supabase');
-        } else {
-          console.log('All attempts failed to find user in Supabase');
-        }
-      }
-      
-      // If not in Supabase, try local
-      if (!admin) {
-        console.log('User not found in Supabase, checking local DB');
-        admin = dbService.getUserByUsername(username) as User | undefined;
-        if (admin) {
-          console.log('Found user in local DB:', admin.username);
+          // Try each attempt until one works
+          let data: any = null;
+          for (let i = 0; i < attempts.length; i++) {
+            const result = await attempts[i]();
+            if (!result.error && result.data) {
+              data = result.data;
+              console.log('SUCCESS with attempt ' + (i+1) + '!');
+              break;
+            }
+            console.log('Attempt ' + (i+1) + ' failed:', result.error?.message || 'No data');
+          }
+          
+          if (data) {
+            console.log('User data from Supabase:');
+            console.log('  - id:', data.id);
+            console.log('  - username:', data.username);
+            console.log('  - role:', data.role);
+            console.log('  - tenant_id:', data.tenant_id);
+            console.log('  - password starts with:', (data.password || '').substring(0, 20));
+            
+            admin = data as any;
+            console.log('Successfully found user in Supabase');
+          } else {
+            console.log('All attempts failed to find user in Supabase');
+          }
         }
       }
       
