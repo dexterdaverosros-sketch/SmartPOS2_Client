@@ -423,6 +423,15 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     await scanForDevices();
   };
 
+  // Helper to split Uint8Array into chunks for MTU limit
+  const chunkUint8Array = (data: Uint8Array, chunkSize: number = 20): Uint8Array[] => {
+    const chunks: Uint8Array[] = [];
+    for (let i = 0; i < data.length; i += chunkSize) {
+      chunks.push(data.slice(i, i + chunkSize));
+    }
+    return chunks;
+  };
+
   const printToThermalPrinter = async (content: string): Promise<boolean> => {
     const printer = connectedDevices.find(d => d.type === 'printer' && d.isDefault) || connectedDevices.find(d => d.type === 'printer');
     if (!printer) {
@@ -439,6 +448,14 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
       
       let device = printer.device;
+      
+      // Prepare ESC/POS data
+      const encoder = new TextEncoder();
+      const escPosInit = new Uint8Array([0x1B, 0x40]);
+      const textData = encoder.encode(content);
+      const lineFeeds = new Uint8Array([0x0A, 0x0A, 0x0A, 0x0A]);
+      const cutCommand = new Uint8Array([0x1D, 0x56, 0x42, 0x00]); // Partial cut
+      const fullData = new Uint8Array([...escPosInit, ...textData, ...lineFeeds, ...cutCommand]);
       
       // Ensure USB device is still open and configured
       if (printer.connection === 'usb') {
@@ -476,66 +493,64 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             outEndpoint = { endpointNumber: 1 };
           }
         }
-
-        // Prepare ESC/POS data
-        const encoder = new TextEncoder();
-        // ESC @ (initialize printer), then content, then line feeds, then cut (optional)
-        const escPosInit = new Uint8Array([0x1B, 0x40]);
-        const textData = encoder.encode(content);
-        const lineFeeds = new Uint8Array([0x0A, 0x0A, 0x0A, 0x0A]);
-        const cutCommand = new Uint8Array([0x1D, 0x56, 0x42, 0x00]); // Partial cut
-        const fullData = new Uint8Array([...escPosInit, ...textData, ...lineFeeds, ...cutCommand]);
         
-        await device.transferOut(outEndpoint.endpointNumber, fullData);
+        // Chunk data for USB
+        const usbChunks = chunkUint8Array(fullData, 64); // USB can handle larger chunks
+        for (const chunk of usbChunks) {
+          await device.transferOut(outEndpoint.endpointNumber, chunk);
+          await new Promise(resolve => setTimeout(resolve, 20)); // Small delay to prevent overflow
+        }
       } else if (printer.connection === 'bluetooth') {
-        // Ensure Bluetooth is connected
+        // Ensure Bluetooth is connected and get characteristic
         let server = printer.bluetoothServer;
         let characteristic = printer.bluetoothCharacteristic;
         
+        // Step 1: Ensure GATT connection is active
         try {
           if (!device.gatt.connected || !server) {
-            console.log('[PRINT LOG]: Reconnecting Bluetooth...');
+            console.log('[PRINT LOG]: Reconnecting Bluetooth GATT server...');
             server = await device.gatt.connect();
             // Update cached server
             setConnectedDevices(prev => prev.map(d => 
               d.id === printer.id ? { ...d, bluetoothServer: server } : d
             ));
-            
-            // Re-fetch characteristic if needed
-            if (!characteristic) {
-              const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
-              characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
-              // Update cached characteristic
-              setConnectedDevices(prev => prev.map(d => 
-                d.id === printer.id ? { ...d, bluetoothCharacteristic: characteristic } : d
-              ));
-            }
           } else {
             server = device.gatt;
           }
         } catch (e) {
-          console.log('[PRINT LOG]: Bluetooth not connected, connecting fresh...');
+          console.log('[PRINT LOG]: Reconnecting fresh Bluetooth connection...');
           server = await device.gatt.connect();
-          const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
-          characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
-          // Update both server and characteristic in state
           setConnectedDevices(prev => prev.map(d => 
-            d.id === printer.id ? { 
-              ...d, 
-              bluetoothServer: server, 
-              bluetoothCharacteristic: characteristic 
-            } : d
+            d.id === printer.id ? { ...d, bluetoothServer: server } : d
           ));
         }
         
-        const encoder = new TextEncoder();
-        const escPosInit = new Uint8Array([0x1B, 0x40]);
-        const textData = encoder.encode(content);
-        const lineFeeds = new Uint8Array([0x0A, 0x0A, 0x0A, 0x0A]);
-        const cutCommand = new Uint8Array([0x1D, 0x56, 0x42, 0x00]);
-        const fullData = new Uint8Array([...escPosInit, ...textData, ...lineFeeds, ...cutCommand]);
-
-        await characteristic.writeValue(fullData);
+        // Step 2: Ensure we have the GATT service and characteristic
+        try {
+          if (!characteristic) {
+            console.log('[PRINT LOG]: Getting GATT service and characteristic...');
+            const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+            characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+            setConnectedDevices(prev => prev.map(d => 
+              d.id === printer.id ? { ...d, bluetoothCharacteristic: characteristic } : d
+            ));
+          }
+        } catch (e) {
+          console.log('[PRINT LOG]: Re-fetching GATT service and characteristic...');
+          const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+          characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+          setConnectedDevices(prev => prev.map(d => 
+            d.id === printer.id ? { ...d, bluetoothCharacteristic: characteristic } : d
+          ));
+        }
+        
+        // Step 3: Chunk data for MTU limit and write sequentially
+        const bleChunks = chunkUint8Array(fullData, 20); // 20-byte chunks to avoid MTU issues
+        for (let i = 0; i < bleChunks.length; i++) {
+          console.log(`[PRINT LOG]: Writing chunk ${i + 1}/${bleChunks.length}`);
+          await characteristic.writeValue(bleChunks[i]);
+          await new Promise(resolve => setTimeout(resolve, 50)); // Delay to prevent packet loss
+        }
       } else {
         toast({ title: 'Print Failed', description: 'Unsupported printer connection type.', variant: 'destructive' });
         return false;
