@@ -300,30 +300,8 @@ CREATE POLICY "Tenants can update their own data"
   USING (id = current_tenant_id());
 
 -- ============================================
--- Table: users (admins)
--- ============================================
-CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    username TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'admin',
-    business_name TEXT,
-    owner_name TEXT,
-    mobile TEXT,
-    profile_image TEXT,
-    security_question_1 TEXT,
-    security_answer_1 TEXT,
-    security_question_2 TEXT,
-    security_answer_2 TEXT,
-    security_question_3 TEXT,
-    security_answer_3 TEXT,
-    failed_attempt_count INTEGER DEFAULT 0,
-    lockout_until TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
 -- RLS Policies for users
+-- ============================================
 CREATE POLICY "Users can view their own tenant's users" 
   ON users 
   FOR SELECT 
@@ -340,19 +318,8 @@ CREATE POLICY "Users can update their own tenant's users"
   USING (tenant_id = current_tenant_id());
 
 -- ============================================
--- Table: staff
--- ============================================
-CREATE TABLE IF NOT EXISTS staff (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    staff_id TEXT UNIQUE NOT NULL,
-    passkey TEXT,
-    created_by TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
 -- RLS Policies for staff
+-- ============================================
 CREATE POLICY "Staff can view their own tenant's staff" 
   ON staff 
   FOR SELECT 
@@ -374,23 +341,8 @@ CREATE POLICY "Staff can delete their own tenant's staff"
   USING (tenant_id = current_tenant_id());
 
 -- ============================================
--- Table: products
--- ============================================
-CREATE TABLE IF NOT EXISTS products (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    price NUMERIC NOT NULL,
-    cost NUMERIC DEFAULT 0,
-    barcode TEXT UNIQUE NOT NULL,
-    category TEXT,
-    image TEXT,
-    quantity INTEGER DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
 -- RLS Policies for products
+-- ============================================
 CREATE POLICY "Products can view their own tenant's products" 
   ON products 
   FOR SELECT 
@@ -412,23 +364,8 @@ CREATE POLICY "Products can delete their own tenant's products"
   USING (tenant_id = current_tenant_id());
 
 -- ============================================
--- Table: variants
--- ============================================
-CREATE TABLE IF NOT EXISTS variants (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    product_id UUID REFERENCES products(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    barcode TEXT,
-    price NUMERIC NOT NULL,
-    cost NUMERIC NOT NULL,
-    image TEXT,
-    quantity INTEGER DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
 -- RLS Policies for variants
+-- ============================================
 CREATE POLICY "Variants can view their own tenant's variants" 
   ON variants 
   FOR SELECT 
@@ -450,21 +387,8 @@ CREATE POLICY "Variants can delete their own tenant's variants"
   USING (tenant_id = current_tenant_id());
 
 -- ============================================
--- Table: customers
--- ============================================
-CREATE TABLE IF NOT EXISTS customers (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    phone TEXT NOT NULL,
-    address TEXT,
-    credit_rating TEXT NOT NULL CHECK (credit_rating IN ('good','bad')),
-    photo_url TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
 -- RLS Policies for customers
+-- ============================================
 CREATE POLICY "Customers can view their own tenant's customers" 
   ON customers 
   FOR SELECT 
@@ -486,19 +410,8 @@ CREATE POLICY "Customers can delete their own tenant's customers"
   USING (tenant_id = current_tenant_id());
 
 -- ============================================
--- Table: credits (ledger)
--- ============================================
-CREATE TABLE IF NOT EXISTS credits (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    customer_id UUID REFERENCES customers(id) ON DELETE CASCADE,
-    amount NUMERIC NOT NULL CHECK (amount > 0),
-    due_date TIMESTAMPTZ,
-    remarks TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
 -- RLS Policies for credits
+-- ============================================
 CREATE POLICY "Credits can view their own tenant's credits" 
   ON credits 
   FOR SELECT 
@@ -520,19 +433,8 @@ CREATE POLICY "Credits can delete their own tenant's credits"
   USING (tenant_id = current_tenant_id());
 
 -- ============================================
--- Table: payments (ledger)
--- ============================================
-CREATE TABLE IF NOT EXISTS payments (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    customer_id UUID REFERENCES customers(id) ON DELETE CASCADE,
-    amount NUMERIC NOT NULL CHECK (amount > 0),
-    payment_method TEXT NOT NULL,
-    remarks TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
 -- RLS Policies for payments
+-- ============================================
 CREATE POLICY "Payments can view their own tenant's payments" 
   ON payments 
   FOR SELECT 
@@ -554,19 +456,8 @@ CREATE POLICY "Payments can delete their own tenant's payments"
   USING (tenant_id = current_tenant_id());
 
 -- ============================================
--- Table: reminders
--- ============================================
-CREATE TABLE IF NOT EXISTS reminders (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    customer_id UUID REFERENCES customers(id) ON DELETE CASCADE,
-    message_type TEXT NOT NULL,
-    message TEXT NOT NULL,
-    status TEXT NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
 -- RLS Policies for reminders
+-- ============================================
 CREATE POLICY "Reminders can view their own tenant's reminders" 
   ON reminders 
   FOR SELECT 
@@ -588,23 +479,8 @@ CREATE POLICY "Reminders can delete their own tenant's reminders"
   USING (tenant_id = current_tenant_id());
 
 -- ============================================
--- Table: non_inventory_products
--- ============================================
-CREATE TABLE IF NOT EXISTS non_inventory_products (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    price NUMERIC NOT NULL,
-    category TEXT,
-    description TEXT,
-    image TEXT,
-    barcode TEXT UNIQUE NOT NULL,
-    barcode_data TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
 -- RLS Policies for non_inventory_products
+-- ============================================
 CREATE POLICY "Non-inventory products can view their own tenant's data" 
   ON non_inventory_products 
   FOR SELECT 
@@ -626,20 +502,8 @@ CREATE POLICY "Non-inventory products can delete their own tenant's data"
   USING (tenant_id = current_tenant_id());
 
 -- ============================================
--- Table: sales
--- ============================================
-CREATE TABLE IF NOT EXISTS sales (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    total NUMERIC NOT NULL,
-    payment_type TEXT NOT NULL,
-    payment_amount NUMERIC NOT NULL,
-    staff_id TEXT,
-    remitted BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
 -- RLS Policies for sales
+-- ============================================
 CREATE POLICY "Sales can view their own tenant's sales" 
   ON sales 
   FOR SELECT 
@@ -656,21 +520,8 @@ CREATE POLICY "Sales can update their own tenant's sales"
   USING (tenant_id = current_tenant_id());
 
 -- ============================================
--- Table: sale_items
--- ============================================
-CREATE TABLE IF NOT EXISTS sale_items (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    sale_id UUID REFERENCES sales(id) ON DELETE CASCADE,
-    product_id TEXT NOT NULL,
-    quantity INTEGER NOT NULL,
-    price NUMERIC NOT NULL,
-    unit TEXT DEFAULT 'pieces',
-    product_name TEXT,
-    is_non_inventory BOOLEAN DEFAULT FALSE
-);
-
 -- RLS Policies for sale_items
+-- ============================================
 CREATE POLICY "Sale items can view their own tenant's data" 
   ON sale_items 
   FOR SELECT 
@@ -682,21 +533,8 @@ CREATE POLICY "Sale items can insert their own tenant's data"
   WITH CHECK (tenant_id = current_tenant_id());
 
 -- ============================================
--- Table: remittances
--- ============================================
-CREATE TABLE IF NOT EXISTS remittances (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    staff_id TEXT NOT NULL,
-    staff_name TEXT NOT NULL,
-    amount NUMERIC NOT NULL,
-    transaction_count INTEGER NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    confirmed_at TIMESTAMPTZ
-);
-
 -- RLS Policies for remittances
+-- ============================================
 CREATE POLICY "Remittances can view their own tenant's data" 
   ON remittances 
   FOR SELECT 
@@ -713,20 +551,8 @@ CREATE POLICY "Remittances can update their own tenant's data"
   USING (tenant_id = current_tenant_id());
 
 -- ============================================
--- Table: notifications
--- ============================================
-CREATE TABLE IF NOT EXISTS notifications (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    user_id TEXT,
-    type TEXT NOT NULL,
-    message TEXT NOT NULL,
-    data TEXT,
-    is_read BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
 -- RLS Policies for notifications
+-- ============================================
 CREATE POLICY "Notifications can view their own tenant's data" 
   ON notifications 
   FOR SELECT 
@@ -743,19 +569,8 @@ CREATE POLICY "Notifications can update their own tenant's data"
   USING (tenant_id = current_tenant_id());
 
 -- ============================================
--- Table: expenses
--- ============================================
-CREATE TABLE IF NOT EXISTS expenses (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    description TEXT,
-    category TEXT,
-    amount NUMERIC NOT NULL,
-    date TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
 -- RLS Policies for expenses
+-- ============================================
 CREATE POLICY "Expenses can view their own tenant's expenses" 
   ON expenses 
   FOR SELECT 
@@ -777,19 +592,8 @@ CREATE POLICY "Expenses can delete their own tenant's expenses"
   USING (tenant_id = current_tenant_id());
 
 -- ============================================
--- Table: purchases
--- ============================================
-CREATE TABLE IF NOT EXISTS purchases (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    product_name TEXT,
-    supplier TEXT,
-    amount NUMERIC,
-    date TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
 -- RLS Policies for purchases
+-- ============================================
 CREATE POLICY "Purchases can view their own tenant's purchases" 
   ON purchases 
   FOR SELECT 
@@ -811,19 +615,8 @@ CREATE POLICY "Purchases can delete their own tenant's purchases"
   USING (tenant_id = current_tenant_id());
 
 -- ============================================
--- Table: settings
--- ============================================
-CREATE TABLE IF NOT EXISTS settings (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    key TEXT NOT NULL,
-    value TEXT NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(tenant_id, key)
-);
-
 -- RLS Policies for settings
+-- ============================================
 CREATE POLICY "Settings can view their own tenant's settings" 
   ON settings 
   FOR SELECT 
