@@ -257,6 +257,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Settings API
+  app.get('/api/settings', (req, res) => {
+    try {
+      const settings = dbService.getSettings();
+      // Wrap in receipt key to match client expectation
+      const response = {
+        receipt: settings.receipt || {}
+      };
+      res.json(response);
+    } catch (error) {
+      console.error('Error in GET /api/settings:', error);
+      res.status(500).json({ error: 'Failed to get settings' });
+    }
+  });
+
+  app.put('/api/settings', (req, res) => {
+    try {
+      const { receipt } = req.body;
+      // Save receipt settings
+      const result = dbService.upsertSettings({ receipt });
+      res.json(result);
+    } catch (error) {
+      console.error('Error in PUT /api/settings:', error);
+      res.status(500).json({ error: 'Failed to update settings' });
+    }
+  });
+
+  // Test print endpoint (simple placeholder)
+  app.post('/api/print/test-receipt', (req, res) => {
+    try {
+      console.log('Test receipt print requested');
+      res.json({ success: true, message: 'Test receipt queued for printing' });
+    } catch (error) {
+      console.error('Error in test print:', error);
+      res.status(500).json({ error: 'Failed to print test receipt' });
+    }
+  });
+
   // Auth API
   app.post('/api/auth/admin-login', async (req: Request, res: Response) => {
     try {

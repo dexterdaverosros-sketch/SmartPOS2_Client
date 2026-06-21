@@ -91,6 +91,30 @@ const ScannerSales: React.FC = () => {
     timeout: 150
   });
 
+  const [receiptSettings, setReceiptSettings] = useState<{
+    storeName: string;
+    storeAddress: string;
+    storePhone: string;
+    headerNote: string;
+    footerNote: string;
+    autoPrintOnSale: boolean;
+    printerDeviceName: string;
+    paperWidth: '58mm' | '80mm';
+    showDateTime: boolean;
+    showStaffName: boolean;
+  }>({
+    storeName: 'SmartPOS+ Store',
+    storeAddress: '',
+    storePhone: '',
+    headerNote: 'Thank you for your purchase!',
+    footerNote: 'No refunds without receipt.',
+    autoPrintOnSale: false,
+    printerDeviceName: '',
+    paperWidth: '58mm',
+    showDateTime: true,
+    showStaffName: true,
+  });
+
   const scannerBufRef = useRef<string>('');
   const bufferTimerRef = useRef<any>(null);
 
@@ -104,8 +128,11 @@ const ScannerSales: React.FC = () => {
             timeout: data.externalScanner.timeout || 150
           });
         }
+        if (data.receipt) {
+          setReceiptSettings(prev => ({ ...prev, ...data.receipt }));
+        }
       } catch (err) {
-        console.error('Failed to load scanner settings', err);
+        console.error('Failed to load settings', err);
       }
     };
     loadSettings();
@@ -564,18 +591,22 @@ const ScannerSales: React.FC = () => {
       const change = paymentType === 'cash' && effectivePaymentAmount > total ? effectivePaymentAmount - total : 0;
       if (paymentType !== 'credits') {
         const receiptItems = cart.map(item => `${item.name}\n${item.quantity} ${item.unit} x ₱${item.price.toFixed(2)}   ₱${item.subtotal.toFixed(2)}`).join('\n');
-        const receiptContent = `
-SMARTPOS+ STORE
-${new Date(sale?.createdAt || new Date()).toLocaleString()}
---------------------------------
-${receiptItems}
---------------------------------
-TOTAL                 ₱${total.toFixed(2)}
-${paymentType.toUpperCase().padEnd(9)}        ₱${effectivePaymentAmount.toFixed(2)}
-CHANGE                ₱${change.toFixed(2)}
---------------------------------
-Thank you for your purchase!
-`;
+        let receiptContent = `${receiptSettings.storeName || 'SMARTPOS+ STORE'}\n`;
+        if (receiptSettings.storeAddress) receiptContent += `${receiptSettings.storeAddress}\n`;
+        if (receiptSettings.storePhone) receiptContent += `${receiptSettings.storePhone}\n`;
+        if (receiptSettings.headerNote) receiptContent += `${receiptSettings.headerNote}\n`;
+        if (receiptSettings.showDateTime) receiptContent += `${new Date(sale?.createdAt || new Date()).toLocaleString()}\n`;
+        if (receiptSettings.showStaffName && user) receiptContent += `Staff: ${user.username || user.ownerName || 'Staff'}\n`;
+        
+        receiptContent += `--------------------------------\n`;
+        receiptContent += `${receiptItems}\n`;
+        receiptContent += `--------------------------------\n`;
+        receiptContent += `TOTAL                 ₱${total.toFixed(2)}\n`;
+        receiptContent += `${paymentType.toUpperCase().padEnd(9)}        ₱${effectivePaymentAmount.toFixed(2)}\n`;
+        if (paymentType === 'cash') receiptContent += `CHANGE                ₱${change.toFixed(2)}\n`;
+        receiptContent += `--------------------------------\n`;
+        receiptContent += `${receiptSettings.footerNote || 'Thank you for your purchase!'}\n`;
+        
         const printer = connectedDevices.find(d => d.type === 'printer');
         if (printer) {
           try { await printToThermalPrinter(receiptContent); } catch (e) { console.error('Printing failed:', e); }
