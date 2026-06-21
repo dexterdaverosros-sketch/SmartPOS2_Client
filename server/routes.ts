@@ -430,6 +430,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       dbService.createSession(session);
       console.log('Session created successfully');
 
+      // Auto-pull all data from cloud on login for multi-device sync
+      if (useCloud()) {
+        try {
+          const tenantId = session.tenant_id;
+          console.log('=== AUTO-PULLING DATA FROM CLOUD ===');
+          await dbService.pullAllFromCloud(tenantId);
+          console.log('=== AUTO-PULL COMPLETED ===');
+        } catch (pullError) {
+          console.warn('=== AUTO-PULL FAILED (continuing login anyway) ===', pullError);
+        }
+      }
+
       // Return admin info and token
       const { password: _, ...adminInfo } = admin;
       console.log('=== LOGIN SUCCESSFUL ===');
@@ -2177,6 +2189,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Sync endpoints for Push to Cloud and Pull from Cloud
+  app.post('/api/sync/push-all', async (req, res) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const result = await dbService.pushAllToCloud(tenantId);
+      res.status(200).json(result);
+    } catch (error: any) {
+      console.error('Push to cloud failed:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.post('/api/sync/pull-all', async (req, res) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const result = await dbService.pullAllFromCloud(tenantId);
+      res.status(200).json(result);
+    } catch (error: any) {
+      console.error('Pull from cloud failed:', error);
+      res.status(500).json({ success: false, error: error.message });
     }
   });
 

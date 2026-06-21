@@ -1428,6 +1428,546 @@ export const dbService = {
     const row = db.prepare('SELECT COUNT(*) as count FROM notifications WHERE user_id IS NULL AND is_read = 0').get() as any;
     return row?.count || 0;
   },
+
+  // ==============================================
+  // Cloud Sync: Push All Data to Supabase
+  // ==============================================
+  pushAllToCloud: async (tenantId: string) => {
+    const supabase = getSupabase();
+    if (!supabase) throw new Error('Supabase not configured');
+
+    console.log('=== Starting full sync to Supabase ===');
+
+    // 1. Sync Products
+    const products = db.prepare('SELECT * FROM products WHERE tenant_id = ?').all(tenantId) as any[];
+    if (products.length > 0) {
+      const cloudProducts = products.map(p => ({
+        id: p.id,
+        tenant_id: tenantId,
+        name: p.name,
+        price: p.price,
+        cost: p.cost || 0,
+        barcode: p.barcode,
+        category: p.category || null,
+        image: p.image || null,
+        quantity: p.quantity || 0,
+        created_at: p.createdAt || new Date().toISOString(),
+        updated_at: p.updatedAt || new Date().toISOString()
+      }));
+      const { error: prodError } = await supabase.from('products').upsert(cloudProducts, { onConflict: 'id' });
+      if (prodError) throw prodError;
+      console.log(`Synced ${products.length} products`);
+    }
+
+    // 2. Sync Variants
+    const variants = db.prepare('SELECT * FROM variants WHERE tenant_id = ?').all(tenantId) as any[];
+    if (variants.length > 0) {
+      const cloudVariants = variants.map(v => ({
+        id: v.id,
+        tenant_id: tenantId,
+        product_id: v.product_id,
+        name: v.name,
+        barcode: v.barcode || null,
+        price: v.price,
+        cost: v.cost,
+        image: v.image || null,
+        quantity: v.quantity || 0,
+        created_at: v.created_at || new Date().toISOString(),
+        updated_at: v.updated_at || new Date().toISOString()
+      }));
+      const { error: varError } = await supabase.from('variants').upsert(cloudVariants, { onConflict: 'id' });
+      if (varError) throw varError;
+      console.log(`Synced ${variants.length} variants`);
+    }
+
+    // 3. Sync Staff
+    const staff = db.prepare('SELECT * FROM staff WHERE tenant_id = ?').all(tenantId) as any[];
+    if (staff.length > 0) {
+      const cloudStaff = staff.map(s => ({
+        id: s.id,
+        tenant_id: tenantId,
+        name: s.name,
+        staff_id: s.staffId,
+        passkey: s.passkey || null,
+        created_by: s.createdBy || null,
+        created_at: s.createdAt || new Date().toISOString()
+      }));
+      const { error: staffError } = await supabase.from('staff').upsert(cloudStaff, { onConflict: 'id' });
+      if (staffError) throw staffError;
+      console.log(`Synced ${staff.length} staff`);
+    }
+
+    // 4. Sync Users (Admins)
+    const users = db.prepare('SELECT * FROM users WHERE tenant_id = ?').all(tenantId) as any[];
+    if (users.length > 0) {
+      const cloudUsers = users.map(u => ({
+        id: u.id,
+        tenant_id: tenantId,
+        username: u.username,
+        password: u.password,
+        role: u.role,
+        business_name: u.businessName || null,
+        owner_name: u.ownerName || null,
+        mobile: u.mobile || null,
+        profile_image: u.profileImage || null,
+        security_question_1: u.securityQuestion1 || null,
+        security_answer_1: u.securityAnswer1 || null,
+        security_question_2: u.securityQuestion2 || null,
+        security_answer_2: u.securityAnswer2 || null,
+        security_question_3: u.securityQuestion3 || null,
+        security_answer_3: u.securityAnswer3 || null,
+        created_at: u.createdAt || new Date().toISOString()
+      }));
+      const { error: userError } = await supabase.from('users').upsert(cloudUsers, { onConflict: 'id' });
+      if (userError) throw userError;
+      console.log(`Synced ${users.length} users`);
+    }
+
+    // 5. Sync Customers
+    const customers = db.prepare('SELECT * FROM customers WHERE tenant_id = ?').all(tenantId) as any[];
+    if (customers.length > 0) {
+      const cloudCustomers = customers.map(c => ({
+        id: c.id,
+        tenant_id: tenantId,
+        name: c.name,
+        phone: c.phone,
+        address: c.address || null,
+        credit_rating: c.credit_rating,
+        photo_url: c.photo_url || null,
+        created_at: c.created_at || new Date().toISOString(),
+        updated_at: c.updated_at || new Date().toISOString()
+      }));
+      const { error: custError } = await supabase.from('customers').upsert(cloudCustomers, { onConflict: 'id' });
+      if (custError) throw custError;
+      console.log(`Synced ${customers.length} customers`);
+    }
+
+    // 6. Sync Credits (Ledger)
+    const credits = db.prepare('SELECT * FROM credits WHERE tenant_id = ?').all(tenantId) as any[];
+    if (credits.length > 0) {
+      const cloudCredits = credits.map(c => ({
+        id: c.id,
+        tenant_id: tenantId,
+        customer_id: c.customer_id,
+        amount: c.amount,
+        due_date: c.due_date || null,
+        remarks: c.remarks || null,
+        created_at: c.created_at || new Date().toISOString()
+      }));
+      const { error: creditError } = await supabase.from('credits').upsert(cloudCredits, { onConflict: 'id' });
+      if (creditError) throw creditError;
+      console.log(`Synced ${credits.length} credits`);
+    }
+
+    // 7. Sync Payments (Ledger)
+    const payments = db.prepare('SELECT * FROM payments WHERE tenant_id = ?').all(tenantId) as any[];
+    if (payments.length > 0) {
+      const cloudPayments = payments.map(p => ({
+        id: p.id,
+        tenant_id: tenantId,
+        customer_id: p.customer_id,
+        amount: p.amount,
+        payment_method: p.payment_method,
+        remarks: p.remarks || null,
+        created_at: p.created_at || new Date().toISOString()
+      }));
+      const { error: payError } = await supabase.from('payments').upsert(cloudPayments, { onConflict: 'id' });
+      if (payError) throw payError;
+      console.log(`Synced ${payments.length} payments`);
+    }
+
+    // 8. Sync Reminders
+    const reminders = db.prepare('SELECT * FROM reminders WHERE tenant_id = ?').all(tenantId) as any[];
+    if (reminders.length > 0) {
+      const cloudReminders = reminders.map(r => ({
+        id: r.id,
+        tenant_id: tenantId,
+        customer_id: r.customer_id,
+        message_type: r.message_type,
+        message: r.message,
+        status: r.status,
+        created_at: r.created_at || new Date().toISOString()
+      }));
+      const { error: remError } = await supabase.from('reminders').upsert(cloudReminders, { onConflict: 'id' });
+      if (remError) throw remError;
+      console.log(`Synced ${reminders.length} reminders`);
+    }
+
+    // 9. Sync Non-inventory Products
+    const nonInvProducts = db.prepare('SELECT * FROM non_inventory_products WHERE tenant_id = ?').all(tenantId) as any[];
+    if (nonInvProducts.length > 0) {
+      const cloudNonInv = nonInvProducts.map(p => ({
+        id: p.id,
+        tenant_id: tenantId,
+        name: p.name,
+        price: p.price,
+        category: p.category || null,
+        description: p.description || null,
+        image: p.image || null,
+        barcode: p.barcode,
+        barcode_data: p.barcode_data || null,
+        created_at: p.created_at || new Date().toISOString(),
+        updated_at: p.updated_at || new Date().toISOString()
+      }));
+      const { error: nonInvError } = await supabase.from('non_inventory_products').upsert(cloudNonInv, { onConflict: 'id' });
+      if (nonInvError) throw nonInvError;
+      console.log(`Synced ${nonInvProducts.length} non-inventory products`);
+    }
+
+    // 10. Sync Sales
+    const sales = db.prepare('SELECT * FROM sales WHERE tenant_id = ?').all(tenantId) as any[];
+    if (sales.length > 0) {
+      const cloudSales = sales.map(s => ({
+        id: s.id,
+        tenant_id: tenantId,
+        total: s.total,
+        payment_type: s.paymentType,
+        payment_amount: s.paymentAmount,
+        staff_id: s.staffId || null,
+        remitted: !!s.remitted,
+        created_at: s.createdAt || new Date().toISOString()
+      }));
+      const { error: saleError } = await supabase.from('sales').upsert(cloudSales, { onConflict: 'id' });
+      if (saleError) throw saleError;
+      console.log(`Synced ${sales.length} sales`);
+    }
+
+    // 11. Sync Sale Items
+    const saleItems = db.prepare('SELECT * FROM sale_items WHERE tenant_id = ?').all(tenantId) as any[];
+    if (saleItems.length > 0) {
+      const cloudSaleItems = saleItems.map(i => ({
+        id: i.id,
+        tenant_id: tenantId,
+        sale_id: i.saleId,
+        product_id: i.productId,
+        quantity: i.quantity,
+        price: i.price,
+        unit: i.unit || 'pieces',
+        product_name: i.productName || null,
+        is_non_inventory: !!i.isNonInventory
+      }));
+      const { error: itemError } = await supabase.from('sale_items').upsert(cloudSaleItems, { onConflict: 'id' });
+      if (itemError) throw itemError;
+      console.log(`Synced ${saleItems.length} sale items`);
+    }
+
+    // 12. Sync Remittances
+    const remittances = db.prepare('SELECT * FROM remittances WHERE tenant_id = ?').all(tenantId) as any[];
+    if (remittances.length > 0) {
+      const cloudRemittances = remittances.map(r => ({
+        id: r.id,
+        tenant_id: tenantId,
+        staff_id: r.staff_id,
+        staff_name: r.staff_name,
+        amount: r.amount,
+        transaction_count: r.transaction_count,
+        status: r.status,
+        created_at: r.created_at || new Date().toISOString(),
+        confirmed_at: r.confirmed_at || null
+      }));
+      const { error: remitError } = await supabase.from('remittances').upsert(cloudRemittances, { onConflict: 'id' });
+      if (remitError) throw remitError;
+      console.log(`Synced ${remittances.length} remittances`);
+    }
+
+    // 13. Sync Notifications
+    const notifications = db.prepare('SELECT * FROM notifications WHERE tenant_id = ?').all(tenantId) as any[];
+    if (notifications.length > 0) {
+      const cloudNotifications = notifications.map(n => ({
+        id: n.id,
+        tenant_id: tenantId,
+        user_id: n.user_id || null,
+        type: n.type,
+        message: n.message,
+        data: n.data || null,
+        is_read: !!n.is_read,
+        created_at: n.created_at || new Date().toISOString()
+      }));
+      const { error: notifError } = await supabase.from('notifications').upsert(cloudNotifications, { onConflict: 'id' });
+      if (notifError) throw notifError;
+      console.log(`Synced ${notifications.length} notifications`);
+    }
+
+    // 14. Sync Settings
+    const settings = db.prepare('SELECT * FROM settings').all() as any[];
+    if (settings.length > 0) {
+      const cloudSettings = settings.map(s => ({
+        id: randomUUID(),
+        tenant_id: tenantId,
+        key: s.key,
+        value: s.value,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }));
+      const { error: setError } = await supabase.from('settings').upsert(cloudSettings, { onConflict: 'tenant_id,key' });
+      if (setError) throw setError;
+      console.log(`Synced ${settings.length} settings`);
+    }
+
+    console.log('=== Full sync to Supabase complete ===');
+    return { success: true, message: 'All data pushed to Supabase' };
+  },
+
+  // ==============================================
+  // Cloud Sync: Pull All Data from Supabase
+  // ==============================================
+  pullAllFromCloud: async (tenantId: string) => {
+    const supabase = getSupabase();
+    if (!supabase) throw new Error('Supabase not configured');
+
+    console.log('=== Starting full sync from Supabase ===');
+
+    // 1. Pull Products
+    const { data: cloudProducts, error: prodError } = await supabase.from('products').select('*').eq('tenant_id', tenantId);
+    if (prodError) throw prodError;
+    if (cloudProducts && cloudProducts.length > 0) {
+      dbService.saveProducts(cloudProducts.map(p => ({
+        id: p.id,
+        name: p.name,
+        price: p.price,
+        cost: p.cost,
+        barcode: p.barcode,
+        category: p.category,
+        image: p.image,
+        quantity: p.quantity,
+        createdAt: p.created_at,
+        updatedAt: p.updated_at
+      })), tenantId);
+      console.log(`Pulled ${cloudProducts.length} products`);
+    }
+
+    // 2. Pull Variants
+    const { data: cloudVariants, error: varError } = await supabase.from('variants').select('*').eq('tenant_id', tenantId);
+    if (varError) throw varError;
+    if (cloudVariants && cloudVariants.length > 0) {
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO variants 
+        (id, tenant_id, product_id, name, barcode, price, cost, image, quantity, created_at, updated_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      db.transaction((variants: any[]) => {
+        for (const v of variants) {
+          insert.run(v.id, tenantId, v.product_id, v.name, v.barcode, v.price, v.cost, v.image, v.quantity, v.created_at, v.updated_at);
+        }
+      })(cloudVariants);
+      console.log(`Pulled ${cloudVariants.length} variants`);
+    }
+
+    // 3. Pull Staff
+    const { data: cloudStaff, error: staffError } = await supabase.from('staff').select('*').eq('tenant_id', tenantId);
+    if (staffError) throw staffError;
+    if (cloudStaff && cloudStaff.length > 0) {
+      dbService.saveStaff(cloudStaff.map(s => ({
+        id: s.id,
+        name: s.name,
+        staffId: s.staff_id,
+        passkey: s.passkey,
+        createdBy: s.created_by,
+        createdAt: s.created_at
+      })), tenantId);
+      console.log(`Pulled ${cloudStaff.length} staff`);
+    }
+
+    // 4. Pull Users (Admins)
+    const { data: cloudUsers, error: userError } = await supabase.from('users').select('*').eq('tenant_id', tenantId);
+    if (userError) throw userError;
+    if (cloudUsers && cloudUsers.length > 0) {
+      for (const u of cloudUsers) {
+        dbService.saveAdmin({
+          id: u.id,
+          username: u.username,
+          password: u.password,
+          role: u.role,
+          businessName: u.business_name,
+          ownerName: u.owner_name,
+          mobile: u.mobile,
+          profileImage: u.profile_image,
+          securityQuestion1: u.security_question_1,
+          securityAnswer1: u.security_answer_1,
+          securityQuestion2: u.security_question_2,
+          securityAnswer2: u.security_answer_2,
+          securityQuestion3: u.security_question_3,
+          securityAnswer3: u.security_answer_3,
+          createdAt: u.created_at
+        });
+      }
+      console.log(`Pulled ${cloudUsers.length} users`);
+    }
+
+    // 5. Pull Customers
+    const { data: cloudCustomers, error: custError } = await supabase.from('customers').select('*').eq('tenant_id', tenantId);
+    if (custError) throw custError;
+    if (cloudCustomers && cloudCustomers.length > 0) {
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO customers 
+        (id, tenant_id, name, phone, address, credit_rating, photo_url, created_at, updated_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      db.transaction((customers: any[]) => {
+        for (const c of customers) {
+          insert.run(c.id, tenantId, c.name, c.phone, c.address, c.credit_rating, c.photo_url, c.created_at, c.updated_at);
+        }
+      })(cloudCustomers);
+      console.log(`Pulled ${cloudCustomers.length} customers`);
+    }
+
+    // 6. Pull Credits
+    const { data: cloudCredits, error: creditError } = await supabase.from('credits').select('*').eq('tenant_id', tenantId);
+    if (creditError) throw creditError;
+    if (cloudCredits && cloudCredits.length > 0) {
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO credits 
+        (id, tenant_id, customer_id, amount, due_date, remarks, created_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      db.transaction((credits: any[]) => {
+        for (const c of credits) {
+          insert.run(c.id, tenantId, c.customer_id, c.amount, c.due_date, c.remarks, c.created_at);
+        }
+      })(cloudCredits);
+      console.log(`Pulled ${cloudCredits.length} credits`);
+    }
+
+    // 7. Pull Payments
+    const { data: cloudPayments, error: payError } = await supabase.from('payments').select('*').eq('tenant_id', tenantId);
+    if (payError) throw payError;
+    if (cloudPayments && cloudPayments.length > 0) {
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO payments 
+        (id, tenant_id, customer_id, amount, payment_method, remarks, created_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      db.transaction((payments: any[]) => {
+        for (const p of payments) {
+          insert.run(p.id, tenantId, p.customer_id, p.amount, p.payment_method, p.remarks, p.created_at);
+        }
+      })(cloudPayments);
+      console.log(`Pulled ${cloudPayments.length} payments`);
+    }
+
+    // 8. Pull Reminders
+    const { data: cloudReminders, error: remError } = await supabase.from('reminders').select('*').eq('tenant_id', tenantId);
+    if (remError) throw remError;
+    if (cloudReminders && cloudReminders.length > 0) {
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO reminders 
+        (id, tenant_id, customer_id, message_type, message, status, created_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      db.transaction((reminders: any[]) => {
+        for (const r of reminders) {
+          insert.run(r.id, tenantId, r.customer_id, r.message_type, r.message, r.status, r.created_at);
+        }
+      })(cloudReminders);
+      console.log(`Pulled ${cloudReminders.length} reminders`);
+    }
+
+    // 9. Pull Non-inventory Products
+    const { data: cloudNonInv, error: nonInvError } = await supabase.from('non_inventory_products').select('*').eq('tenant_id', tenantId);
+    if (nonInvError) throw nonInvError;
+    if (cloudNonInv && cloudNonInv.length > 0) {
+      dbService.saveNonInventoryProducts(cloudNonInv.map(p => ({
+        id: p.id,
+        name: p.name,
+        price: p.price,
+        category: p.category,
+        description: p.description,
+        image: p.image,
+        barcode: p.barcode,
+        barcodeData: p.barcode_data,
+        createdAt: p.created_at,
+        updatedAt: p.updated_at
+      })), tenantId);
+      console.log(`Pulled ${cloudNonInv.length} non-inventory products`);
+    }
+
+    // 10. Pull Sales
+    const { data: cloudSales, error: saleError } = await supabase.from('sales').select('*').eq('tenant_id', tenantId);
+    if (saleError) throw saleError;
+    if (cloudSales && cloudSales.length > 0) {
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO sales 
+        (id, tenant_id, total, paymentType, paymentAmount, staffId, remitted, createdAt) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      db.transaction((sales: any[]) => {
+        for (const s of sales) {
+          insert.run(s.id, tenantId, s.total, s.payment_type, s.payment_amount, s.staff_id, s.remitted ? 1 : 0, s.created_at);
+        }
+      })(cloudSales);
+      console.log(`Pulled ${cloudSales.length} sales`);
+    }
+
+    // 11. Pull Sale Items
+    const { data: cloudSaleItems, error: itemError } = await supabase.from('sale_items').select('*').eq('tenant_id', tenantId);
+    if (itemError) throw itemError;
+    if (cloudSaleItems && cloudSaleItems.length > 0) {
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO sale_items 
+        (id, tenant_id, saleId, productId, quantity, price, unit, productName, isNonInventory) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      db.transaction((items: any[]) => {
+        for (const i of items) {
+          insert.run(i.id, tenantId, i.sale_id, i.product_id, i.quantity, i.price, i.unit, i.product_name, i.is_non_inventory ? 1 : 0);
+        }
+      })(cloudSaleItems);
+      console.log(`Pulled ${cloudSaleItems.length} sale items`);
+    }
+
+    // 12. Pull Remittances
+    const { data: cloudRemittances, error: remitError } = await supabase.from('remittances').select('*').eq('tenant_id', tenantId);
+    if (remitError) throw remitError;
+    if (cloudRemittances && cloudRemittances.length > 0) {
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO remittances 
+        (id, tenant_id, staff_id, staff_name, amount, transaction_count, status, created_at, confirmed_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      db.transaction((remittances: any[]) => {
+        for (const r of remittances) {
+          insert.run(r.id, tenantId, r.staff_id, r.staff_name, r.amount, r.transaction_count, r.status, r.created_at, r.confirmed_at);
+        }
+      })(cloudRemittances);
+      console.log(`Pulled ${cloudRemittances.length} remittances`);
+    }
+
+    // 13. Pull Notifications
+    const { data: cloudNotifications, error: notifError } = await supabase.from('notifications').select('*').eq('tenant_id', tenantId);
+    if (notifError) throw notifError;
+    if (cloudNotifications && cloudNotifications.length > 0) {
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO notifications 
+        (id, tenant_id, user_id, type, message, data, is_read, created_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      db.transaction((notifs: any[]) => {
+        for (const n of notifs) {
+          insert.run(n.id, tenantId, n.user_id, n.type, n.message, n.data, n.is_read ? 1 : 0, n.created_at);
+        }
+      })(cloudNotifications);
+      console.log(`Pulled ${cloudNotifications.length} notifications`);
+    }
+
+    // 14. Pull Settings
+    const { data: cloudSettings, error: setError } = await supabase.from('settings').select('*').eq('tenant_id', tenantId);
+    if (setError) throw setError;
+    if (cloudSettings && cloudSettings.length > 0) {
+      const settingsObj: Record<string, any> = {};
+      for (const s of cloudSettings) {
+        try {
+          settingsObj[s.key] = JSON.parse(s.value);
+        } catch {
+          settingsObj[s.key] = s.value;
+        }
+      }
+      dbService.upsertSettings(settingsObj);
+      console.log(`Pulled ${cloudSettings.length} settings`);
+    }
+
+    console.log('=== Full sync from Supabase complete ===');
+    return { success: true, message: 'All data pulled from Supabase' };
+  }
 };
 
 export default dbService;

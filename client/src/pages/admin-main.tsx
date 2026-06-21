@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLocation } from 'wouter';
-import { LogOut, DollarSign, Package, Plus, Eye, Calendar, CreditCard, Receipt, User, FileText, Lock, FileSpreadsheet, BarChart3, Bell, CheckCircle, Clock, ArrowRight, Monitor, Tablet, Smartphone, Trash2, Edit, RefreshCw, History } from 'lucide-react';
+import { LogOut, DollarSign, Package, Plus, Eye, Calendar, CreditCard, Receipt, User, FileText, Lock, FileSpreadsheet, BarChart3, Bell, CheckCircle, Clock, ArrowRight, Monitor, Tablet, Smartphone, Trash2, Edit, RefreshCw, History, Cloud } from 'lucide-react';
 import Layout from '@/components/Layout';
 import FloatingActionButton from '@/components/FloatingActionButton';
 import { useAuth } from '@/contexts/AuthContext';
@@ -580,6 +580,31 @@ const AdminMain: React.FC = () => {
                   </div>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent side="bottom" align="end" className="w-56 bg-white border border-gray-100 shadow-2xl rounded-2xl p-2 z-[60]">
+                  <DropdownMenuItem
+                    onClick={async () => { 
+                      // We'll implement pushToCloud function
+                      try {
+                        toast({ title: 'Syncing to Cloud', description: 'Pushing all data to Supabase...' });
+                        // Call server endpoint to sync
+                        const response = await fetch('/api/sync/push-all', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' }
+                        });
+                        const result = await response.json();
+                        if (result.success) {
+                          toast({ title: 'Success!', description: 'All data backed up to the cloud' });
+                        } else {
+                          toast({ title: 'Sync Failed', description: result.error || 'Something went wrong', variant: 'destructive' });
+                        }
+                      } catch (error) {
+                        toast({ title: 'Sync Failed', description: error instanceof Error ? error.message : 'Something went wrong', variant: 'destructive' });
+                      }
+                    }}
+                    className="h-12 px-4 rounded-xl text-sm font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-600 cursor-pointer flex items-center group"
+                  >
+                    <Cloud className="w-4 h-4 mr-3 text-gray-400 group-hover:text-blue-500" />
+                    <span>Push to Cloud</span>
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => { logout(); setLocation('/role-selection'); }}
                     className="h-12 px-4 rounded-xl text-sm font-semibold text-gray-700 hover:bg-red-50 hover:text-red-600 cursor-pointer flex items-center group"
