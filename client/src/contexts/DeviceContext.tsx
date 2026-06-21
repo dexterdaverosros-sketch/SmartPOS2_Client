@@ -433,17 +433,25 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   };
 
   const printToThermalPrinter = async (content: string): Promise<boolean> => {
+    console.log('[PRINT]: Starting print request with content:', content);
     const printer = connectedDevices.find(d => d.type === 'printer' && d.isDefault) || connectedDevices.find(d => d.type === 'printer');
     if (!printer) {
       toast({ title: 'No Printer', description: 'Please connect and set a default printer first.', variant: 'destructive' });
+      console.error('[PRINT]: No printer found in connectedDevices!');
       return false;
     }
+    console.log('[PRINT]: Using printer:', printer);
 
     try {
-      console.log('[PRINT LOG]: Attempting to print to', printer.name, content);
+      console.log('[PRINT]: Attempting to print to', printer.name, 'with device:', !!printer.device);
       
       if (!printer.device) {
-        toast({ title: 'Print Failed', description: 'No hardware printer connected. Please connect via USB or Bluetooth.', variant: 'destructive' });
+        toast({ 
+          title: 'Printer Reconnect Required', 
+          description: 'Please reconnect your thermal printer via USB/Bluetooth from Device Manager.', 
+          variant: 'destructive' 
+        });
+        console.error('[PRINT]: No hardware printer device object present. Reconnection needed!');
         return false;
       }
       
@@ -456,23 +464,27 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       const lineFeeds = new Uint8Array([0x0A, 0x0A, 0x0A, 0x0A]);
       const cutCommand = new Uint8Array([0x1D, 0x56, 0x42, 0x00]); // Partial cut
       const fullData = new Uint8Array([...escPosInit, ...textData, ...lineFeeds, ...cutCommand]);
+      console.log('[PRINT]: ESC/POS data prepared, total bytes:', fullData.length);
       
       // Ensure USB device is still open and configured
       if (printer.connection === 'usb') {
+        console.log('[PRINT]: Using USB connection');
         if (!device.opened) {
-          console.log('[PRINT LOG]: Reopening USB device...');
+          console.log('[PRINT]: USB device not open, opening...');
           await device.open();
         }
         if (device.configuration === null) {
-          console.log('[PRINT LOG]: Selecting USB configuration...');
+          console.log('[PRINT]: Selecting USB configuration #1...');
           await device.selectConfiguration(1);
         }
         // Check if interface is claimed
         const config = device.configuration;
+        console.log('[PRINT]: USB config:', config);
         if (config?.interfaces?.length > 0) {
           const iface = config.interfaces[0];
+          console.log('[PRINT]: USB interface claimed?', iface.claimed);
           if (!iface.claimed) {
-            console.log('[PRINT LOG]: Claiming USB interface...');
+            console.log('[PRINT]: Claiming USB interface #0...');
             await device.claimInterface(0);
           }
         }
@@ -491,16 +503,23 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           }
           if (!outEndpoint) {
             outEndpoint = { endpointNumber: 1 };
+            console.log('[PRINT]: Using default endpoint #1');
           }
         }
+        console.log('[PRINT]: Using USB endpoint:', outEndpoint.endpointNumber);
         
         // Chunk data for USB
         const usbChunks = chunkUint8Array(fullData, 64); // USB can handle larger chunks
-        for (const chunk of usbChunks) {
+        console.log('[PRINT]: Split into', usbChunks.length, 'USB chunks');
+        for (let i = 0; i < usbChunks.length; i++) {
+          const chunk = usbChunks[i];
+          console.log(`[PRINT]: Writing USB chunk ${i + 1}/${usbChunks.length} (${chunk.length} bytes)`);
           await device.transferOut(outEndpoint.endpointNumber, chunk);
-          await new Promise(resolve => setTimeout(resolve, 20)); // Small delay to prevent overflow
+          await new Promise(resolve => setTimeout(resolve, 50)); // Increased delay for reliability
         }
+        console.log('[PRINT]: All USB chunks sent successfully!');
       } else if (printer.connection === 'bluetooth') {
+        console.log('[PRINT]: Using Bluetooth connection');
         // Ensure Bluetooth is connected and get characteristic
         let server = printer.bluetoothServer;
         let characteristic = printer.bluetoothCharacteristic;
@@ -508,7 +527,7 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         // Step 1: Ensure GATT connection is active
         try {
           if (!device.gatt.connected || !server) {
-            console.log('[PRINT LOG]: Reconnecting Bluetooth GATT server...');
+            console.log('[PRINT]: Reconnecting Bluetooth GATT server...');
             server = await device.gatt.connect();
             // Update cached server
             setConnectedDevices(prev => prev.map(d => 
@@ -518,7 +537,7 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             server = device.gatt;
           }
         } catch (e) {
-          console.log('[PRINT LOG]: Reconnecting fresh Bluetooth connection...');
+          console.log('[PRINT]: Reconnecting fresh Bluetooth connection...');
           server = await device.gatt.connect();
           setConnectedDevices(prev => prev.map(d => 
             d.id === printer.id ? { ...d, bluetoothServer: server } : d
@@ -528,7 +547,7 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         // Step 2: Ensure we have the GATT service and characteristic
         try {
           if (!characteristic) {
-            console.log('[PRINT LOG]: Getting GATT service and characteristic...');
+            console.log('[PRINT]: Getting GATT service and characteristic...');
             const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
             characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
             setConnectedDevices(prev => prev.map(d => 
@@ -536,7 +555,7 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             ));
           }
         } catch (e) {
-          console.log('[PRINT LOG]: Re-fetching GATT service and characteristic...');
+          console.log('[PRINT]: Re-fetching GATT service and characteristic...');
           const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
           characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
           setConnectedDevices(prev => prev.map(d => 
@@ -546,21 +565,29 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         
         // Step 3: Chunk data for MTU limit and write sequentially
         const bleChunks = chunkUint8Array(fullData, 20); // 20-byte chunks to avoid MTU issues
+        console.log('[PRINT]: Split into', bleChunks.length, 'BLE chunks');
         for (let i = 0; i < bleChunks.length; i++) {
-          console.log(`[PRINT LOG]: Writing chunk ${i + 1}/${bleChunks.length}`);
+          console.log(`[PRINT]: Writing BLE chunk ${i + 1}/${bleChunks.length}`);
           await characteristic.writeValue(bleChunks[i]);
-          await new Promise(resolve => setTimeout(resolve, 50)); // Delay to prevent packet loss
+          await new Promise(resolve => setTimeout(resolve, 100)); // Longer delay for BLE reliability
         }
+        console.log('[PRINT]: All BLE chunks sent successfully!');
       } else {
         toast({ title: 'Print Failed', description: 'Unsupported printer connection type.', variant: 'destructive' });
+        console.error('[PRINT]: Unsupported connection type:', printer.connection);
         return false;
       }
 
-      toast({ title: 'Print Successful', description: 'Receipt sent to printer.' });
+      toast({ title: 'Print Successful', description: 'Receipt sent to printer!' });
+      console.log('[PRINT]: Print job completed successfully!');
       return true;
     } catch (error) {
       console.error('[PRINT ERROR]:', error);
-      toast({ title: 'Print Failed', description: 'Could not send data to printer.', variant: 'destructive' });
+      toast({ 
+        title: 'Print Failed', 
+        description: `Could not print: ${(error as Error).message || 'Unknown error'}`, 
+        variant: 'destructive' 
+      });
       return false;
     }
   };

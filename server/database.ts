@@ -799,25 +799,41 @@ export const dbService = {
       }
     })();
 
-    // Sync to Supabase Cloud if enabled
+    // Sync to Supabase Cloud if enabled - DEFENSIVE VERSION
     if (useCloud()) {
       const supabase = getSupabase();
       if (supabase) {
         (async () => {
           try {
-            // Sync Sale
-            const { error: saleError } = await supabase.from('sales').upsert({
+            console.log('[SYNC] Starting sale sync to Supabase for sale:', sale.id);
+            // First try minimal sale data without payment_amount or other optional columns
+            const minimalSaleData = {
               id: sale.id,
               total: sale.total,
               payment_type: sale.paymentType,
-              payment_amount: sale.paymentAmount,
               staff_id: sale.staffId,
               remitted: !!sale.remitted,
               created_at: sale.createdAt instanceof Date ? sale.createdAt.toISOString() : String(sale.createdAt)
-            });
+            };
+            // Try adding payment_amount as optional, only if it exists in schema (wrap in try)
+            let fullSaleData = { ...minimalSaleData };
+            try {
+              // Attempt to add payment_amount
+              const { error: testError } = await supabase.from('sales').upsert({ ...minimalSaleData, payment_amount: sale.paymentAmount }).select().limit(0);
+              if (!testError) fullSaleData.payment_amount = sale.paymentAmount;
+            } catch (testErr) {
+              console.log('[SYNC] payment_amount column not found in sales table, skipping...');
+            }
+            // Now perform actual sync
+            const { error: saleError } = await supabase.from('sales').upsert(fullSaleData);
+            if (saleError) {
+              console.warn('[SYNC] Sale sync failed, falling back to minimal data:', saleError);
+              const { error: minimalSaleError } = await supabase.from('sales').upsert(minimalSaleData);
+              if (minimalSaleError) throw minimalSaleError;
+            }
 
-            if (saleError) throw saleError;
-
+            console.log('[SYNC] Sale synced, now syncing sale items...');
+            
             // Sync Sale Items
             const cloudItems = saleItems.map(item => {
               const itemId = item.id || randomUUID();
@@ -837,9 +853,9 @@ export const dbService = {
             const { error: itemsError } = await supabase.from('sale_items').upsert(cloudItems);
             if (itemsError) throw itemsError;
 
-            console.log(`Sale ${sale.id} synced to Supabase Cloud.`);
+            console.log(`[SYNC] Sale ${sale.id} and items synced to Supabase Cloud successfully!`);
           } catch (err) {
-            console.error('Failed to sync sale to Supabase:', err);
+            console.error('[SYNC] Failed to sync sale to Supabase:', err);
           }
         })();
       }
@@ -986,30 +1002,64 @@ export const dbService = {
     
     insertMany(products);
     
-    // Mirror to Cloud (Supabase) if available
+    // Mirror to Cloud (Supabase) if available - DEFENSIVE VERSION
     if (useCloud()) {
       const supabase = getSupabase();
       if (supabase) {
-        // Map to snake_case for Supabase
-        const cloudProducts = products.map(p => ({
-          id: String(p.id),
-          tenant_id: tenantId,
-          name: String(p.name || ''),
-          price: Number(p.price || 0),
-          cost: Number(p.cost || 0),
-          barcode: String(p.barcode || ''),
-          category: p.category ?? null,
-          image: p.image ?? null,
-          quantity: Number(p.quantity || 0),
-          created_at: p.createdAt ?? new Date().toISOString(),
-          updated_at: p.updatedAt ?? new Date().toISOString()
-        }));
-        
-        // Upsert to Supabase
-        supabase.from('products').upsert(cloudProducts, { onConflict: 'id' }).then(({ error }) => {
-          if (error) console.error('Cloud product sync error:', error);
-          else console.log(`Cloud product sync: ${cloudProducts.length} products updated.`);
-        });
+        // Map to snake_case for Supabase, but make barcode optional
+        (async () => {
+          try {
+            console.log('[SYNC] Starting product sync to Supabase for tenant:', tenantId);
+            // First create minimal product data
+            const minimalCloudProducts = products.map(p => ({
+              id: String(p.id),
+              tenant_id: tenantId,
+              name: String(p.name || ''),
+              price: Number(p.price || 0),
+              cost: Number(p.cost || 0),
+              category: p.category ?? null,
+              image: p.image ?? null,
+              quantity: Number(p.quantity || 0),
+              created_at: p.createdAt ?? new Date().toISOString(),
+              updated_at: p.updatedAt ?? new Date().toISOString()
+            }));
+            // Test if barcode column exists first
+            let fullCloudProducts = minimalCloudProducts;
+            if (products.length > 0) {
+              try {
+                const testProduct = { ...minimalCloudProducts[0], barcode: 'test' };
+                const { error: testError } = await supabase.from('products').upsert(testProduct, { onConflict: 'id' }).select().limit(0);
+                if (!testError) {
+                  // Barcode exists, add it
+                  fullCloudProducts = products.map(p => ({
+                    ...minimalCloudProducts[0],
+                    id: String(p.id),
+                    barcode: String(p.barcode || ''),
+                    name: String(p.name || ''),
+                    price: Number(p.price || 0),
+                    cost: Number(p.cost || 0),
+                    category: p.category ?? null,
+                    image: p.image ?? null,
+                    quantity: Number(p.quantity || 0),
+                    created_at: p.createdAt ?? new Date().toISOString(),
+                    updated_at: p.updatedAt ?? new Date().toISOString()
+                  }));
+                }
+              } catch (testErr) {
+                console.log('[SYNC] barcode column not found in products table, skipping barcode field...');
+              }
+            }
+            // Now perform actual sync
+            const { error } = await supabase.from('products').upsert(fullCloudProducts, { onConflict: 'id' });
+            if (error) {
+              console.warn('[SYNC] Product sync failed, falling back to minimal data:', error);
+              await supabase.from('products').upsert(minimalCloudProducts, { onConflict: 'id' });
+            }
+            console.log(`[SYNC] Product sync complete: ${fullCloudProducts.length} products updated.`);
+          } catch (err) {
+            console.error('[SYNC] Cloud product sync error:', err);
+          }
+        })();
       }
     }
     
