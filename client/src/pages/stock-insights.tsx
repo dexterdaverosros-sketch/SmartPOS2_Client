@@ -162,7 +162,7 @@ export default function StockInsights() {
             <Button 
               variant="ghost" 
               className="mr-2 px-2"
-              onClick={() => setLocation('/report-blank')}
+              onClick={() => setLocation('/admin-main')}
             >
               <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-300" />
             </Button>

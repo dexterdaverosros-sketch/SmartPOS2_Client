@@ -31,7 +31,9 @@ const ExternalDeviceManager: React.FC = () => {
     setDefaultPrinter,
     disconnectDevice, 
     isUSBSupported, 
-    isBluetoothSupported 
+    isBluetoothSupported,
+    connectUSBDevice,
+    connectBluetoothDevice
   } = useDevices();
   const { toast } = useToast();
   const [showReceiptConfig, setShowReceiptConfig] = useState(false);
@@ -104,12 +106,31 @@ const ExternalDeviceManager: React.FC = () => {
             </div>
           </div>
 
-          {/* Scan Button */}
-          <div>
+          {/* Connect Buttons */}
+          <div className="flex flex-wrap gap-2">
+            {isUSBSupported && (
+              <Button 
+                onClick={() => connectUSBDevice('printer')} 
+                className="bg-[#FF8882] hover:bg-[#FF7770] text-white"
+              >
+                <Usb className="w-4 h-4 mr-2" />
+                Connect via USB
+              </Button>
+            )}
+            {isBluetoothSupported && (
+              <Button 
+                onClick={() => connectBluetoothDevice('printer')} 
+                className="bg-[#FF8882] hover:bg-[#FF7770] text-white"
+              >
+                <Bluetooth className="w-4 h-4 mr-2" />
+                Connect via Bluetooth
+              </Button>
+            )}
             <Button 
               onClick={scanForDevices} 
               disabled={isScanning}
-              className="bg-[#FF8882] hover:bg-[#FF7770] text-white w-full sm:w-auto"
+              variant="outline"
+              className="dark:text-white dark:border-gray-600"
             >
               {isScanning ? (
                 <>

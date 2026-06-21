@@ -410,16 +410,44 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
       } else if (printer.device) {
         if (printer.connection === 'usb' && printer.device) {
+          // Find the correct output endpoint
+          let outEndpoint: USBEndpoint | undefined;
+          const config = printer.device.configuration;
+          if (config?.interfaces?.length > 0) {
+            const iface = config.interfaces[0];
+            if (iface.alternate?.endpoints) {
+              outEndpoint = iface.alternate.endpoints.find(
+                ep => ep.type === 'bulk' && ep.direction === 'out'
+              );
+            }
+          }
+          if (!outEndpoint) {
+            // Fallback to endpoint 1 if not found
+            outEndpoint = { endpointNumber: 1 } as USBEndpoint;
+          }
+
+          // Prepare ESC/POS data
           const encoder = new TextEncoder();
-          const data = encoder.encode(content + '\n\n\n\n');
-          await printer.device.transferOut(1, data);
+          // ESC @ (initialize printer), then content, then line feeds, then cut (optional)
+          const escPosInit = new Uint8Array([0x1B, 0x40]);
+          const textData = encoder.encode(content);
+          const lineFeeds = new Uint8Array([0x0A, 0x0A, 0x0A, 0x0A]);
+          const cutCommand = new Uint8Array([0x1D, 0x56, 0x42, 0x00]); // Partial cut
+          const fullData = new Uint8Array([...escPosInit, ...textData, ...lineFeeds, ...cutCommand]);
+          
+          await printer.device.transferOut(outEndpoint.endpointNumber, fullData);
         } else if (printer.connection === 'bluetooth' && printer.device) {
           const encoder = new TextEncoder();
-          const data = encoder.encode(content + '\n\n\n\n');
+          const escPosInit = new Uint8Array([0x1B, 0x40]);
+          const textData = encoder.encode(content);
+          const lineFeeds = new Uint8Array([0x0A, 0x0A, 0x0A, 0x0A]);
+          const cutCommand = new Uint8Array([0x1D, 0x56, 0x42, 0x00]);
+          const fullData = new Uint8Array([...escPosInit, ...textData, ...lineFeeds, ...cutCommand]);
+
           const server = await printer.device.gatt.connect();
           const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
           const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
-          await characteristic.writeValue(data);
+          await characteristic.writeValue(fullData);
         }
       } else {
         const printWindow = window.open('', '_blank');

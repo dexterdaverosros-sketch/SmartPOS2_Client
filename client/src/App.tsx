@@ -20,6 +20,8 @@ import DeveloperConsole from "@/pages/developer-console";
 import Inventory from "@/pages/inventory-management";
 import Ledger from "@/pages/ledger";
 import Expenses from "@/pages/expenses";
+import ExpenseReport from "@/pages/expense-report";
+import StockInsights from "@/pages/stock-insights";
 import StaffManagement from "@/pages/staff-management";
 import POS from "@/pages/scanner-sales";
 import CustomerPage from "@/pages/customer-scan";
@@ -54,6 +56,8 @@ function Router() {
       <Route path="/store/:tenant/inventory" component={() => <ProtectedRoute component={Inventory} role="admin" />} />
       <Route path="/store/:tenant/ledger" component={() => <ProtectedRoute component={Ledger} role="admin" />} />
       <Route path="/store/:tenant/expenses" component={() => <ProtectedRoute component={Expenses} role="admin" />} />
+      <Route path="/store/:tenant/expense-report" component={() => <ProtectedRoute component={ExpenseReport} role="admin" />} />
+      <Route path="/store/:tenant/stock-insights" component={() => <ProtectedRoute component={StockInsights} role="admin" />} />
       <Route path="/store/:tenant/staff" component={() => <ProtectedRoute component={StaffManagement} role="admin" />} />
       <Route path="/store/:tenant/profile" component={() => <ProtectedRoute component={ProfileSettings} />} />
       <Route path="/store/:tenant/transaction-history" component={() => <ProtectedRoute component={TransactionHistory} />} />
@@ -79,6 +83,8 @@ function Router() {
       <Route path="/inventory" component={() => <ProtectedRoute component={Inventory} role="admin" />} />
       <Route path="/ledger" component={() => <ProtectedRoute component={Ledger} role="admin" />} />
       <Route path="/expenses" component={() => <ProtectedRoute component={Expenses} role="admin" />} />
+      <Route path="/expense-report" component={() => <ProtectedRoute component={ExpenseReport} role="admin" />} />
+      <Route path="/stock-insights" component={() => <ProtectedRoute component={StockInsights} role="admin" />} />
       <Route path="/staff" component={() => <ProtectedRoute component={StaffManagement} role="admin" />} />
       <Route path="/profile" component={() => <ProtectedRoute component={ProfileSettings} />} />
       <Route path="/transaction-history" component={() => <ProtectedRoute component={TransactionHistory} />} />

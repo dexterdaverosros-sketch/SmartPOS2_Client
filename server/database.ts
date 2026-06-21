@@ -91,6 +91,34 @@ export const dbService = {
       console.error('Migration failed (non-critical if table doesnt exist):', e);
     }
 
+    // Ensure sessions table has no foreign keys
+    try {
+      const sessionForeignKeys = sqlite.prepare('PRAGMA foreign_key_list(sessions)').all();
+      if (sessionForeignKeys.length > 0) {
+        console.log('Recreating sessions table without foreign keys...');
+        db.transaction(() => {
+          db.exec('PRAGMA foreign_keys = OFF');
+          db.exec('DROP TABLE IF EXISTS sessions');
+          db.exec(`
+            CREATE TABLE sessions (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              tenant_id TEXT,
+              token TEXT UNIQUE NOT NULL,
+              device_info TEXT,
+              ip_address TEXT,
+              created_at TEXT NOT NULL,
+              last_active_at TEXT NOT NULL
+            )
+          `);
+          db.exec('PRAGMA foreign_keys = ON');
+        })();
+        console.log('Sessions table recreated successfully.');
+      }
+    } catch (e) {
+      console.error('Sessions table migration failed (non-critical if table is new):', e);
+    }
+
     // Create base and ledger tables if they don't exist
     sqlite.exec(`
       CREATE TABLE IF NOT EXISTS tenants (
