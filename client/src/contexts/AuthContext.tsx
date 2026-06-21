@@ -14,6 +14,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isAdmin: boolean;
   isStaff: boolean;
+  isGuest: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -34,6 +35,38 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [isGuest, setIsGuest] = useState<boolean>(false);
+
+  useEffect(() => {
+    // Check for guest mode expiry
+    const guestMode = localStorage.getItem('smartpos_guest_mode') === 'true';
+    const guestExpiry = localStorage.getItem('smartpos_guest_expiry');
+    
+    if (guestMode && guestExpiry) {
+      const expiryDate = new Date(guestExpiry);
+      const now = new Date();
+      
+      if (now > expiryDate) {
+        // Guest mode expired - clean up everything
+        localStorage.removeItem('smartpos_guest_mode');
+        localStorage.removeItem('smartpos_guest_user_id');
+        localStorage.removeItem('smartpos_guest_expiry');
+        localStorage.removeItem('smartpos_user');
+        localStorage.removeItem('smartpos_token');
+        // Also clear any other local storage items related to the app
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('smartpos_')) {
+            localStorage.removeItem(key);
+          }
+        });
+        setIsGuest(false);
+        setUser(null);
+        setToken(null);
+      } else {
+        setIsGuest(true);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     // Initialize socket by asking the server for the correct origin (works across LAN)
@@ -79,8 +112,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Check for stored auth on startup
     const storedUser = localStorage.getItem('smartpos_user');
     const storedToken = localStorage.getItem('smartpos_token');
+    const guestMode = localStorage.getItem('smartpos_guest_mode') === 'true';
 
-    if (storedToken) {
+    if (guestMode && storedUser) {
+      // Guest mode - use stored user without server verification
+      try {
+        setUser(JSON.parse(storedUser));
+        if (storedToken) {
+          setToken(storedToken);
+        }
+        setIsGuest(true);
+      } catch (error) {
+        localStorage.removeItem('smartpos_user');
+        localStorage.removeItem('smartpos_token');
+      }
+    } else if (storedToken) {
       setToken(storedToken);
       console.log('AuthContext: Found stored token:', storedToken);
       // Verify token with server
@@ -177,8 +223,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     if (token) {
       api.post('/api/auth/logout', {}).catch(console.error);
     }
+    
+    // If in guest mode, clean up all guest data
+    if (isGuest) {
+      localStorage.removeItem('smartpos_guest_mode');
+      localStorage.removeItem('smartpos_guest_user_id');
+      localStorage.removeItem('smartpos_guest_expiry');
+      // Clear all other smartpos_ items
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('smartpos_')) {
+          localStorage.removeItem(key);
+        }
+      });
+    }
+    
     setUser(null);
     setToken(null);
+    setIsGuest(false);
     localStorage.removeItem('smartpos_user');
     localStorage.removeItem('smartpos_token');
   };
@@ -193,6 +254,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     isAuthenticated: !!user,
     isAdmin: user?.role === 'admin',
     isStaff: user?.role === 'staff',
+    isGuest,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
