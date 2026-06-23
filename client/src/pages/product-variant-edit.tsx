@@ -4,7 +4,7 @@ import { useLocation, useRoute } from 'wouter';
 import { ArrowLeft, Plus, Image as ImageIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import BarcodeScannerButton from '@/components/BarcodeScannerButton';
+
 import { ProductService } from '@/lib/db';
 
 export default function ProductVariantEdit() {
@@ -154,17 +154,11 @@ export default function ProductVariantEdit() {
             </div>
             <div>
               <label className="text-sm text-gray-700 dark:text-gray-300">Barcode</label>
-              <div className="flex space-x-2">
-                <Input
-                  value={barcode}
-                  onChange={(e) => setBarcode(e.target.value)}
-                  className="border-gray-300 dark:border-gray-600"
-                />
-                <BarcodeScannerButton
-                  onBarcodeScanned={(code: string) => setBarcode(code)}
-                  className="px-3"
-                />
-              </div>
+              <Input
+                value={barcode}
+                onChange={(e) => setBarcode(e.target.value)}
+                className="border-gray-300 dark:border-gray-600"
+              />
             </div>
             <div className="flex gap-2 pt-2">
               <Button

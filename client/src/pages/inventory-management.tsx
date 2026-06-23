@@ -14,7 +14,7 @@ import { z } from 'zod';
 import { ProductService } from '@/lib/db';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import BarcodeScannerButton from '@/components/BarcodeScannerButton';
+
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import NonInventoryProducts from '@/components/NonInventoryProducts';
@@ -1013,16 +1013,10 @@ const InventoryManagement: React.FC = () => {
                     <FormItem className="relative">
                       <FormLabel className="text-gray-700 dark:text-gray-300">Barcode</FormLabel>
                       <FormControl>
-                        <div className="flex space-x-2">
-                          <Input 
-                            {...field} 
-                            className="border-gray-300 dark:border-gray-600 focus:border-[#FF8882] pl-3 pt-2"
-                          />
-                          <BarcodeScannerButton
-                            onBarcodeScanned={(barcode: string) => field.onChange(barcode)}
-                            className="px-3"
-                          />
-                        </div>
+                        <Input 
+                        {...field} 
+                        className="border-gray-300 dark:border-gray-600 focus:border-[#FF8882] pl-3 pt-2"
+                      />
                       </FormControl>
                       <FormMessage />
                       <div className="mt-3">

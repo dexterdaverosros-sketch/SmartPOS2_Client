@@ -19,7 +19,7 @@ import type { Staff } from '@shared/schema';
 import { Badge } from '@/components/ui/badge';
 import io from 'socket.io-client';
 import api from '@/lib/api';
-import BarcodeScannerButton from '@/components/BarcodeScannerButton';
+
 
 const staffSchema = z.object({
   name: z.string().min(1, 'Staff name is required'),
@@ -603,19 +603,13 @@ const StaffManagement: React.FC = () => {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Staff ID</FormLabel>
-                      <div className="flex gap-2">
-                        <FormControl>
-                          <Input
-                            placeholder="e.g., STAFF001"
-                            data-testid="input-staff-id-create"
-                            {...field}
-                          />
-                        </FormControl>
-                        <BarcodeScannerButton 
-                          onBarcodeScanned={(barcode) => field.onChange(barcode)}
-                          className="flex-none"
+                      <FormControl>
+                        <Input
+                          placeholder="e.g., STAFF001"
+                          data-testid="input-staff-id-create"
+                          {...field}
                         />
-                      </div>
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
