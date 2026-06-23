@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, useDragControls, PanInfo, AnimatePresence } from 'framer-motion';
-import { Home, Trash2, CreditCard, AlertTriangle, LogOut, Search, ArrowLeft, Edit, Usb, Bluetooth, Send, ShoppingCart, AlertCircle, Package, X, ChevronUp, ChevronDown, Plus, User } from 'lucide-react';
+import { Home, Trash2, CreditCard, AlertTriangle, LogOut, Search, ArrowLeft, Edit, Usb, Bluetooth, Send, ShoppingCart, AlertCircle, Package, X, ChevronUp, ChevronDown, Plus, User, Cpu } from 'lucide-react';
 import { useLocation } from 'wouter';
 import Layout from '@/components/Layout';
 import Scanner from '@/components/Scanner';
+import ExternalDeviceManager from '@/components/ExternalDeviceManager';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -86,6 +87,7 @@ const ScannerSales: React.FC = () => {
   const [remitTransactions, setRemitTransactions] = useState<Sale[]>([]);
   const [isRemitting, setIsRemitting] = useState(false);
   const [todaysTotal, setTodaysTotal] = useState(0);
+  const [showHardwareSetup, setShowHardwareSetup] = useState(false);
 
   const [scannerSettings, setScannerSettings] = useState<{ enabled: boolean; timeout: number }>({
     enabled: true,
@@ -700,6 +702,13 @@ const ScannerSales: React.FC = () => {
                       >
                         <Send className="w-4 h-4 mr-3 text-gray-400 group-hover:text-blue-500" />
                         <span>Remit Funds</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setShowHardwareSetup(true)}
+                        className="h-12 px-4 rounded-xl text-sm font-semibold text-gray-700 hover:bg-orange-50 hover:text-orange-600 cursor-pointer flex items-center group"
+                      >
+                        <Cpu className="w-4 h-4 mr-3 text-gray-400 group-hover:text-orange-500" />
+                        <span>Hardware Setup</span>
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => setShowLogoutConfirm(true)}
@@ -1352,6 +1361,20 @@ const ScannerSales: React.FC = () => {
                 Once submitted, your daily total will reset and await admin confirmation.
               </p>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Hardware Setup Dialog */}
+        <Dialog open={showHardwareSetup} onOpenChange={setShowHardwareSetup}>
+          <DialogContent className="rounded-[2.5rem] p-6 sm:max-w-[600px] max-h-[85vh] overflow-y-auto">
+            <DialogHeader className="mb-4">
+              <div className="w-14 h-14 bg-orange-50 rounded-2xl flex items-center justify-center mb-4">
+                <Cpu className="w-7 h-7 text-orange-500" />
+              </div>
+              <DialogTitle className="text-2xl font-black tracking-tighter uppercase">Hardware Setup</DialogTitle>
+              <DialogDescription className="text-[10px] font-black uppercase tracking-widest text-gray-400">Printer & Scanner Configuration</DialogDescription>
+            </DialogHeader>
+            <ExternalDeviceManager />
           </DialogContent>
         </Dialog>
       </motion.div>
