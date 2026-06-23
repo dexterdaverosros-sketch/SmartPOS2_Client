@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLocation } from 'wouter';
-import { LogOut, DollarSign, Package, Plus, Eye, Calendar, CreditCard, Receipt, User, FileText, Lock, FileSpreadsheet, BarChart3, Bell, CheckCircle, Clock, ArrowRight, Monitor, Tablet, Smartphone, Trash2, Edit, RefreshCw, History, Cloud, Settings } from 'lucide-react';
+import { LogOut, DollarSign, Package, Plus, Eye, Calendar, CreditCard, Receipt, User, FileText, Lock, FileSpreadsheet, BarChart3, Bell, CheckCircle, Clock, ArrowRight, Monitor, Tablet, Smartphone, Trash2, Edit, RefreshCw, History, Cloud, Settings, X } from 'lucide-react';
 import Layout from '@/components/Layout';
 import FloatingActionButton from '@/components/FloatingActionButton';
 import { useAuth } from '@/contexts/AuthContext';
@@ -108,6 +108,11 @@ const AdminMain: React.FC = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [selectedRemittance, setSelectedRemittance] = useState<Remittance | null>(null);
   const [isConfirmingRemit, setIsConfirmingRemit] = useState(false);
+  const [activeTab, setActiveTab] = useState<'updates' | 'remittance' | 'completed'>('updates');
+  const [pendingRemittances, setPendingRemittances] = useState<Remittance[]>([]);
+  const [confirmedRemittances, setConfirmedRemittances] = useState<Remittance[]>([]);
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedNotificationIds, setSelectedNotificationIds] = useState<string[]>([]);
 
   const [chartData, setChartData] = useState<Array<{ date: string; income: number; expenses: number }>>([]);
   const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
@@ -404,6 +409,10 @@ const AdminMain: React.FC = () => {
       setNotifications(list);
       const count = await NotificationService.getUnreadCount();
       setUnreadCount(count);
+      const pending = await RemittanceService.listPending();
+      setPendingRemittances(pending);
+      const confirmed = await RemittanceService.listConfirmed();
+      setConfirmedRemittances(confirmed);
     } catch (error) {
       console.error('Failed to load notifications', error);
     }
@@ -480,12 +489,65 @@ const AdminMain: React.FC = () => {
         toast({ title: "Remittance Confirmed", description: `Confirmed receipt of ₱${selectedRemittance.amount.toLocaleString()} from ${selectedRemittance.staffName}.` });
         setSelectedRemittance(null);
         loadStats();
+        loadNotifications(); // Refresh remittances
       }
     } catch (error) {
       toast({ title: "Error", description: "Failed to confirm remittance. Please try again.", variant: "destructive" });
     } finally {
       setIsConfirmingRemit(false);
     }
+  };
+
+  const handleCancelRemittance = async (remittance: Remittance) => {
+    try {
+      const res = await RemittanceService.cancel(remittance.id);
+      if (res.success) {
+        toast({ title: 'Remittance Cancelled', description: `Remittance from ${remittance.staffName} has been cancelled.` });
+        loadNotifications(); // Refresh remittances
+      }
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to cancel remittance. Please try again.', variant: 'destructive' });
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    try {
+      await NotificationService.markAllAsRead();
+      setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+      setUnreadCount(0);
+      toast({ title: 'Success', description: 'All notifications marked as read.' });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to mark all as read.', variant: 'destructive' });
+    }
+  };
+
+  const handleDeleteNotification = async (id: string) => {
+    try {
+      await NotificationService.delete(id);
+      setNotifications(prev => prev.filter(n => n.id !== id));
+      setSelectedNotificationIds(prev => prev.filter(i => i !== id));
+      toast({ title: 'Success', description: 'Notification deleted.' });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to delete notification.', variant: 'destructive' });
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    try {
+      await NotificationService.deleteMany(selectedNotificationIds);
+      setNotifications(prev => prev.filter(n => !selectedNotificationIds.includes(n.id)));
+      setSelectedNotificationIds([]);
+      setIsSelectMode(false);
+      toast({ title: 'Success', description: 'Selected notifications deleted.' });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to delete notifications.', variant: 'destructive' });
+    }
+  };
+
+  const handleToggleSelect = (id: string) => {
+    setSelectedNotificationIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
   };
 
   const loadData = async () => {
@@ -656,26 +718,66 @@ const AdminMain: React.FC = () => {
               (deviceMode === 'pc' || deviceMode === 'tablet') ? "grid-cols-4" : "grid-cols-2"
             )}>
               {[
-                { icon: DollarSign, value: `₱${stats.todaySales.toFixed(0)}`, label: 'Sales', path: '/transaction-history' },
-                { icon: Package, value: stats.totalProducts, label: 'Items', path: '/inventory' },
-                { icon: CreditCard, value: getFilteredCreditors().length, label: 'Credits', path: '/ledger' },
-                { icon: Receipt, value: `₱${totalExpenses.toFixed(0)}`, label: 'Costs', path: '/expenses' }
+                { 
+                  icon: DollarSign, 
+                  value: `₱${stats.todaySales.toFixed(0)}`, 
+                  label: 'Sales', 
+                  path: '/transaction-history', 
+                  bgColor: 'bg-amber-50', 
+                  borderColor: 'border-amber-200', 
+                  iconColor: 'text-amber-600', 
+                  iconBg: 'bg-amber-100',
+                  accentBg: 'bg-amber-500/10'
+                },
+                { 
+                  icon: Package, 
+                  value: stats.totalProducts, 
+                  label: 'Items', 
+                  path: '/inventory', 
+                  bgColor: 'bg-blue-50', 
+                  borderColor: 'border-blue-200', 
+                  iconColor: 'text-blue-600', 
+                  iconBg: 'bg-blue-100',
+                  accentBg: 'bg-blue-500/10'
+                },
+                { 
+                  icon: CreditCard, 
+                  value: getFilteredCreditors().length, 
+                  label: 'Credits', 
+                  path: '/ledger', 
+                  bgColor: 'bg-purple-50', 
+                  borderColor: 'border-purple-200', 
+                  iconColor: 'text-purple-600', 
+                  iconBg: 'bg-purple-100',
+                  accentBg: 'bg-purple-500/10'
+                },
+                { 
+                  icon: Receipt, 
+                  value: `₱${totalExpenses.toFixed(0)}`, 
+                  label: 'Costs', 
+                  path: '/expenses', 
+                  bgColor: 'bg-red-50', 
+                  borderColor: 'border-red-200', 
+                  iconColor: 'text-red-600', 
+                  iconBg: 'bg-red-100',
+                  accentBg: 'bg-red-500/10'
+                }
               ].map((stat, i) => (
                 <motion.div
                   key={stat.label}
                   initial={{ y: 20, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   transition={{ delay: 0.1 * i }}
-                  className="relative group overflow-hidden bg-white border border-gray-100 shadow-sm p-4 rounded-2xl transition-all duration-300 hover:shadow-md hover:border-[#BF953F]/30 cursor-pointer"
+                  className={`relative group overflow-hidden ${stat.bgColor} ${stat.borderColor} shadow-sm p-4 rounded-2xl transition-all duration-300 hover:shadow-md hover:scale-[1.02] cursor-pointer`}
                   onClick={() => setLocation(stat.path)}
                 >
-                  <div className="absolute top-0 right-0 w-16 h-16 bg-[#BF953F]/5 rounded-full -mr-8 -mt-8 transition-transform group-hover:scale-150 duration-500"></div>
+                  <div className={`absolute top-0 right-0 w-16 h-16 ${stat.accentBg} rounded-full -mr-8 -mt-8 transition-transform group-hover:scale-150 duration-500`}></div>
                   <div className="relative z-10">
                     <div className="flex items-center gap-2 mb-2">
-                      <div className="p-1.5 rounded-lg bg-[#BF953F]/10">
-                        <stat.icon className="w-3.5 h-3.5 text-[#BF953F]" />
+                      <div className={`p-1.5 rounded-lg ${stat.iconBg}`}>
+                        <stat.icon className={`w-3.5 h-3.5 ${stat.iconColor}`} />
                       </div>
-                      <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{stat.label}</span>
+                      <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">{stat.label}</span>
                     </div>
                     <div className="text-xl font-black text-gray-900 tracking-tighter">{stat.value}</div>
                   </div>
@@ -703,7 +805,6 @@ const AdminMain: React.FC = () => {
                   { title: 'Book Keeping', icon: Receipt, path: '/bookkeeping', color: 'blue' },
                   { title: 'History', icon: History, path: '/transaction-history', color: 'purple' },
                   { title: 'Analytics', icon: BarChart3, path: '/admin/reports', color: 'amber' },
-                  { title: 'Settings', icon: Settings, path: '/admin/settings', color: 'gray' },
                 ].map((tool) => (
                   <Button
                     key={tool.title}
@@ -887,18 +988,153 @@ const AdminMain: React.FC = () => {
         </Dialog>
 
         {/* Notifications Dialog */}
-        <Dialog open={showNotifications} onOpenChange={setShowNotifications}>
+        <Dialog open={showNotifications} onOpenChange={(open) => {
+          setShowNotifications(open);
+          if (!open) {
+            setIsSelectMode(false);
+            setSelectedNotificationIds([]);
+          }
+        }}>
           <DialogContent className="max-w-md h-[70vh] flex flex-col p-0 overflow-hidden outline-none rounded-3xl z-[70]">
             <DialogHeader className="p-4 border-b bg-white flex-none">
-              <DialogTitle className="text-lg font-black tracking-tighter gold-gradient-text uppercase">Notifications</DialogTitle>
+              <div className="flex items-center justify-between">
+                <DialogTitle className="text-lg font-black tracking-tighter gold-gradient-text uppercase">Notifications</DialogTitle>
+                {activeTab === 'updates' && (
+                  <div className="flex items-center gap-2">
+                    {!isSelectMode ? (
+                      <>
+                        <Button variant="ghost" size="icon" onClick={handleMarkAllAsRead} className="h-8 w-8">
+                          <CheckCircle className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => setIsSelectMode(true)} className="h-8 w-8">
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button variant="ghost" size="icon" onClick={() => { setIsSelectMode(false); setSelectedNotificationIds([]); }} className="h-8 w-8">
+                          <X className="h-4 w-4" />
+                        </Button>
+                        {selectedNotificationIds.length > 0 && (
+                          <Button variant="destructive" size="icon" onClick={handleDeleteSelected} className="h-8 w-8">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+              {/* Tabs */}
+              <div className="flex gap-2 mt-4">
+                <Button 
+                  variant={activeTab === 'updates' ? 'default' : 'ghost'}
+                  onClick={() => { setActiveTab('updates'); setIsSelectMode(false); setSelectedNotificationIds([]); }}
+                  className={cn(
+                    "flex-1 text-xs font-black uppercase tracking-widest rounded-xl",
+                    activeTab === 'updates' ? "bg-[#BF953F] text-white" : "text-gray-500 hover:bg-gray-100"
+                  )}
+                >
+                  Updates
+                </Button>
+                <Button 
+                  variant={activeTab === 'remittance' ? 'default' : 'ghost'}
+                  onClick={() => { setActiveTab('remittance'); setIsSelectMode(false); setSelectedNotificationIds([]); }}
+                  className={cn(
+                    "flex-1 text-xs font-black uppercase tracking-widest rounded-xl",
+                    activeTab === 'remittance' ? "bg-[#BF953F] text-white" : "text-gray-500 hover:bg-gray-100"
+                  )}
+                >
+                  Remittance
+                </Button>
+                <Button 
+                  variant={activeTab === 'completed' ? 'default' : 'ghost'}
+                  onClick={() => { setActiveTab('completed'); setIsSelectMode(false); setSelectedNotificationIds([]); }}
+                  className={cn(
+                    "flex-1 text-xs font-black uppercase tracking-widest rounded-xl",
+                    activeTab === 'completed' ? "bg-[#BF953F] text-white" : "text-gray-500 hover:bg-gray-100"
+                  )}
+                >
+                  Completed
+                </Button>
+              </div>
             </DialogHeader>
             <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50/50">
-              {notifications.map((n) => (
-                <div key={n.id} onClick={() => handleNotificationClick(n)} className={cn("p-3 rounded-xl border cursor-pointer bg-white transition-all", !n.isRead && "border-[#BF953F]/20 shadow-sm")}>
-                  <p className={cn("text-xs", !n.isRead ? "font-bold" : "text-gray-500")}>{n.message}</p>
-                  <span className="text-[8px] text-gray-400 mt-1 block">{new Date(n.createdAt as any).toLocaleTimeString()}</span>
-                </div>
-              ))}
+              {activeTab === 'updates' && (
+                notifications.map((n) => (
+                  <div key={n.id} className={cn("p-3 rounded-xl border bg-white transition-all flex items-start gap-3", !n.isRead && "border-[#BF953F]/20 shadow-sm")}>
+                    {isSelectMode && (
+                      <input 
+                        type="checkbox" 
+                        checked={selectedNotificationIds.includes(n.id)}
+                        onChange={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); handleToggleSelect(n.id); }}
+                        className="mt-1 h-4 w-4 rounded border-gray-300 text-[#BF953F] focus:ring-[#BF953F]"
+                      />
+                    )}
+                    <div 
+                      className="flex-1 cursor-pointer"
+                      onClick={() => !isSelectMode && handleNotificationClick(n)}
+                    >
+                      <p className={cn("text-xs", !n.isRead ? "font-bold" : "text-gray-500")}>{n.message}</p>
+                      <span className="text-[8px] text-gray-400 mt-1 block">{new Date(n.createdAt as any).toLocaleTimeString()}</span>
+                    </div>
+                    {!isSelectMode && (
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-6 w-6 text-gray-400 hover:text-red-500"
+                        onClick={(e) => { e.stopPropagation(); handleDeleteNotification(n.id); }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))
+              )}
+              {activeTab === 'remittance' && (
+                pendingRemittances.map((r) => (
+                  <div key={r.id} className="p-4 rounded-xl border bg-white shadow-sm flex flex-col gap-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="text-sm font-bold text-gray-900">{r.staffName}</p>
+                        <p className="text-xs text-gray-500">₱{r.amount.toLocaleString()}</p>
+                        <p className="text-[8px] text-gray-400">{r.transactionCount} transactions</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        onClick={() => setSelectedRemittance(r)}
+                        className="flex-1 h-10 rounded-xl bg-[#BF953F] text-white text-xs font-black uppercase tracking-widest"
+                      >
+                        Confirm
+                      </Button>
+                      <Button 
+                        onClick={() => handleCancelRemittance(r)}
+                        className="flex-1 h-10 rounded-xl border border-gray-200 text-gray-600 text-xs font-black uppercase tracking-widest"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+              {activeTab === 'completed' && (
+                confirmedRemittances.map((r) => (
+                  <div key={r.id} className="p-4 rounded-xl border bg-white shadow-sm">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="text-sm font-bold text-gray-900">{r.staffName}</p>
+                        <p className="text-xs text-gray-500">₱{r.amount.toLocaleString()}</p>
+                        <p className="text-[8px] text-gray-400">{r.transactionCount} transactions</p>
+                      </div>
+                      <div className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+                        Confirmed
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </DialogContent>
         </Dialog>

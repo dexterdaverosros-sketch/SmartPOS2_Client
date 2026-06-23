@@ -1501,6 +1501,26 @@ export const dbService = {
     return db.prepare("SELECT * FROM remittances WHERE status = 'pending' ORDER BY created_at DESC").all();
   },
 
+  cancelRemittance: (id: string) => {
+    return db.transaction(() => {
+      // Update remittance status
+      db.prepare(`
+        UPDATE remittances 
+        SET status = 'cancelled'
+        WHERE id = ?
+      `).run(id);
+      
+      const remittance = db.prepare('SELECT * FROM remittances WHERE id = ?').get(id) as any;
+      if (!remittance) return null;
+
+      return remittance;
+    })();
+  },
+
+  listConfirmedRemittances: () => {
+    return db.prepare("SELECT * FROM remittances WHERE status = 'confirmed' ORDER BY created_at DESC").all();
+  },
+
   // Notification methods
   createNotification: (notification: any) => {
     const stmt = db.prepare(`
@@ -1537,6 +1557,23 @@ export const dbService = {
     }
     const row = db.prepare('SELECT COUNT(*) as count FROM notifications WHERE user_id IS NULL AND is_read = 0').get() as any;
     return row?.count || 0;
+  },
+
+  markAllNotificationsRead: (userId: string | null) => {
+    if (userId) {
+      return db.prepare('UPDATE notifications SET is_read = 1 WHERE (user_id = ? OR user_id IS NULL) AND is_read = 0').run(userId);
+    }
+    return db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id IS NULL AND is_read = 0').run();
+  },
+
+  deleteNotification: (id: string) => {
+    return db.prepare('DELETE FROM notifications WHERE id = ?').run(id);
+  },
+
+  deleteNotifications: (ids: string[]) => {
+    const placeholders = ids.map(() => '?').join(',');
+    const stmt = db.prepare(`DELETE FROM notifications WHERE id IN (${placeholders})`);
+    return stmt.run(...ids);
   },
 
   // ==============================================

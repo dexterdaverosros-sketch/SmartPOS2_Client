@@ -142,6 +142,24 @@ export const NotificationService = {
     } catch {}
     await db.notifications.update(id, { isRead: true });
   },
+  async markAllAsRead(): Promise<void> {
+    try {
+      await api.patch('/api/notifications/mark-all-read', {});
+    } catch {}
+    await db.notifications.where('isRead').equals(0).modify({ isRead: true });
+  },
+  async delete(id: string): Promise<void> {
+    try {
+      await api.delete(`/api/notifications/${id}`);
+    } catch {}
+    await db.notifications.delete(id);
+  },
+  async deleteMany(ids: string[]): Promise<void> {
+    try {
+      await api.post('/api/notifications/delete-many', { ids });
+    } catch {}
+    await db.notifications.bulkDelete(ids);
+  },
   async saveLocally(notification: Notification): Promise<void> {
     await db.notifications.put(notification);
   }
@@ -163,8 +181,18 @@ export const RemittanceService = {
     }
     return res;
   },
+  async cancel(id: string): Promise<{ success: boolean; remittance: Remittance }> {
+    const res = await api.post<{ success: boolean, remittance: Remittance }>(`/api/remit/cancel/${id}`, {});
+    if (res.success && res.remittance) {
+      await db.remittances.update(id, { status: 'cancelled' });
+    }
+    return res;
+  },
   async listPending(): Promise<Remittance[]> {
     return await api.get<Remittance[]>('/api/remittances/pending');
+  },
+  async listConfirmed(): Promise<Remittance[]> {
+    return await api.get<Remittance[]>('/api/remittances/confirmed');
   }
 };
 

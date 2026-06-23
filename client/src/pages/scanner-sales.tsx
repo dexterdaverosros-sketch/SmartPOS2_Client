@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, useDragControls, PanInfo, AnimatePresence } from 'framer-motion';
-import { Home, Trash2, CreditCard, AlertTriangle, LogOut, Search, ArrowLeft, Edit, Usb, Bluetooth, Send, ShoppingCart, AlertCircle, Package, X, ChevronUp, ChevronDown, Plus } from 'lucide-react';
+import { Home, Trash2, CreditCard, AlertTriangle, LogOut, Search, ArrowLeft, Edit, Usb, Bluetooth, Send, ShoppingCart, AlertCircle, Package, X, ChevronUp, ChevronDown, Plus, User } from 'lucide-react';
 import { useLocation } from 'wouter';
 import Layout from '@/components/Layout';
 import Scanner from '@/components/Scanner';
@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
 import { useDevices } from '@/contexts/DeviceContext';
@@ -684,12 +685,36 @@ const ScannerSales: React.FC = () => {
                 </div>
               </div>
               <div className="flex gap-2">
-                {isStaff && (
-                  <Button onClick={handleRemitClick} className="bg-slate-900 h-11 px-5 rounded-2xl text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-xl shadow-slate-900/20 active:scale-95 transition-all"><Send className="w-4 h-4 mr-2 text-[#BF953F]" /> REMIT</Button>
+                {isStaff ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" className="h-11 px-4 rounded-2xl border-slate-100 shadow-sm bg-white active:scale-95 transition-all">
+                        <User className="w-5 h-5 text-slate-600 mr-2" />
+                        <span className="text-[10px] font-black uppercase tracking-[0.2em]">MENU</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent side="bottom" align="end" className="w-56 bg-white border border-gray-100 shadow-2xl rounded-2xl p-2 z-[60]">
+                      <DropdownMenuItem
+                        onClick={handleRemitClick}
+                        className="h-12 px-4 rounded-xl text-sm font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-600 cursor-pointer flex items-center group"
+                      >
+                        <Send className="w-4 h-4 mr-3 text-gray-400 group-hover:text-blue-500" />
+                        <span>Remit Funds</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setShowLogoutConfirm(true)}
+                        className="h-12 px-4 rounded-xl text-sm font-semibold text-gray-700 hover:bg-red-50 hover:text-red-600 cursor-pointer flex items-center group"
+                      >
+                        <LogOut className="w-4 h-4 mr-3 text-gray-400 group-hover:text-red-500" />
+                        <span>Logout</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : (
+                  <Button variant="outline" className="h-11 w-11 p-0 rounded-2xl border-slate-100 shadow-sm bg-white active:scale-95 transition-all" onClick={() => setLocation('/admin-main')}>
+                    <Home className="w-5 h-5 text-slate-600" />
+                  </Button>
                 )}
-                <Button variant="outline" className="h-11 w-11 p-0 rounded-2xl border-slate-100 shadow-sm bg-white active:scale-95 transition-all" onClick={() => { if (isStaff) setShowLogoutConfirm(true); else setLocation('/admin-main'); }}>
-                  {isStaff ? <LogOut className="w-5 h-5 text-slate-600" /> : <Home className="w-5 h-5 text-slate-600" />}
-                </Button>
               </div>
             </div>
 
@@ -726,6 +751,8 @@ const ScannerSales: React.FC = () => {
                   <div className="relative flex-1">
                     <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"><Usb className="w-4 h-4" /></div>
                     <Input 
+                      id="manual-barcode"
+                      name="manualBarcode"
                       value={manualBarcode} 
                       onChange={(e) => setManualBarcode(e.target.value)} 
                       placeholder="Manual Barcode" 
@@ -746,6 +773,8 @@ const ScannerSales: React.FC = () => {
                   <div className="relative flex-1 group">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-slate-900 transition-colors" />
                     <Input 
+                      id="search-term"
+                      name="searchTerm"
                       value={searchTerm} 
                       onChange={(e) => setSearchTerm(e.target.value)} 
                       placeholder="Search catalog..." 
@@ -864,9 +893,7 @@ const ScannerSales: React.FC = () => {
                     </div>
                   </div>
                   <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="h-9 px-4 rounded-xl border-gray-100 text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 transition-all"
+                    className="h-9 px-4 rounded-xl bg-gradient-to-r from-[#BF953F] to-[#B38728] text-white text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] transition-all shadow-md"
                     onClick={() => setIsNonInventoryOpen(true)}
                   >
                     + Non-Inv
@@ -883,7 +910,7 @@ const ScannerSales: React.FC = () => {
                     exit={{ opacity: 0, x: -20 }}
                     className="flex flex-col h-full"
                   >
-                    <div className="flex items-center gap-2 mb-6">
+                    <div className="flex items-center gap-2 mb-6 flex-none">
                       <Button variant="ghost" size="sm" onClick={() => setIsPayModalOpen(false)} className="w-10 h-10 p-0 rounded-xl hover:bg-gray-50 transition-all">
                         <ArrowLeft className="w-5 h-5 text-gray-400" />
                       </Button>
@@ -898,31 +925,31 @@ const ScannerSales: React.FC = () => {
                             <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">₱{item.price.toFixed(2)} × {item.quantity}</div>
                             <div className="text-[11px] font-black text-[#FF8882] mt-1">₱{item.subtotal.toFixed(2)}</div>
                           </div>
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex items-center gap-1 transition-opacity">
                             <Button variant="ghost" size="icon" onClick={() => handleEditItem(item)} className="h-8 w-8 rounded-lg hover:bg-gray-100"><Edit className="w-3.5 h-3.5" /></Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleDeleteItem(item.productId)} className="h-8 w-8 rounded-lg hover:bg-red-50 text-red-500"><Trash2 className="w-3.5 h-3.5" /></Button>
+                            <Button variant="ghost" size="icon" onClick={() => handleDeleteItem(item.productId)} className="h-8 w-8 rounded-lg bg-red-50 text-red-500 border border-red-200 hover:bg-red-100 hover:border-red-400"><Trash2 className="w-3.5 h-3.5" /></Button>
                           </div>
                         </div>
                       ))}
                     </div>
 
-                    <div className="space-y-4 bg-white border-t border-gray-100 pt-6">
+                    <div className="space-y-4 bg-white border-t border-gray-100 pt-6 pb-4 flex-none sticky bottom-0">
                       <div className="space-y-2">
                         <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Received Amount (₱)</Label>
                         <Input 
-                          type="number" 
-                          value={paymentAmount ?? ''} 
-                          onChange={e => {
-                            const val = parseFloat(e.target.value);
-                            setPaymentAmount(isNaN(val) ? null : val);
-                            setPaymentError(false);
-                          }} 
-                          placeholder="0.00" 
-                          className={cn(
-                            "h-14 bg-gray-50 border-none rounded-2xl font-black text-xl px-6 focus:ring-2 focus:ring-[#BF953F]/20",
-                            paymentError && "ring-2 ring-red-500/20 bg-red-50"
-                          )} 
-                        />
+                        type="number" 
+                        value={paymentAmount ?? ''} 
+                        onChange={e => {
+                          const val = parseFloat(e.target.value);
+                          setPaymentAmount(isNaN(val) ? null : val);
+                          setPaymentError(false);
+                        }} 
+                        placeholder="0.00" 
+                        className={cn(
+                          "h-14 bg-gray-50 border border-gray-200 rounded-2xl font-black text-xl px-6 focus:ring-2 focus:ring-[#BF953F]/30 focus:border-[#BF953F]",
+                          paymentError && "ring-2 ring-red-500/30 bg-red-50 border-red-300"
+                        )} 
+                      />
                       </div>
                       
                       <div className="p-4 bg-gray-50/50 rounded-2xl border border-gray-100">
@@ -955,31 +982,31 @@ const ScannerSales: React.FC = () => {
                   <AnimatePresence mode="popLayout">
                     {cart.length > 0 ? (
                       <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar pr-1">
-                        {cart.map(item => (
-                          <motion.div 
-                            layout
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            key={item.productId} 
-                            className="flex justify-between items-center p-3.5 bg-slate-50/50 rounded-2xl border border-slate-100 hover:bg-white hover:shadow-md transition-all group"
-                          >
-                            <div className="flex-1 min-w-0 mr-4">
-                              <div className="font-bold text-[11px] uppercase tracking-tight text-slate-800 line-clamp-1">{item.name}</div>
-                              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">₱{item.price.toFixed(2)} × {item.quantity} {item.unit}</div>
-                            </div>
-                            <div className="text-right flex items-center gap-4">
-                              <div className="font-black text-slate-900 text-[11px]">₱{item.subtotal.toFixed(2)}</div>
-                              <button 
-                                onClick={() => handleDeleteItem(item.productId)} 
-                                className="text-slate-300 hover:text-red-500 transition-colors p-1.5 bg-white rounded-lg shadow-sm border border-slate-100"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </motion.div>
-                        ))}
-                      </div>
+                      {cart.map(item => (
+                        <motion.div 
+                          layout
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.95 }}
+                          key={item.productId} 
+                          className="flex justify-between items-center p-3.5 bg-slate-50/50 rounded-2xl border border-slate-100 hover:bg-white hover:shadow-md transition-all group"
+                        >
+                          <div className="flex-1 min-w-0 mr-4">
+                            <div className="font-bold text-[11px] uppercase tracking-tight text-slate-800 line-clamp-1">{item.name}</div>
+                            <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">₱{item.price.toFixed(2)} × {item.quantity} {item.unit}</div>
+                          </div>
+                          <div className="text-right flex items-center gap-4">
+                            <div className="font-black text-slate-900 text-[11px]">₱{item.subtotal.toFixed(2)}</div>
+                            <button 
+                              onClick={() => handleDeleteItem(item.productId)} 
+                              className="text-red-500 transition-colors p-1.5 bg-red-50 rounded-lg shadow-sm border border-red-200 hover:border-red-400 hover:bg-red-100"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
                     ) : (
                       <div className="flex-1 flex flex-col items-center justify-center text-center opacity-40">
                         <div className="w-20 h-20 bg-gray-100 rounded-[2rem] flex items-center justify-center mb-4">
