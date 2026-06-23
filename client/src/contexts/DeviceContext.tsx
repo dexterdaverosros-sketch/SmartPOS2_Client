@@ -235,10 +235,6 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
 
       setAvailableDevices(validatedDevices);
-      toast({
-        title: 'Scan Complete',
-        description: `Found ${validatedDevices.length} available device(s)`
-      });
     } catch (error) {
       console.error('Scan error:', error);
       toast({

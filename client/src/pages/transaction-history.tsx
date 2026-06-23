@@ -36,9 +36,20 @@ const TransactionHistory: React.FC = () => {
     else setLoading(true);
     
     try {
-      const endpoint = fromCloud ? '/api/cloud/transactions' : '/api/sales-history';
-      const response = await api.get(endpoint);
-      const salesHistory = Array.isArray(response) ? response : (response.data || []);
+      let salesHistory: any[] = [];
+      if (fromCloud) {
+        const response = await api.get('/api/cloud/transactions');
+        salesHistory = Array.isArray(response) ? response : (response.data || []);
+      } else {
+        try {
+          const response = await api.get('/api/sales-history');
+          salesHistory = Array.isArray(response) ? response : (response.data || []);
+        } catch (serverError) {
+          console.warn('Failed to fetch from server, using local DB', serverError);
+          // Fallback to local Dexie DB
+          salesHistory = await SalesService.getAllSales();
+        }
+      }
       
       if (!Array.isArray(salesHistory)) {
         throw new Error('Invalid response format from server');
@@ -67,7 +78,7 @@ const TransactionHistory: React.FC = () => {
       console.error('Error fetching transactions:', error);
       toast({
         title: 'Error',
-        description: fromCloud ? 'Failed to sync with Supabase' : 'Failed to load transaction history from server',
+        description: fromCloud ? 'Failed to sync with Supabase' : 'Failed to load transaction history',
         variant: 'destructive',
       });
     } finally {
