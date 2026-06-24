@@ -121,25 +121,33 @@ const ScannerSales: React.FC = () => {
   const scannerBufRef = useRef<string>('');
   const bufferTimerRef = useRef<any>(null);
 
-  useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const data = await api.get('/api/settings');
-        if (data.externalScanner) {
-          setScannerSettings({
-            enabled: data.externalScanner.enabled !== false,
-            timeout: data.externalScanner.timeout || 150
-          });
-        }
-        if (data.receipt) {
-          setReceiptSettings(prev => ({ ...prev, ...data.receipt }));
-        }
-      } catch (err) {
-        console.error('Failed to load settings', err);
+  const loadSettings = async () => {
+    try {
+      const data = await api.get('/api/settings');
+      if (data.externalScanner) {
+        setScannerSettings({
+          enabled: data.externalScanner.enabled !== false,
+          timeout: data.externalScanner.timeout || 150
+        });
       }
-    };
+      if (data.receipt) {
+        setReceiptSettings(prev => ({ ...prev, ...data.receipt }));
+      }
+    } catch (err) {
+      console.error('Failed to load settings', err);
+    }
+  };
+
+  useEffect(() => {
     loadSettings();
   }, []);
+
+  useEffect(() => {
+    // Reload settings when hardware setup dialog closes
+    if (!showHardwareSetup) {
+      loadSettings();
+    }
+  }, [showHardwareSetup]);
 
   useEffect(() => {
     if (deviceMode === 'pc') {
@@ -560,6 +568,9 @@ const ScannerSales: React.FC = () => {
 
   const handleProcessSale = async () => {
     if (cart.length === 0) return;
+    // Load latest receipt settings before printing
+    await loadSettings();
+    
     const total = getCartTotal();
     const effectivePaymentAmount = paymentType === 'cash' ? (paymentAmount ?? 0) : paymentType === 'ewallet' ? total : 0;
 
@@ -593,7 +604,11 @@ const ScannerSales: React.FC = () => {
 
       const change = paymentType === 'cash' && effectivePaymentAmount > total ? effectivePaymentAmount - total : 0;
       if (paymentType !== 'credits') {
-        const receiptItems = cart.map(item => `${item.name}\n${item.quantity} ${item.unit} x ₱${item.price.toFixed(2)}   ₱${item.subtotal.toFixed(2)}`).join('\n');
+        const receiptItems = cart.map(item => {
+          const safePrice = Number(item.price) || 0;
+          const safeSubtotal = Number(item.subtotal) || 0;
+          return `${item.name}\n${item.quantity} ${item.unit} x ₱${safePrice.toFixed(2)}   ₱${safeSubtotal.toFixed(2)}`;
+        }).join('\n');
         let receiptContent = `${receiptSettings.storeName || 'SMARTPOS+ STORE'}\n`;
         if (receiptSettings.storeAddress) receiptContent += `${receiptSettings.storeAddress}\n`;
         if (receiptSettings.storePhone) receiptContent += `${receiptSettings.storePhone}\n`;

@@ -75,19 +75,22 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
 
   const addToCart = (item: CartItem) => {
     setCart(prevCart => {
-      const existingItem = prevCart.find(cartItem => cartItem.productId === item.productId && cartItem.unit === item.unit);
-      if (existingItem && existingItem.unit === item.unit) {
-        const newQuantity = existingItem.quantity + item.quantity;
+      const safeItem = {
+        ...item,
+        price: Number(item.price) || 0,
+        subtotal: Math.round(Number(item.subtotal || (item.price * item.quantity * getUnitMultiplier(item.unit))) * 100) / 100,
+      };
+      const existingItem = prevCart.find(cartItem => cartItem.productId === safeItem.productId && cartItem.unit === safeItem.unit);
+      if (existingItem && existingItem.unit === safeItem.unit) {
+        const newQuantity = existingItem.quantity + safeItem.quantity;
         const newSubtotal = Math.round(newQuantity * getUnitMultiplier(existingItem.unit) * existingItem.price * 100) / 100;
         return prevCart.map(cartItem =>
-          cartItem.productId === item.productId && cartItem.unit === item.unit
+          cartItem.productId === safeItem.productId && cartItem.unit === safeItem.unit
             ? { ...cartItem, quantity: newQuantity, subtotal: newSubtotal }
             : cartItem
         );
       }
-      // Ensure subtotal is properly rounded when adding new item
-      const newItem = { ...item, subtotal: Math.round(item.subtotal * 100) / 100 };
-      return [...prevCart, newItem];
+      return [...prevCart, safeItem];
     });
   };
 
@@ -107,7 +110,12 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     setCart(prevCart =>
       prevCart.map(item =>
         item.productId === productId
-          ? { ...item, quantity: roundedQuantity, subtotal: Math.round(roundedQuantity * getUnitMultiplier(item.unit) * item.price * 100) / 100 }
+          ? { 
+              ...item, 
+              quantity: roundedQuantity, 
+              price: Number(item.price) || 0, 
+              subtotal: Math.round(roundedQuantity * getUnitMultiplier(item.unit) * (Number(item.price) || 0) * 100) / 100 
+            }
           : item
       )
     );
