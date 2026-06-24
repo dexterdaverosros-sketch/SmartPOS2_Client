@@ -23,7 +23,7 @@ const extractTenantFromPath = () => {
   }
   
   // Default fallback
-  console.warn('No tenant found in URL path or localStorage:', pathname);
+  console.debug('No tenant found in URL path or localStorage, using default:', pathname);
   return 'default';
 };
 

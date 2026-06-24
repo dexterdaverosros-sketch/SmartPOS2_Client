@@ -245,10 +245,11 @@ export default function SalesSummary() {
         {/* Date Selectors */}
         <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-                <label className="text-sm text-gray-600 dark:text-gray-400 ml-1">Start Date</label>
+                <label htmlFor="start-date" className="text-sm text-gray-600 dark:text-gray-400 ml-1">Start Date</label>
                 <div className="relative">
                     <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                     <Input 
+                        id="start-date"
                         type="date" 
                         value={startDate}
                         onChange={(e) => setStartDate(e.target.value)}
@@ -257,10 +258,11 @@ export default function SalesSummary() {
                 </div>
             </div>
             <div className="space-y-2">
-                <label className="text-sm text-gray-600 dark:text-gray-400 ml-1">End Date</label>
+                <label htmlFor="end-date" className="text-sm text-gray-600 dark:text-gray-400 ml-1">End Date</label>
                 <div className="relative">
                     <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                     <Input 
+                        id="end-date"
                         type="date" 
                         value={endDate}
                         onChange={(e) => setEndDate(e.target.value)}

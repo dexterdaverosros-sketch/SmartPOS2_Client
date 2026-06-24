@@ -774,7 +774,7 @@ const InventoryManagement: React.FC = () => {
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 p-1 sm:p-0">
                 {/* Product Image Upload */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Product Image</label>
+                  <label htmlFor="product-image-upload" className="text-sm font-medium text-gray-700 dark:text-gray-300">Product Image</label>
                   <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 space-y-3 sm:space-y-0">
                     <div className="relative">
                       {productImage ? (
@@ -789,6 +789,7 @@ const InventoryManagement: React.FC = () => {
                         </div>
                       )}
                       <input
+                        id="product-image-upload"
                         type="file"
                         accept="image/*"
                         onChange={handleImageUpload}

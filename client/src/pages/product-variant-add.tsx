@@ -80,8 +80,9 @@ export default function ProductVariantAdd() {
           </div>
           <div className="space-y-3 flex-1 max-w-md">
             <div>
-              <label className="text-sm text-gray-700 dark:text-gray-300">Variant Name</label>
+              <label htmlFor="variant-name" className="text-sm text-gray-700 dark:text-gray-300">Variant Name</label>
               <Input
+                id="variant-name"
                 value={variant}
                 onChange={(e) => setVariant(e.target.value)}
                 placeholder="e.g., 500g, Small, Chocolate"
@@ -89,8 +90,9 @@ export default function ProductVariantAdd() {
               />
             </div>
             <div>
-              <label className="text-sm text-gray-700 dark:text-gray-300">Price</label>
+              <label htmlFor="variant-price" className="text-sm text-gray-700 dark:text-gray-300">Price</label>
               <Input
+                id="variant-price"
                 type="number"
                 step="0.01"
                 value={price}
@@ -100,8 +102,9 @@ export default function ProductVariantAdd() {
               />
             </div>
             <div>
-              <label className="text-sm text-gray-700 dark:text-gray-300">Cost</label>
+              <label htmlFor="variant-cost" className="text-sm text-gray-700 dark:text-gray-300">Cost</label>
               <Input
+                id="variant-cost"
                 type="number"
                 step="0.01"
                 value={cost}
@@ -111,8 +114,9 @@ export default function ProductVariantAdd() {
               />
             </div>
             <div>
-              <label className="text-sm text-gray-700 dark:text-gray-300">Stock Quantity</label>
+              <label htmlFor="variant-stock" className="text-sm text-gray-700 dark:text-gray-300">Stock Quantity</label>
               <Input
+                id="variant-stock"
                 type="number"
                 step="1"
                 value={stock}
@@ -122,8 +126,9 @@ export default function ProductVariantAdd() {
               />
             </div>
             <div>
-              <label className="text-sm text-gray-700 dark:text-gray-300">Barcode</label>
+              <label htmlFor="variant-barcode" className="text-sm text-gray-700 dark:text-gray-300">Barcode</label>
               <Input
+                id="variant-barcode"
                 value={barcode}
                 onChange={(e) => setBarcode(e.target.value)}
                 className="border-gray-300 dark:border-gray-600"
