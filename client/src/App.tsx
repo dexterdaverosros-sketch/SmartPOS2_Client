@@ -29,6 +29,7 @@ import CustomerPage from "@/pages/customer-scan";
 import AdminReports from "@/pages/admin-reports";
 import ProfileSettings from "@/pages/profile-settings";
 import TransactionHistory from "@/pages/transaction-history";
+import SalesSummary from "@/pages/sales-summary";
 import BookKeeping from "@/pages/bookkeeping";
 import AdminSettings from "@/pages/admin-settings";
 import ForgotPassword from "@/pages/forgot-password";
@@ -69,6 +70,7 @@ function Router() {
       <Route path="/store/:tenant/reset-password" component={ResetPassword} />
       <Route path="/store/:tenant/security-questions" component={SecurityQuestionsPage} />
       <Route path="/store/:tenant/admin/reports" component={() => <ProtectedRoute component={AdminReports} role="admin" />} />
+      <Route path="/store/:tenant/sales-summary" component={() => <ProtectedRoute component={SalesSummary} role="admin" />} />
       <Route path="/store/:tenant/admin/settings" component={() => <ProtectedRoute component={AdminSettings} role="admin" />} />
       <Route path="/store/:tenant/pos" component={() => <ProtectedRoute component={POS} role="any" />} />
       <Route path="/store/:tenant/customer" component={CustomerPage} />
@@ -98,6 +100,7 @@ function Router() {
       <Route path="/reset-password" component={ResetPassword} />
       <Route path="/security-questions" component={SecurityQuestionsPage} />
       <Route path="/admin/reports" component={() => <ProtectedRoute component={AdminReports} role="admin" />} />
+      <Route path="/sales-summary" component={() => <ProtectedRoute component={SalesSummary} role="admin" />} />
       <Route path="/admin/settings" component={() => <ProtectedRoute component={AdminSettings} role="admin" />} />
       <Route path="/pos" component={() => <ProtectedRoute component={POS} role="any" />} />
       <Route path="/customer" component={CustomerPage} />

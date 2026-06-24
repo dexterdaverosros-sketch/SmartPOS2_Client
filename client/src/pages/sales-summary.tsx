@@ -2,7 +2,14 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Layout from '@/components/Layout';
 import { Card } from '@/components/ui/card';
 import { useLocation } from 'wouter';
-import { ArrowLeft, Calendar, ChevronDown, Search } from 'lucide-react';
+import { ArrowLeft, Calendar, ChevronDown, Search, BarChart3, LineChart as LineChartIcon } from 'lucide-react';
+import { 
+  LineChart, Line, 
+  BarChart, Bar, 
+  XAxis, YAxis, CartesianGrid, 
+  Tooltip, Legend, 
+  ResponsiveContainer
+} from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { db } from '@/lib/db';
@@ -20,6 +27,7 @@ export default function SalesSummary() {
   const [filterDropdownOpen, setFilterDropdownOpen] = useState<boolean>(false);
 
   const [rows, setRows] = useState<Array<{ date: string; dateObj: Date; totalSales: number; totalProfit: number }>>([]);
+  const [chartType, setChartType] = useState<'line' | 'bar'>('line');
 
   const sDate = useMemo(() => new Date(startDate), [startDate]);
   const eDate = useMemo(() => { const d = new Date(endDate); d.setHours(23,59,59,999); return d; }, [endDate]);
@@ -197,7 +205,7 @@ export default function SalesSummary() {
              <Button 
                variant="ghost" 
                className="mr-2 px-2"
-               onClick={() => setLocation('/report-blank')}
+               onClick={() => setLocation('/admin/reports')}
              >
                <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-300" />
              </Button>
@@ -297,6 +305,106 @@ export default function SalesSummary() {
                 )}
             </div>
         </div>
+
+        {/* Chart Type Toggle */}
+        <Card className="p-4 bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Sales Trends</h3>
+            <div className="flex gap-2">
+              <Button 
+                variant={chartType === 'line' ? 'default' : 'ghost'} 
+                size="sm"
+                onClick={() => setChartType('line')}
+                className="flex items-center gap-2"
+              >
+                <LineChartIcon className="w-4 h-4" />
+                Line
+              </Button>
+              <Button 
+                variant={chartType === 'bar' ? 'default' : 'ghost'} 
+                size="sm"
+                onClick={() => setChartType('bar')}
+                className="flex items-center gap-2"
+              >
+                <BarChart3 className="w-4 h-4" />
+                Bar
+              </Button>
+            </div>
+          </div>
+          <div className="h-80 mt-4">
+            <ResponsiveContainer width="100%" height="100%">
+              {chartType === 'line' ? (
+                <LineChart data={rows}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis 
+                    dataKey="date" 
+                    tick={{ fontSize: 12 }} 
+                    stroke="#6b7280" 
+                  />
+                  <YAxis 
+                    tick={{ fontSize: 12 }} 
+                    stroke="#6b7280" 
+                    tickFormatter={(value) => `₱${value.toLocaleString()}`}
+                  />
+                  <Tooltip 
+                    formatter={(value: number) => `₱${value.toLocaleString()}`}
+                    labelFormatter={(label) => label}
+                  />
+                  <Legend />
+                  <Line 
+                    type="monotone" 
+                    dataKey="totalSales" 
+                    stroke="#8b5cf6" 
+                    strokeWidth={2}
+                    dot={{ r: 4 }}
+                    activeDot={{ r: 6 }}
+                    name="Total Sales"
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="totalProfit" 
+                    stroke="#10b981" 
+                    strokeWidth={2}
+                    dot={{ r: 4 }}
+                    activeDot={{ r: 6 }}
+                    name="Total Profit"
+                  />
+                </LineChart>
+              ) : (
+                <BarChart data={rows}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis 
+                    dataKey="date" 
+                    tick={{ fontSize: 12 }} 
+                    stroke="#6b7280" 
+                  />
+                  <YAxis 
+                    tick={{ fontSize: 12 }} 
+                    stroke="#6b7280" 
+                    tickFormatter={(value) => `₱${value.toLocaleString()}`}
+                  />
+                  <Tooltip 
+                    formatter={(value: number) => `₱${value.toLocaleString()}`}
+                    labelFormatter={(label) => label}
+                  />
+                  <Legend />
+                  <Bar 
+                    dataKey="totalSales" 
+                    fill="#8b5cf6" 
+                    name="Total Sales" 
+                    radius={[4, 4, 0, 0]} 
+                  />
+                  <Bar 
+                    dataKey="totalProfit" 
+                    fill="#10b981" 
+                    name="Total Profit" 
+                    radius={[4, 4, 0, 0]} 
+                  />
+                </BarChart>
+              )}
+            </ResponsiveContainer>
+          </div>
+        </Card>
 
         {/* 3-Grid View Table */}
         <Card className="overflow-hidden border-none shadow-md">
