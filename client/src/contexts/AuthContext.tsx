@@ -3,6 +3,7 @@ import type { User } from '@shared/schema';
 import { io, Socket } from 'socket.io-client';
 import { toast } from '@/hooks/use-toast';
 import api from '@/lib/api';
+import { AuthService } from '@/lib/db';
 
 interface AuthContextType {
   user: User | null;
@@ -210,8 +211,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       login(data.user, data.token);
     } catch (error) {
-      console.error('Staff login error:', error);
-      throw error;
+      console.warn('Server login failed, trying local:', error);
+      const user = await AuthService.loginStaff(staffId, passkey);
+      if (user) {
+        login(user);
+      } else {
+        throw new Error('Invalid credentials');
+      }
     }
   };
 

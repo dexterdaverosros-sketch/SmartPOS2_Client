@@ -599,7 +599,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             tenantId: data.tenant_id
           };
           // Save to local DB for future offline use
-          dbService.saveStaff([staff], tenant.id);
+          await dbService.saveStaff([staff], tenant.id);
         }
       } 
       
@@ -2009,7 +2009,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const staff = req.body;
       const tenantId = (req as any).tenantId;
       if (Array.isArray(staff)) {
-        dbService.saveStaff(staff, tenantId);
+        await dbService.saveStaff(staff, tenantId);
         res.status(200).json({ message: 'Staff updated successfully' });
       } else {
         res.status(400).json({ error: 'Invalid staff data' });

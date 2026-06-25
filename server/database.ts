@@ -1308,7 +1308,7 @@ export const dbService = {
     return db.prepare('SELECT * FROM staff WHERE tenant_id = ?').all(tenantId);
   },
 
-  saveStaff: (staff: any[], tenantId: string) => {
+  saveStaff: async (staff: any[], tenantId: string) => {
     // Debug schema
     console.log('Staff table schema:', db.prepare('PRAGMA table_info(staff)').all());
 
@@ -1318,23 +1318,28 @@ export const dbService = {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
     
-    const insertMany = db.transaction((staffMembers: any[]) => {
+    const insertMany = db.transaction(async (staffMembers: any[]) => {
       for (const member of staffMembers) {
         const effectiveTenantId = tenantId || member.tenantId || member.tenant_id;
+        // Hash passkey if not already hashed
+        let passkey = member.passkey;
+        if (passkey && !passkey.startsWith('$2')) {
+          passkey = await bcrypt.hash(passkey, 10);
+        }
         insert.run(
           member.id,
           effectiveTenantId,
           member.userId || member.user_id || null,
           member.name,
           member.staffId || member.staff_id,
-          member.passkey,
+          passkey,
           member.createdBy || member.created_by,
           member.createdAt || member.created_at || new Date().toISOString()
         );
       }
     });
     
-    insertMany(staff);
+    await insertMany(staff);
 
     // Mirror to Cloud (Supabase) if available
     if (useCloud()) {
