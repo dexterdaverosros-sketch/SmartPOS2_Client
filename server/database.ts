@@ -1345,19 +1345,23 @@ export const dbService = {
     if (useCloud()) {
       const supabase = getSupabase();
       if (supabase) {
-        // Map to snake_case for Supabase
+        // Map to snake_case for Supabase, skip columns that might not exist
         const cloudStaff = staff.map(m => {
           const effectiveTenantId = tenantId || m.tenantId || m.tenant_id;
-          return {
+          const staffData: any = {
             id: String(m.id),
             tenant_id: effectiveTenantId,
             user_id: m.userId || m.user_id || null,
             name: String(m.name || ''),
             staff_id: String(m.staffId || m.staff_id || ''),
-            passkey: String(m.passkey || ''),
-            created_by: m.createdBy || m.created_by || null,
-            created_at: m.createdAt || m.created_at || new Date().toISOString()
+            passhash: m.passkey && m.passkey.startsWith('$2') ? m.passkey : null, // Use passhash instead of passkey to match server login
+            created_by: m.createdBy || m.created_by || null
           };
+          // Only add created_at if it exists or we need it
+          if (m.createdAt || m.created_at) {
+            staffData.created_at = m.createdAt || m.created_at || new Date().toISOString();
+          }
+          return staffData;
         });
         
         supabase.from('staff').upsert(cloudStaff, { onConflict: 'id' }).then(({ error }) => {

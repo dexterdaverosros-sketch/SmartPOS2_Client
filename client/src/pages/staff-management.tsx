@@ -290,6 +290,12 @@ const StaffManagement: React.FC = () => {
         } catch (e) {
           console.warn('Failed to sync new staff to server:', e);
         }
+        // Also try to sync to cloud directly via /api/cloud/staff
+        try {
+          await api.post('/api/cloud/staff', [newStaff]);
+        } catch (e) {
+          console.warn('Failed to sync new staff to cloud:', e);
+        }
       }
     } catch (error) {
       console.error('Error adding staff:', error);

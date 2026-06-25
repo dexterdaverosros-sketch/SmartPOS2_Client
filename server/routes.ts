@@ -594,8 +594,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             name: data.name,
             staffId: data.staff_id,
             passkey: data.passhash,
-            createdBy: data.created_by,
-            createdAt: data.created_at,
+            createdBy: data.created_by || null,
+            createdAt: data.created_at || new Date().toISOString(),
             tenantId: data.tenant_id
           };
           // Save to local DB for future offline use
