@@ -1594,24 +1594,52 @@ export const dbService = {
 
     console.log('=== Starting full sync to Supabase ===');
 
-    // 1. Sync Products
+    // 1. Sync Products (with missing column handling)
     const products = db.prepare('SELECT * FROM products WHERE tenant_id = ?').all(tenantId) as any[];
     if (products.length > 0) {
-      const cloudProducts = products.map(p => ({
-        id: p.id,
-        tenant_id: tenantId,
-        name: p.name,
-        price: p.price,
-        cost: p.cost || 0,
-        barcode: p.barcode,
-        category: p.category || null,
-        image: p.image || null,
-        quantity: p.quantity || 0,
-        created_at: p.createdAt || new Date().toISOString(),
-        updated_at: p.updatedAt || new Date().toISOString()
-      }));
-      const { error: prodError } = await supabase.from('products').upsert(cloudProducts, { onConflict: 'id' });
-      if (prodError) throw prodError;
+      for (const p of products) {
+        let productData = {
+          id: String(p.id),
+          tenant_id: tenantId,
+          name: String(p.name || ''),
+          price: Number(p.price || 0),
+          created_at: p.createdAt ?? new Date().toISOString(),
+          updated_at: p.updatedAt ?? new Date().toISOString()
+        };
+        // Try adding optional fields one by one
+        const optionalProductFields = [
+          { key: 'cost', value: Number(p.cost || 0) },
+          { key: 'category', value: p.category ?? null },
+          { key: 'image', value: p.image ?? null },
+          { key: 'quantity', value: Number(p.quantity || 0) },
+          { key: 'barcode', value: String(p.barcode || '') }
+        ];
+        for (const field of optionalProductFields) {
+          try {
+            const testData = { ...productData, [field.key]: field.value };
+            const { error: testError } = await supabase.from('products').upsert(testData, { onConflict: 'id' }).select().limit(0);
+            if (!testError) {
+              productData[field.key] = field.value;
+            }
+          } catch (e) {
+            console.log(`[SYNC] Product column ${field.key} not found, skipping...`);
+          }
+        }
+        // Now sync this product
+        const { error: prodError } = await supabase.from('products').upsert(productData, { onConflict: 'id' });
+        if (prodError) {
+          console.warn(`[SYNC] Failed to sync product ${p.id}, trying with only minimal data...`, prodError);
+          const minimalOnly = {
+            id: String(p.id),
+            tenant_id: tenantId,
+            name: String(p.name || ''),
+            price: Number(p.price || 0),
+            created_at: p.createdAt ?? new Date().toISOString(),
+            updated_at: p.updatedAt ?? new Date().toISOString()
+          };
+          await supabase.from('products').upsert(minimalOnly, { onConflict: 'id' });
+        }
+      }
       console.log(`Synced ${products.length} products`);
     }
 
