@@ -1039,48 +1039,46 @@ export const dbService = {
             // Process each product individually for maximum safety
             for (const p of products) {
               try {
-                // Start with ABSOLUTELY MINIMAL product data
-                let productData = {
-                  id: String(p.id),
-                  tenant_id: tenantId,
-                  name: String(p.name || ''),
-                  price: Number(p.price || 0),
-                  created_at: p.createdAt ?? new Date().toISOString(),
-                  updated_at: p.updatedAt ?? new Date().toISOString()
-                };
-                // Try adding optional fields one by one
-                const optionalProductFields = [
-                  { key: 'cost', value: Number(p.cost || 0) },
-                  { key: 'category', value: p.category ?? null },
-                  { key: 'image', value: p.image ?? null },
-                  { key: 'quantity', value: Number(p.quantity || 0) },
-                  { key: 'barcode', value: String(p.barcode || '') }
-                ];
-                for (const field of optionalProductFields) {
-                  try {
-                    const testData = { ...productData, [field.key]: field.value };
-                    const { error: testError } = await supabase.from('products').upsert(testData, { onConflict: 'id' }).select().limit(0);
-                    if (!testError) {
-                      productData[field.key] = field.value;
-                    }
-                  } catch (e) {
-                    console.log(`[SYNC] Product column ${field.key} not found, skipping...`);
-                  }
+                // Start with ONLY the most basic columns that might exist
+            let productData: any = {
+              id: String(p.id)
+            };
+            // Try adding each essential column one by one
+            const essentialFields = [
+              { key: 'tenant_id', value: tenantId },
+              { key: 'name', value: String(p.name || '') },
+              { key: 'price', value: Number(p.price || 0) },
+              { key: 'created_at', value: p.createdAt ?? new Date().toISOString() },
+              { key: 'updated_at', value: p.updatedAt ?? new Date().toISOString() },
+              { key: 'cost', value: Number(p.cost || 0) },
+              { key: 'category', value: p.category ?? null },
+              { key: 'image', value: p.image ?? null },
+              { key: 'quantity', value: Number(p.quantity || 0) },
+              { key: 'barcode', value: String(p.barcode || '') }
+            ];
+            for (const field of essentialFields) {
+              try {
+                const testData = { ...productData, [field.key]: field.value };
+                const { error: testError } = await supabase.from('products').upsert(testData, { onConflict: 'id' }).select().limit(0);
+                if (!testError) {
+                  productData[field.key] = field.value;
+                } else {
+                  console.log(`[SYNC] Product column '${field.key}' not found, skipping...`);
                 }
-                // Now sync this product
-                const { error: prodError } = await supabase.from('products').upsert(productData, { onConflict: 'id' });
-                if (prodError) {
-                  console.warn(`[SYNC] Failed to sync product ${p.id}, trying with only minimal data...`, prodError);
-                  const minimalOnly = {
-                    id: String(p.id),
-                    tenant_id: tenantId,
-                    name: String(p.name || ''),
-                    price: Number(p.price || 0),
-                    created_at: p.createdAt ?? new Date().toISOString(),
-                    updated_at: p.updatedAt ?? new Date().toISOString()
-                  };
-                  await supabase.from('products').upsert(minimalOnly, { onConflict: 'id' });
-                }
+              } catch (e) {
+                console.log(`[SYNC] Product column '${field.key}' not found, skipping...`);
+              }
+            }
+            // Now sync with what we have
+            try {
+              const { error: prodError } = await supabase.from('products').upsert(productData, { onConflict: 'id' });
+              if (prodError) {
+                console.warn(`[SYNC] Failed to sync product ${p.id}, trying with only id...`, prodError);
+                await supabase.from('products').upsert({ id: String(p.id) }, { onConflict: 'id' });
+              }
+            } catch (finalErr) {
+              console.error(`[SYNC] Could not sync product ${p.id} at all`, finalErr);
+            }
               } catch (singleProdErr) {
                 console.error(`[SYNC] Failed to sync product ${p.id}`, singleProdErr);
               }
@@ -1598,46 +1596,45 @@ export const dbService = {
     const products = db.prepare('SELECT * FROM products WHERE tenant_id = ?').all(tenantId) as any[];
     if (products.length > 0) {
       for (const p of products) {
-        let productData = {
-          id: String(p.id),
-          tenant_id: tenantId,
-          name: String(p.name || ''),
-          price: Number(p.price || 0),
-          created_at: p.createdAt ?? new Date().toISOString(),
-          updated_at: p.updatedAt ?? new Date().toISOString()
+        // Start with ONLY the most basic columns that might exist
+        let productData: any = {
+          id: String(p.id)
         };
-        // Try adding optional fields one by one
-        const optionalProductFields = [
+        // Try adding each column one by one
+        const allProductFields = [
+          { key: 'tenant_id', value: tenantId },
+          { key: 'name', value: String(p.name || '') },
+          { key: 'price', value: Number(p.price || 0) },
+          { key: 'created_at', value: p.createdAt ?? new Date().toISOString() },
+          { key: 'updated_at', value: p.updatedAt ?? new Date().toISOString() },
           { key: 'cost', value: Number(p.cost || 0) },
           { key: 'category', value: p.category ?? null },
           { key: 'image', value: p.image ?? null },
           { key: 'quantity', value: Number(p.quantity || 0) },
           { key: 'barcode', value: String(p.barcode || '') }
         ];
-        for (const field of optionalProductFields) {
+        for (const field of allProductFields) {
           try {
             const testData = { ...productData, [field.key]: field.value };
             const { error: testError } = await supabase.from('products').upsert(testData, { onConflict: 'id' }).select().limit(0);
             if (!testError) {
               productData[field.key] = field.value;
+            } else {
+              console.log(`[SYNC] Product column '${field.key}' not found, skipping...`);
             }
           } catch (e) {
-            console.log(`[SYNC] Product column ${field.key} not found, skipping...`);
+            console.log(`[SYNC] Product column '${field.key}' not found, skipping...`);
           }
         }
-        // Now sync this product
-        const { error: prodError } = await supabase.from('products').upsert(productData, { onConflict: 'id' });
-        if (prodError) {
-          console.warn(`[SYNC] Failed to sync product ${p.id}, trying with only minimal data...`, prodError);
-          const minimalOnly = {
-            id: String(p.id),
-            tenant_id: tenantId,
-            name: String(p.name || ''),
-            price: Number(p.price || 0),
-            created_at: p.createdAt ?? new Date().toISOString(),
-            updated_at: p.updatedAt ?? new Date().toISOString()
-          };
-          await supabase.from('products').upsert(minimalOnly, { onConflict: 'id' });
+        // Now sync with what we have
+        try {
+          const { error: prodError } = await supabase.from('products').upsert(productData, { onConflict: 'id' });
+          if (prodError) {
+            console.warn(`[SYNC] Failed to sync product ${p.id}, trying with only id...`, prodError);
+            await supabase.from('products').upsert({ id: String(p.id) }, { onConflict: 'id' });
+          }
+        } catch (finalErr) {
+          console.error(`[SYNC] Could not sync product ${p.id} at all`, finalErr);
         }
       }
       console.log(`Synced ${products.length} products`);
@@ -1646,84 +1643,173 @@ export const dbService = {
     // 2. Sync Variants
     const variants = db.prepare('SELECT * FROM variants WHERE tenant_id = ?').all(tenantId) as any[];
     if (variants.length > 0) {
-      const cloudVariants = variants.map(v => ({
-        id: v.id,
-        tenant_id: tenantId,
-        product_id: v.product_id,
-        name: v.name,
-        barcode: v.barcode || null,
-        price: v.price,
-        cost: v.cost,
-        image: v.image || null,
-        quantity: v.quantity || 0,
-        created_at: v.created_at || new Date().toISOString(),
-        updated_at: v.updated_at || new Date().toISOString()
-      }));
-      const { error: varError } = await supabase.from('variants').upsert(cloudVariants, { onConflict: 'id' });
-      if (varError) throw varError;
+      for (const v of variants) {
+        let variantData: any = { id: String(v.id) };
+        const allVariantFields = [
+          { key: 'tenant_id', value: tenantId },
+          { key: 'product_id', value: v.product_id },
+          { key: 'name', value: v.name },
+          { key: 'barcode', value: v.barcode || null },
+          { key: 'price', value: v.price },
+          { key: 'cost', value: v.cost },
+          { key: 'image', value: v.image || null },
+          { key: 'quantity', value: v.quantity || 0 },
+          { key: 'created_at', value: v.created_at || new Date().toISOString() },
+          { key: 'updated_at', value: v.updated_at || new Date().toISOString() }
+        ];
+        for (const field of allVariantFields) {
+          try {
+            const testData = { ...variantData, [field.key]: field.value };
+            const { error: testError } = await supabase.from('variants').upsert(testData, { onConflict: 'id' }).select().limit(0);
+            if (!testError) {
+              variantData[field.key] = field.value;
+            } else {
+              console.log(`[SYNC] Variant column '${field.key}' not found, skipping...`);
+            }
+          } catch (e) {
+            console.log(`[SYNC] Variant column '${field.key}' not found, skipping...`);
+          }
+        }
+        try {
+          const { error: varError } = await supabase.from('variants').upsert(variantData, { onConflict: 'id' });
+          if (varError) {
+            console.warn(`[SYNC] Failed to sync variant ${v.id}, trying only id...`, varError);
+            await supabase.from('variants').upsert({ id: String(v.id) }, { onConflict: 'id' });
+          }
+        } catch (finalErr) {
+          console.error(`[SYNC] Could not sync variant ${v.id} at all`, finalErr);
+        }
+      }
       console.log(`Synced ${variants.length} variants`);
     }
 
     // 3. Sync Staff
     const staff = db.prepare('SELECT * FROM staff WHERE tenant_id = ?').all(tenantId) as any[];
     if (staff.length > 0) {
-      const cloudStaff = staff.map(s => ({
-        id: s.id,
-        tenant_id: tenantId,
-        user_id: s.userId || null,
-        name: s.name,
-        staff_id: s.staffId,
-        passkey: s.passkey || null,
-        created_by: s.createdBy || null,
-        created_at: s.createdAt || new Date().toISOString()
-      }));
-      const { error: staffError } = await supabase.from('staff').upsert(cloudStaff, { onConflict: 'id' });
-      if (staffError) throw staffError;
+      for (const s of staff) {
+        let staffData: any = { id: String(s.id) };
+        const allStaffFields = [
+          { key: 'tenant_id', value: tenantId },
+          { key: 'user_id', value: s.userId || null },
+          { key: 'name', value: s.name },
+          { key: 'staff_id', value: s.staffId },
+          { key: 'passkey', value: s.passkey || null },
+          { key: 'passhash', value: s.passkey || null }, // for possible staff table with passhash instead of passkey
+          { key: 'created_by', value: s.createdBy || null },
+          { key: 'created_at', value: s.createdAt || new Date().toISOString() }
+        ];
+        for (const field of allStaffFields) {
+          try {
+            const testData = { ...staffData, [field.key]: field.value };
+            const { error: testError } = await supabase.from('staff').upsert(testData, { onConflict: 'id' }).select().limit(0);
+            if (!testError) {
+              staffData[field.key] = field.value;
+            } else {
+              console.log(`[SYNC] Staff column '${field.key}' not found, skipping...`);
+            }
+          } catch (e) {
+            console.log(`[SYNC] Staff column '${field.key}' not found, skipping...`);
+          }
+        }
+        try {
+          const { error: staffError } = await supabase.from('staff').upsert(staffData, { onConflict: 'id' });
+          if (staffError) {
+            console.warn(`[SYNC] Failed to sync staff ${s.id}, trying only id...`, staffError);
+            await supabase.from('staff').upsert({ id: String(s.id) }, { onConflict: 'id' });
+          }
+        } catch (finalErr) {
+          console.error(`[SYNC] Could not sync staff ${s.id} at all`, finalErr);
+        }
+      }
       console.log(`Synced ${staff.length} staff`);
     }
 
     // 4. Sync Users (Admins)
     const users = db.prepare('SELECT * FROM users WHERE tenant_id = ?').all(tenantId) as any[];
     if (users.length > 0) {
-      const cloudUsers = users.map(u => ({
-        id: u.id,
-        tenant_id: tenantId,
-        username: u.username,
-        password: u.password,
-        role: u.role,
-        business_name: u.businessName || null,
-        owner_name: u.ownerName || null,
-        mobile: u.mobile || null,
-        profile_image: u.profileImage || null,
-        security_question_1: u.securityQuestion1 || null,
-        security_answer_1: u.securityAnswer1 || null,
-        security_question_2: u.securityQuestion2 || null,
-        security_answer_2: u.securityAnswer2 || null,
-        security_question_3: u.securityQuestion3 || null,
-        security_answer_3: u.securityAnswer3 || null,
-        created_at: u.createdAt || new Date().toISOString()
-      }));
-      const { error: userError } = await supabase.from('users').upsert(cloudUsers, { onConflict: 'id' });
-      if (userError) throw userError;
+      for (const u of users) {
+        let userData: any = { id: String(u.id) };
+        const allUserFields = [
+          { key: 'tenant_id', value: tenantId },
+          { key: 'username', value: u.username },
+          { key: 'password', value: u.password },
+          { key: 'role', value: u.role },
+          { key: 'business_name', value: u.businessName || null },
+          { key: 'owner_name', value: u.ownerName || null },
+          { key: 'mobile', value: u.mobile || null },
+          { key: 'profile_image', value: u.profileImage || null },
+          { key: 'security_question_1', value: u.securityQuestion1 || null },
+          { key: 'security_answer_1', value: u.securityAnswer1 || null },
+          { key: 'security_question_2', value: u.securityQuestion2 || null },
+          { key: 'security_answer_2', value: u.securityAnswer2 || null },
+          { key: 'security_question_3', value: u.securityQuestion3 || null },
+          { key: 'security_answer_3', value: u.securityAnswer3 || null },
+          { key: 'created_at', value: u.createdAt || new Date().toISOString() }
+        ];
+        for (const field of allUserFields) {
+          try {
+            const testData = { ...userData, [field.key]: field.value };
+            const { error: testError } = await supabase.from('users').upsert(testData, { onConflict: 'id' }).select().limit(0);
+            if (!testError) {
+              userData[field.key] = field.value;
+            } else {
+              console.log(`[SYNC] User column '${field.key}' not found, skipping...`);
+            }
+          } catch (e) {
+            console.log(`[SYNC] User column '${field.key}' not found, skipping...`);
+          }
+        }
+        try {
+          const { error: userError } = await supabase.from('users').upsert(userData, { onConflict: 'id' });
+          if (userError) {
+            console.warn(`[SYNC] Failed to sync user ${u.id}, trying only id...`, userError);
+            await supabase.from('users').upsert({ id: String(u.id) }, { onConflict: 'id' });
+          }
+        } catch (finalErr) {
+          console.error(`[SYNC] Could not sync user ${u.id} at all`, finalErr);
+        }
+      }
       console.log(`Synced ${users.length} users`);
     }
 
     // 5. Sync Customers
     const customers = db.prepare('SELECT * FROM customers WHERE tenant_id = ?').all(tenantId) as any[];
     if (customers.length > 0) {
-      const cloudCustomers = customers.map(c => ({
-        id: c.id,
-        tenant_id: tenantId,
-        name: c.name,
-        phone: c.phone,
-        address: c.address || null,
-        credit_rating: c.credit_rating,
-        photo_url: c.photo_url || null,
-        created_at: c.created_at || new Date().toISOString(),
-        updated_at: c.updated_at || new Date().toISOString()
-      }));
-      const { error: custError } = await supabase.from('customers').upsert(cloudCustomers, { onConflict: 'id' });
-      if (custError) throw custError;
+      for (const c of customers) {
+        let customerData: any = { id: String(c.id) };
+        const allCustomerFields = [
+          { key: 'tenant_id', value: tenantId },
+          { key: 'name', value: c.name },
+          { key: 'phone', value: c.phone },
+          { key: 'address', value: c.address || null },
+          { key: 'credit_rating', value: c.credit_rating },
+          { key: 'photo_url', value: c.photo_url || null },
+          { key: 'created_at', value: c.created_at || new Date().toISOString() },
+          { key: 'updated_at', value: c.updated_at || new Date().toISOString() }
+        ];
+        for (const field of allCustomerFields) {
+          try {
+            const testData = { ...customerData, [field.key]: field.value };
+            const { error: testError } = await supabase.from('customers').upsert(testData, { onConflict: 'id' }).select().limit(0);
+            if (!testError) {
+              customerData[field.key] = field.value;
+            } else {
+              console.log(`[SYNC] Customer column '${field.key}' not found, skipping...`);
+            }
+          } catch (e) {
+            console.log(`[SYNC] Customer column '${field.key}' not found, skipping...`);
+          }
+        }
+        try {
+          const { error: custError } = await supabase.from('customers').upsert(customerData, { onConflict: 'id' });
+          if (custError) {
+            console.warn(`[SYNC] Failed to sync customer ${c.id}, trying only id...`, custError);
+            await supabase.from('customers').upsert({ id: String(c.id) }, { onConflict: 'id' });
+          }
+        } catch (finalErr) {
+          console.error(`[SYNC] Could not sync customer ${c.id} at all`, finalErr);
+        }
+      }
       console.log(`Synced ${customers.length} customers`);
     }
 
