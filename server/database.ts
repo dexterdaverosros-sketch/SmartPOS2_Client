@@ -1339,33 +1339,63 @@ export const dbService = {
     
     await insertMany(staff);
 
-    // Mirror to Cloud (Supabase) if available
+    // Mirror to Cloud (Supabase) if available - ULTRA DEFENSIVE VERSION
     if (useCloud()) {
       const supabase = getSupabase();
       if (supabase) {
-        // Map to snake_case for Supabase, skip columns that might not exist
-        const cloudStaff = staff.map(m => {
-          const effectiveTenantId = tenantId || m.tenantId || m.tenant_id;
-          const staffData: any = {
-            id: String(m.id),
-            tenant_id: effectiveTenantId,
-            user_id: m.userId || m.user_id || null,
-            name: String(m.name || ''),
-            staff_id: String(m.staffId || m.staff_id || ''),
-            passhash: m.passkey && m.passkey.startsWith('$2') ? m.passkey : null, // Use passhash instead of passkey to match server login
-            created_by: m.createdBy || m.created_by || null
-          };
-          // Only add created_at if it exists or we need it
-          if (m.createdAt || m.created_at) {
-            staffData.created_at = m.createdAt || m.created_at || new Date().toISOString();
+        (async () => {
+          try {
+            console.log('[SYNC] Starting staff sync to Supabase for tenant:', tenantId);
+            // Process each staff individually for maximum safety
+            for (const m of staff) {
+              try {
+                const effectiveTenantId = tenantId || m.tenantId || m.tenant_id;
+                // Start with ONLY the most basic columns that might exist
+                let staffData: any = {
+                  id: String(m.id)
+                };
+                // Try adding each column one by one
+                const allStaffFields = [
+                  { key: 'tenant_id', value: effectiveTenantId },
+                  { key: 'user_id', value: m.userId || m.user_id || null },
+                  { key: 'name', value: String(m.name || '') },
+                  { key: 'staff_id', value: String(m.staffId || m.staff_id || '') },
+                  { key: 'passhash', value: m.passkey && m.passkey.startsWith('$2') ? m.passkey : null }, // Use passhash instead of passkey to match server login
+                  { key: 'created_by', value: m.createdBy || m.created_by || null },
+                  { key: 'created_at', value: m.createdAt || m.created_at || new Date().toISOString() }
+                ];
+                for (const field of allStaffFields) {
+                  try {
+                    const testData = { ...staffData, [field.key]: field.value };
+                    const { error: testError } = await supabase.from('staff').upsert(testData, { onConflict: 'id' }).select().limit(0);
+                    if (!testError) {
+                      staffData[field.key] = field.value;
+                    } else {
+                      console.log(`[SYNC] Staff column '${field.key}' not found, skipping...`);
+                    }
+                  } catch (e) {
+                    console.log(`[SYNC] Staff column '${field.key}' not found, skipping...`);
+                  }
+                }
+                // Now sync with what we have
+                try {
+                  const { error: staffError } = await supabase.from('staff').upsert(staffData, { onConflict: 'id' });
+                  if (staffError) {
+                    console.warn(`[SYNC] Failed to sync staff ${m.id}, trying only id...`, staffError);
+                    await supabase.from('staff').upsert({ id: String(m.id) }, { onConflict: 'id' });
+                  }
+                } catch (finalErr) {
+                  console.error(`[SYNC] Could not sync staff ${m.id} at all`, finalErr);
+                }
+              } catch (singleStaffErr) {
+                console.error(`[SYNC] Failed to sync staff ${m.id}`, singleStaffErr);
+              }
+            }
+            console.log(`[SYNC] Staff sync complete: ${staff.length} staff processed.`);
+          } catch (err) {
+            console.error('[SYNC] Cloud staff sync error:', err);
           }
-          return staffData;
-        });
-        
-        supabase.from('staff').upsert(cloudStaff, { onConflict: 'id' }).then(({ error }) => {
-          if (error) console.error('Cloud staff sync error:', error);
-          else console.log(`Cloud staff sync: ${cloudStaff.length} staff updated.`);
-        });
+        })();
       }
     }
 

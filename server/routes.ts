@@ -633,6 +633,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       dbService.createSession(session);
 
+      // Auto-pull all data from cloud on login for multi-device sync ONLY IF we have a real tenant in Supabase
+      if (useCloud() && tenant && tenant.id !== 'default-tenant-id') {
+        try {
+          const tenantId = session.tenant_id;
+          console.log('=== AUTO-PULLING DATA FROM CLOUD (STAFF LOGIN) ===');
+          await dbService.pullAllFromCloud(tenantId);
+          console.log('=== AUTO-PULL COMPLETED (STAFF LOGIN) ===');
+        } catch (pullError) {
+          console.warn('=== AUTO-PULL FAILED (STAFF LOGIN - continuing anyway) ===', pullError);
+        }
+      }
+
       // Return token and user info
       res.status(200).json({
         token,
