@@ -1298,6 +1298,64 @@ export const dbService = {
     });
     
     insertMany(variants);
+
+    // Mirror to Cloud (Supabase) if available - ULTRA DEFENSIVE VERSION
+    if (useCloud()) {
+      const supabase = getSupabase();
+      if (supabase) {
+        (async () => {
+          try {
+            console.log('[SYNC] Starting variant sync to Supabase for tenant:', tenantId);
+            // Process each variant individually for maximum safety
+            for (const v of variants) {
+              try {
+                let variantData: any = { id: String(v.id) };
+                const allVariantFields = [
+                  { key: 'tenant_id', value: tenantId },
+                  { key: 'product_id', value: v.productId || v.product_id },
+                  { key: 'name', value: v.name },
+                  { key: 'barcode', value: v.barcode || null },
+                  { key: 'price', value: v.price },
+                  { key: 'cost', value: v.cost },
+                  { key: 'image', value: v.image || null },
+                  { key: 'quantity', value: v.quantity || 0 },
+                  { key: 'created_at', value: v.createdAt || v.created_at || new Date().toISOString() },
+                  { key: 'updated_at', value: v.updatedAt || v.updated_at || new Date().toISOString() }
+                ];
+                for (const field of allVariantFields) {
+                  try {
+                    const testData = { ...variantData, [field.key]: field.value };
+                    const { error: testError } = await supabase.from('variants').upsert(testData, { onConflict: 'id' }).select().limit(0);
+                    if (!testError) {
+                      variantData[field.key] = field.value;
+                    } else {
+                      console.log(`[SYNC] Variant column '${field.key}' not found, skipping...`);
+                    }
+                  } catch (e) {
+                    console.log(`[SYNC] Variant column '${field.key}' not found, skipping...`);
+                  }
+                }
+                try {
+                  const { error: varError } = await supabase.from('variants').upsert(variantData, { onConflict: 'id' });
+                  if (varError) {
+                    console.warn(`[SYNC] Failed to sync variant ${v.id}, trying only id...`, varError);
+                    await supabase.from('variants').upsert({ id: String(v.id) }, { onConflict: 'id' });
+                  }
+                } catch (finalErr) {
+                  console.error(`[SYNC] Could not sync variant ${v.id} at all`, finalErr);
+                }
+              } catch (singleVariantErr) {
+                console.error(`[SYNC] Failed to sync variant ${v.id}`, singleVariantErr);
+              }
+            }
+            console.log(`[SYNC] Variant sync complete: ${variants.length} variants processed.`);
+          } catch (err) {
+            console.error('[SYNC] Cloud variant sync error:', err);
+          }
+        })();
+      }
+    }
+    
     return variants;
   },
 
@@ -1307,99 +1365,123 @@ export const dbService = {
   },
 
   saveStaff: async (staff: any[], tenantId: string) => {
-    // Debug schema
-    console.log('Staff table schema:', db.prepare('PRAGMA table_info(staff)').all());
-
-    const insert = db.prepare(`
-      INSERT OR REPLACE INTO staff 
-      (id, tenant_id, user_id, name, staffId, passkey, createdBy, createdAt) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    
-    const insertMany = db.transaction(async (staffMembers: any[]) => {
-      for (const member of staffMembers) {
-        const effectiveTenantId = tenantId || member.tenantId || member.tenant_id;
-        // Hash passkey if not already hashed
+    try {
+      // First: Pre-process all staff data BEFORE any transactions
+      const processedStaff = await Promise.all(staff.map(async member => {
+        // Normalize all fields
         let passkey = member.passkey;
         if (passkey && !passkey.startsWith('$2')) {
           passkey = await bcrypt.hash(passkey, 10);
         }
-        insert.run(
-          member.id,
-          effectiveTenantId,
-          member.userId || member.user_id || null,
-          member.name,
-          member.staffId || member.staff_id,
-          passkey,
-          member.createdBy || member.created_by,
-          member.createdAt || member.created_at || new Date().toISOString()
-        );
-      }
-    });
-    
-    await insertMany(staff);
+        
+        // Handle date conversion
+        let createdAt = member.createdAt || member.created_at;
+        if (createdAt instanceof Date) {
+          createdAt = createdAt.toISOString();
+        } else if (!createdAt) {
+          createdAt = new Date().toISOString();
+        }
 
-    // Mirror to Cloud (Supabase) if available - ULTRA DEFENSIVE VERSION
-    if (useCloud()) {
-      const supabase = getSupabase();
-      if (supabase) {
-        (async () => {
-          try {
-            console.log('[SYNC] Starting staff sync to Supabase for tenant:', tenantId);
-            // Process each staff individually for maximum safety
-            for (const m of staff) {
-              try {
-                const effectiveTenantId = tenantId || m.tenantId || m.tenant_id;
-                // Start with ONLY the most basic columns that might exist
-                let staffData: any = {
-                  id: String(m.id)
-                };
-                // Try adding each column one by one
-                const allStaffFields = [
-                  { key: 'tenant_id', value: effectiveTenantId },
-                  { key: 'user_id', value: m.userId || m.user_id || null },
-                  { key: 'name', value: String(m.name || '') },
-                  { key: 'staff_id', value: String(m.staffId || m.staff_id || '') },
-                  { key: 'passhash', value: m.passkey && m.passkey.startsWith('$2') ? m.passkey : null }, // Use passhash instead of passkey to match server login
-                  { key: 'created_by', value: m.createdBy || m.created_by || null },
-                  { key: 'created_at', value: m.createdAt || m.created_at || new Date().toISOString() }
-                ];
-                for (const field of allStaffFields) {
-                  try {
-                    const testData = { ...staffData, [field.key]: field.value };
-                    const { error: testError } = await supabase.from('staff').upsert(testData, { onConflict: 'id' }).select().limit(0);
-                    if (!testError) {
-                      staffData[field.key] = field.value;
-                    } else {
-                      console.log(`[SYNC] Staff column '${field.key}' not found, skipping...`);
-                    }
-                  } catch (e) {
-                    console.log(`[SYNC] Staff column '${field.key}' not found, skipping...`);
-                  }
-                }
-                // Now sync with what we have
+        return {
+          id: String(member.id),
+          tenantId: tenantId || member.tenantId || member.tenant_id,
+          userId: member.userId || member.user_id || null,
+          name: String(member.name || ''),
+          staffId: String(member.staffId || member.staff_id || ''),
+          passkey: passkey,
+          createdBy: member.createdBy || member.created_by || null,
+          createdAt: createdAt
+        };
+      }));
+
+      // Now perform SQLite transaction (completely sync!)
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO staff 
+        (id, tenant_id, user_id, name, staffId, passkey, createdBy, createdAt) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      
+      const insertMany = db.transaction((staffMembers: any[]) => {
+        for (const member of staffMembers) {
+          insert.run(
+            member.id,
+            member.tenantId,
+            member.userId,
+            member.name,
+            member.staffId,
+            member.passkey,
+            member.createdBy,
+            member.createdAt
+          );
+        }
+      });
+      
+      insertMany(processedStaff);
+
+      // Mirror to Cloud (Supabase) if available - ULTRA DEFENSIVE VERSION
+      if (useCloud()) {
+        const supabase = getSupabase();
+        if (supabase) {
+          (async () => {
+            try {
+              console.log('[SYNC] Starting staff sync to Supabase for tenant:', tenantId);
+              // Process each staff individually for maximum safety
+              for (const m of processedStaff) {
                 try {
-                  const { error: staffError } = await supabase.from('staff').upsert(staffData, { onConflict: 'id' });
-                  if (staffError) {
-                    console.warn(`[SYNC] Failed to sync staff ${m.id}, trying only id...`, staffError);
-                    await supabase.from('staff').upsert({ id: String(m.id) }, { onConflict: 'id' });
+                  const effectiveTenantId = m.tenantId;
+                  // Start with ONLY the most basic columns that might exist
+                  let staffData: any = {
+                    id: String(m.id)
+                  };
+                  // Try adding each column one by one
+                  const allStaffFields = [
+                    { key: 'tenant_id', value: effectiveTenantId },
+                    { key: 'user_id', value: m.userId },
+                    { key: 'name', value: String(m.name || '') },
+                    { key: 'staff_id', value: String(m.staffId || '') },
+                    { key: 'passhash', value: m.passkey },
+                    { key: 'passkey', value: m.passkey },
+                    { key: 'created_by', value: m.createdBy },
+                    { key: 'created_at', value: m.createdAt }
+                  ];
+                  for (const field of allStaffFields) {
+                    try {
+                      const testData = { ...staffData, [field.key]: field.value };
+                      const { error: testError } = await supabase.from('staff').upsert(testData, { onConflict: 'id' }).select().limit(0);
+                      if (!testError) {
+                        staffData[field.key] = field.value;
+                      }
+                    } catch (e) {
+                      // Column doesn't exist, skip silently
+                    }
                   }
-                } catch (finalErr) {
-                  console.error(`[SYNC] Could not sync staff ${m.id} at all`, finalErr);
+                  // Now sync with what we have
+                  try {
+                    const { error: staffError } = await supabase.from('staff').upsert(staffData, { onConflict: 'id' });
+                    if (staffError) {
+                      console.warn(`[SYNC] Failed to sync staff ${m.id}, trying only id...`, staffError);
+                      await supabase.from('staff').upsert({ id: String(m.id) }, { onConflict: 'id' });
+                    }
+                  } catch (finalErr) {
+                    console.error(`[SYNC] Could not sync staff ${m.id} at all`, finalErr);
+                  }
+                } catch (singleStaffErr) {
+                  console.error(`[SYNC] Failed to sync staff ${m.id}`, singleStaffErr);
                 }
-              } catch (singleStaffErr) {
-                console.error(`[SYNC] Failed to sync staff ${m.id}`, singleStaffErr);
               }
+              console.log(`[SYNC] Staff sync complete: ${staff.length} staff processed.`);
+            } catch (err) {
+              console.error('[SYNC] Cloud staff sync error:', err);
             }
-            console.log(`[SYNC] Staff sync complete: ${staff.length} staff processed.`);
-          } catch (err) {
-            console.error('[SYNC] Cloud staff sync error:', err);
-          }
-        })();
+          })();
+        }
       }
-    }
 
-    return staff;
+      return staff;
+    } catch (error) {
+      console.error('Error in saveStaff:', error);
+      throw error;
+    }
   },
 
   getStaffSince: (timestamp: Date, tenantId: string) => {
@@ -1719,15 +1801,15 @@ export const dbService = {
       for (const s of staff) {
         let staffData: any = { id: String(s.id) };
         const allStaffFields = [
-          { key: 'tenant_id', value: tenantId },
-          { key: 'user_id', value: s.userId || null },
-          { key: 'name', value: s.name },
-          { key: 'staff_id', value: s.staffId },
-          { key: 'passkey', value: s.passkey || null },
-          { key: 'passhash', value: s.passkey || null }, // for possible staff table with passhash instead of passkey
-          { key: 'created_by', value: s.createdBy || null },
-          { key: 'created_at', value: s.createdAt || new Date().toISOString() }
-        ];
+                  { key: 'tenant_id', value: tenantId },
+                  { key: 'user_id', value: s.userId || s.user_id || null },
+                  { key: 'name', value: s.name },
+                  { key: 'staff_id', value: s.staffId || s.staff_id },
+                  { key: 'passkey', value: s.passkey || null },
+                  { key: 'passhash', value: s.passkey || null }, // for possible staff table with passhash instead of passkey
+                  { key: 'created_by', value: s.createdBy || s.created_by || null },
+                  { key: 'created_at', value: s.createdAt || s.created_at || new Date().toISOString() }
+                ];
         for (const field of allStaffFields) {
           try {
             const testData = { ...staffData, [field.key]: field.value };

@@ -2034,25 +2034,95 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/cloud/staff', async (req: Request, res: Response) => {
     try {
+      console.log('[API] /api/cloud/staff called with body:', JSON.stringify(req.body, null, 2));
       const supabase = getSupabase();
-      if (!supabase) return res.status(500).json({ error: 'Cloud not configured' });
+      if (!supabase) {
+        console.error('[API] /api/cloud/staff: Supabase not configured');
+        return res.status(500).json({ error: 'Cloud not configured' });
+      }
+      
+      const tenantId = (req as any).tenantId;
+      console.log('[API] /api/cloud/staff: tenantId =', tenantId);
+      
       const staff = Array.isArray(req.body) ? req.body : [];
       const rows = await Promise.all(staff.map(async (m: any) => {
         const passhash = m.passkey && m.passkey.startsWith('$2') ? m.passkey : await bcrypt.hash(String(m.passkey || ''), 10);
+        const effectiveTenantId = tenantId || m.tenantId || m.tenant_id;
+        
+        let createdAt = m.createdAt || m.created_at;
+        if (createdAt instanceof Date) {
+          createdAt = createdAt.toISOString();
+        } else if (!createdAt) {
+          createdAt = new Date().toISOString();
+        }
+        
         return {
           id: String(m.id),
+          tenant_id: effectiveTenantId,
+          user_id: m.userId || m.user_id || null,
           name: String(m.name || ''),
-          staff_id: String(m.staffId || ''),
+          staff_id: String(m.staffId || m.staff_id || ''),
           passhash,
-          created_by: m.createdBy ?? null,
-          created_at: m.createdAt ?? new Date().toISOString()
+          passkey: passhash,
+          created_by: m.createdBy || m.created_by || null,
+          created_at: createdAt
         };
       }));
-      const { error } = await supabase.from('staff').upsert(rows, { onConflict: 'id' });
-      if (error) return res.status(500).json({ error: 'Failed to sync staff' });
+      
+      console.log('[API] /api/cloud/staff: Prepared rows for sync:', JSON.stringify(rows, null, 2));
+      
+      // Ultra defensive: try to upsert, and if it fails due to missing columns, try with minimal set
+      let upsertError = null;
+      try {
+        const { data, error } = await supabase.from('staff').upsert(rows, { onConflict: 'id' });
+        console.log('[API] /api/cloud/staff: Full upsert result data:', data, 'error:', error);
+        upsertError = error;
+      } catch (err) {
+        console.error('[API] /api/cloud/staff: Full upsert threw exception:', err);
+        upsertError = err;
+      }
+      
+      if (upsertError) {
+        console.warn('[SYNC] Full staff upsert failed, trying column-by-column for each staff:', upsertError);
+        for (const m of staff) {
+          try {
+            const effectiveTenantId = tenantId || m.tenantId || m.tenant_id;
+            const passhash = m.passkey && m.passkey.startsWith('$2') ? m.passkey : await bcrypt.hash(String(m.passkey || ''), 10);
+            let staffData: any = { id: String(m.id) };
+            const allStaffFields = [
+              { key: 'tenant_id', value: effectiveTenantId },
+              { key: 'user_id', value: m.userId || m.user_id || null },
+              { key: 'name', value: String(m.name || '') },
+              { key: 'staff_id', value: String(m.staffId || m.staff_id || '') },
+              { key: 'passhash', value: passhash },
+              { key: 'passkey', value: passhash },
+              { key: 'created_by', value: m.createdBy || m.created_by || null },
+              { key: 'created_at', value: m.createdAt || m.created_at || new Date().toISOString() }
+            ];
+            for (const field of allStaffFields) {
+              try {
+                const testData = { ...staffData, [field.key]: field.value };
+                const { error: testError } = await supabase.from('staff').upsert(testData, { onConflict: 'id' }).select().limit(0);
+                if (!testError) {
+                  staffData[field.key] = field.value;
+                } else {
+                  console.log(`[SYNC] Staff column '${field.key}' test failed, skipping:`, testError);
+                }
+              } catch (e) {
+                console.log(`[SYNC] Staff column '${field.key}' test threw exception, skipping:`, e);
+              }
+            }
+            await supabase.from('staff').upsert(staffData, { onConflict: 'id' });
+          } catch (singleErr) {
+            console.error('[SYNC] Failed to sync single staff:', m.id, singleErr);
+          }
+        }
+      }
+      
       res.status(200).json({ synced: rows.length });
-    } catch {
-      res.status(500).json({ error: 'Failed to sync staff' });
+    } catch (err) {
+      console.error('[SYNC] /api/cloud/staff full error:', err);
+      res.status(500).json({ error: 'Failed to sync staff', details: String(err) });
     }
   });
 

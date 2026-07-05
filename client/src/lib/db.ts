@@ -343,7 +343,7 @@ export class AuthService {
       staffId: staffData.staffId,
       passkey: hashedPasskey,
       createdBy: staffData.createdBy,
-      createdAt: new Date(),
+      createdAt: new Date().toISOString(),
     };
 
     await db.staff.add(staff);
