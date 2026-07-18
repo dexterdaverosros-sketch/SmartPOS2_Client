@@ -176,7 +176,7 @@ const DeveloperConsole: React.FC = () => {
   useEffect(() => {
     const isDev = localStorage.getItem('is_dev');
     if (isDev !== 'true') {
-      setLocation('/developer-login');
+      setLocation('/developer-login', { replace: true });
     }
   }, [setLocation]);
 
