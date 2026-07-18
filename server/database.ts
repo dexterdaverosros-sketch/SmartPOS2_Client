@@ -19,7 +19,9 @@ const __dirname = path.dirname(__filename);
 let db: any;
 export const initSQLite = () => {
   if (db) return db;
-  const dataDir = path.resolve(__dirname, 'data');
+  const dataDir = process.env.DATA_DIR 
+    ? path.resolve(process.env.DATA_DIR) 
+    : path.resolve(__dirname, 'data');
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
   }
