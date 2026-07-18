@@ -1075,11 +1075,63 @@ export const dbService = {
             try {
               const { error: prodError } = await supabase.from('products').upsert(productData, { onConflict: 'id' });
               if (prodError) {
+                console.error(`[SYNC FAILURE]`, {
+                  productId: p.id,
+                  tenantId,
+                  payload: productData,
+                  error: prodError,
+                  errorMessage: prodError.message,
+                  errorDetails: prodError.details,
+                  errorHint: prodError.hint,
+                  errorCode: prodError.code,
+                  tableName: 'products'
+                });
                 console.warn(`[SYNC] Failed to sync product ${p.id}, trying with only id...`, prodError);
-                await supabase.from('products').upsert({ id: String(p.id) }, { onConflict: 'id' });
+                try {
+                  const { error: finalError } = await supabase.from('products').upsert({ id: String(p.id) }, { onConflict: 'id' });
+                  if (finalError) {
+                    console.error(`[SYNC FAILURE]`, {
+                      productId: p.id,
+                      tenantId,
+                      payload: { id: String(p.id) },
+                      error: finalError,
+                      errorMessage: finalError.message,
+                      errorDetails: finalError.details,
+                      errorHint: finalError.hint,
+                      errorCode: finalError.code,
+                      tableName: 'products'
+                    });
+                  } else {
+                    console.log(`[SYNC SUCCESS] Product ID: ${p.id}, Tenant ID: ${tenantId}`);
+                  }
+                } catch (catchErr: any) {
+                  console.error(`[SYNC FAILURE]`, {
+                    productId: p.id,
+                    tenantId,
+                    payload: { id: String(p.id) },
+                    error: catchErr,
+                    errorMessage: catchErr.message,
+                    errorDetails: catchErr.details,
+                    errorHint: catchErr.hint,
+                    errorCode: catchErr.code,
+                    tableName: 'products'
+                  });
+                }
+              } else {
+                console.log(`[SYNC SUCCESS] Product ID: ${p.id}, Tenant ID: ${tenantId}`);
               }
-            } catch (finalErr) {
-              console.error(`[SYNC] Could not sync product ${p.id} at all`, finalErr);
+            } catch (finalErr: any) {
+              console.error(`[SYNC FAILURE]`, {
+                productId: p.id,
+                tenantId,
+                payload: productData,
+                error: finalErr,
+                errorMessage: finalErr.message,
+                errorDetails: finalErr.details,
+                errorHint: finalErr.hint,
+                errorCode: finalErr.code,
+                tableName: 'products'
+              });
             }
               } catch (singleProdErr) {
                 console.error(`[SYNC] Failed to sync product ${p.id}`, singleProdErr);

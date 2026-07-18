@@ -1191,9 +1191,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const supabase = getSupabase();
       if (!supabase) return res.status(500).json({ error: 'Cloud not configured' });
+      const tenantId = (req as any).tenantId;
       const products = Array.isArray(req.body) ? req.body : [];
       const rows = products.map((p: any) => ({
         id: String(p.id),
+        tenant_id: tenantId,
         name: String(p.name || ''),
         price: Number(p.price || 0),
         cost: Number(p.cost || 0),
@@ -1204,11 +1206,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
         created_at: p.createdAt ?? new Date().toISOString(),
         updated_at: p.updatedAt ?? new Date().toISOString()
       }));
-      const { error } = await supabase.from('products').upsert(rows, { onConflict: 'id' });
-      if (error) return res.status(500).json({ error: 'Failed to sync products' });
+      
+      // Process each product individually for detailed logging
+      for (let i = 0; i < rows.length; i++) {
+        const productData = rows[i];
+        const originalProduct = products[i];
+        try {
+          const { error: prodError } = await supabase.from('products').upsert(productData, { onConflict: 'id' });
+          if (prodError) {
+            console.error(`[SYNC FAILURE]`, {
+              productId: originalProduct.id,
+              tenantId,
+              payload: productData,
+              error: prodError,
+              errorMessage: prodError.message,
+              errorDetails: prodError.details,
+              errorHint: prodError.hint,
+              errorCode: prodError.code,
+              tableName: 'products'
+            });
+            return res.status(500).json({ error: 'Failed to sync products', details: prodError });
+          } else {
+            console.log(`[SYNC SUCCESS] Product ID: ${originalProduct.id}, Tenant ID: ${tenantId}`);
+          }
+        } catch (finalErr: any) {
+          console.error(`[SYNC FAILURE]`, {
+            productId: originalProduct.id,
+            tenantId,
+            payload: productData,
+            error: finalErr,
+            errorMessage: finalErr.message,
+            errorDetails: finalErr.details,
+            errorHint: finalErr.hint,
+            errorCode: finalErr.code,
+            tableName: 'products'
+          });
+          return res.status(500).json({ error: 'Failed to sync products', details: finalErr });
+        }
+      }
+      
       res.status(200).json({ synced: rows.length });
-    } catch {
-      res.status(500).json({ error: 'Failed to sync products' });
+    } catch (err: any) {
+      console.error('[SYNC FAILURE]', err);
+      res.status(500).json({ error: 'Failed to sync products', details: err });
     }
   });
 
