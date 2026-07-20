@@ -1031,113 +1031,81 @@ export const dbService = {
     
     insertMany(products);
     
-    // Mirror to Cloud (Supabase) if available - ULTRA DEFENSIVE VERSION
+    // Mirror to Cloud (Supabase) if available
     if (useCloud()) {
       const supabase = getSupabase();
       if (supabase) {
         (async () => {
           try {
             console.log('[SYNC] Starting product sync to Supabase for tenant:', tenantId);
-            // Process each product individually for maximum safety
+            // Process each product individually
             for (const p of products) {
               try {
-                // Start with ONLY the most basic columns that might exist
-            let productData: any = {
-              id: String(p.id)
-            };
-            // Try adding each essential column one by one
-            const essentialFields = [
-              { key: 'tenant_id', value: tenantId },
-              { key: 'name', value: String(p.name || '') },
-              { key: 'price', value: Number(p.price || 0) },
-              { key: 'created_at', value: p.createdAt ?? new Date().toISOString() },
-              { key: 'updated_at', value: p.updatedAt ?? new Date().toISOString() },
-              { key: 'cost', value: Number(p.cost || 0) },
-              { key: 'category', value: p.category ?? null },
-              { key: 'image', value: p.image ?? null },
-              { key: 'quantity', value: Number(p.quantity || 0) },
-              { key: 'barcode', value: String(p.barcode || '') }
-            ];
-            for (const field of essentialFields) {
-              try {
-                const testData = { ...productData, [field.key]: field.value };
-                const { error: testError } = await supabase.from('products').upsert(testData, { onConflict: 'id' }).select().limit(0);
-                if (!testError) {
-                  productData[field.key] = field.value;
-                } else {
-                  console.log(`[SYNC] Product column '${field.key}' not found, skipping...`);
-                }
-              } catch (e) {
-                console.log(`[SYNC] Product column '${field.key}' not found, skipping...`);
-              }
-            }
-            // Now sync with what we have
-            try {
-              const { error: prodError } = await supabase.from('products').upsert(productData, { onConflict: 'id' });
-              if (prodError) {
-                console.error(`[SYNC FAILURE]`, {
-                  productId: p.id,
-                  tenantId,
-                  payload: productData,
-                  error: prodError,
-                  errorMessage: prodError.message,
-                  errorDetails: prodError.details,
-                  errorHint: prodError.hint,
-                  errorCode: prodError.code,
-                  tableName: 'products'
-                });
-                console.warn(`[SYNC] Failed to sync product ${p.id}, trying with only id...`, prodError);
-                try {
-                  const { error: finalError } = await supabase.from('products').upsert({ id: String(p.id) }, { onConflict: 'id' });
-                  if (finalError) {
-                    console.error(`[SYNC FAILURE]`, {
-                      productId: p.id,
-                      tenantId,
-                      payload: { id: String(p.id) },
-                      error: finalError,
-                      errorMessage: finalError.message,
-                      errorDetails: finalError.details,
-                      errorHint: finalError.hint,
-                      errorCode: finalError.code,
-                      tableName: 'products'
-                    });
-                  } else {
-                    console.log(`[SYNC SUCCESS] Product ID: ${p.id}, Tenant ID: ${tenantId}`);
-                  }
-                } catch (catchErr: any) {
-                  console.error(`[SYNC FAILURE]`, {
+                // Validate required fields first
+                if (!p.id || !tenantId || !p.name || p.price == null) {
+                  console.error('[SYNC FAILURE] Invalid product (missing required fields)', {
                     productId: p.id,
                     tenantId,
-                    payload: { id: String(p.id) },
-                    error: catchErr,
-                    errorMessage: catchErr.message,
-                    errorDetails: catchErr.details,
-                    errorHint: catchErr.hint,
-                    errorCode: catchErr.code,
+                    originalProduct: p
+                  });
+                  continue;
+                }
+
+                // Build payload using RAW SQLite values directly (no sanitization/fallbacks)
+                const productData = {
+                  id: p.id,
+                  tenant_id: tenantId,
+                  name: p.name,
+                  price: p.price,
+                  cost: p.cost,
+                  barcode: p.barcode,
+                  category: p.category,
+                  image: p.image,
+                  quantity: p.quantity,
+                  created_at: p.createdAt,
+                  updated_at: p.updatedAt
+                };
+
+                // Log original SQLite product and generated payload BEFORE upsert
+                console.log('[SYNC] Preparing to sync product', {
+                  productId: p.id,
+                  tenantId,
+                  originalProduct: p,
+                  generatedPayload: productData
+                });
+
+                // Perform EXACTLY ONE upsert() per product
+                const { error } = await supabase.from('products').upsert(productData, { onConflict: 'id' });
+
+                if (error) {
+                  console.error('[SYNC FAILURE]', {
+                    productId: p.id,
+                    tenantId,
+                    originalProduct: p,
+                    generatedPayload: productData,
+                    errorMessage: error.message,
+                    errorDetails: error.details,
+                    errorHint: error.hint,
+                    errorCode: error.code,
                     tableName: 'products'
                   });
+                } else {
+                  console.log(`[SYNC SUCCESS] Product ID: ${p.id}, Tenant ID: ${tenantId}`);
                 }
-              } else {
-                console.log(`[SYNC SUCCESS] Product ID: ${p.id}, Tenant ID: ${tenantId}`);
-              }
-            } catch (finalErr: any) {
-              console.error(`[SYNC FAILURE]`, {
-                productId: p.id,
-                tenantId,
-                payload: productData,
-                error: finalErr,
-                errorMessage: finalErr.message,
-                errorDetails: finalErr.details,
-                errorHint: finalErr.hint,
-                errorCode: finalErr.code,
-                tableName: 'products'
-              });
-            }
-              } catch (singleProdErr) {
-                console.error(`[SYNC] Failed to sync product ${p.id}`, singleProdErr);
+              } catch (singleProdErr: any) {
+                console.error('[SYNC FAILURE]', {
+                  productId: p.id,
+                  tenantId,
+                  originalProduct: p,
+                  errorMessage: singleProdErr.message,
+                  errorDetails: singleProdErr.details,
+                  errorHint: singleProdErr.hint,
+                  errorCode: singleProdErr.code,
+                  tableName: 'products'
+                });
               }
             }
-            console.log(`[SYNC] Product sync complete: ${products.length} products processed.`);
+            console.log('[SYNC] Product sync complete:', products.length, 'products processed.');
           } catch (err) {
             console.error('[SYNC] Cloud product sync error:', err);
           }

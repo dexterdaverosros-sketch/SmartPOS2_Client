@@ -2292,6 +2292,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch('/api/notifications/mark-all-read', async (req: Request, res: Response) => {
+    try {
+      const userId = (req.query.userId as string) || null;
+      dbService.markAllNotificationsRead(userId);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to mark all notifications as read' });
+    }
+  });
+
+  app.delete('/api/notifications/:id', async (req: Request, res: Response) => {
+    try {
+      dbService.deleteNotification(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to delete notification' });
+    }
+  });
+
+  app.post('/api/notifications/delete-many', async (req: Request, res: Response) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids)) {
+        return res.status(400).json({ error: 'Invalid ids format' });
+      }
+      dbService.deleteNotifications(ids);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to delete notifications' });
+    }
+  });
+
   // ==========================================
   // DEVELOPER MODE ROUTES
   // ==========================================
