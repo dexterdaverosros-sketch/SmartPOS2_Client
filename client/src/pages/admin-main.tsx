@@ -809,7 +809,7 @@ const AdminMain: React.FC = () => {
                   <Button
                     key={tool.title}
                     variant="outline"
-                    className="h-auto py-3 flex flex-col items-center gap-1.5 border-gray-100 hover:border-[#BF953F]/20 hover:bg-[#BF953F]/5 transition-all group"
+                    className={cn("h-auto py-3 flex flex-col items-center gap-1.5 border-gray-100 hover:border-[#BF953F]/20 hover:bg-[#BF953F]/5 transition-all group", `bg-${tool.color}-50`)}
                     onClick={() => setLocation(tool.path)}
                   >
                     <tool.icon className={cn("w-4 h-4", `text-${tool.color}-500`)} />

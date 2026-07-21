@@ -1051,7 +1051,13 @@ export const dbService = {
                   continue;
                 }
 
-                // Build payload using RAW SQLite values directly (no sanitization/fallbacks)
+                // Build payload using RAW SQLite values directly (ensure dates are ISO strings)
+                const normalizeDate = (d: any) => {
+                  if (!d) return new Date().toISOString();
+                  if (typeof d === 'number') return new Date(d).toISOString();
+                  if (d instanceof Date) return d.toISOString();
+                  return String(d);
+                };
                 const productData = {
                   id: p.id,
                   tenant_id: tenantId,
@@ -1062,8 +1068,8 @@ export const dbService = {
                   category: p.category,
                   image: p.image,
                   quantity: p.quantity,
-                  created_at: p.createdAt,
-                  updated_at: p.updatedAt
+                  created_at: normalizeDate(p.createdAt),
+                  updated_at: normalizeDate(p.updatedAt)
                 };
 
                 // Log original SQLite product and generated payload BEFORE upsert
