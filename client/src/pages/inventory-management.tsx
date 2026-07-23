@@ -698,8 +698,8 @@ const InventoryManagement: React.FC = () => {
           </AlertDialogContent>
         </AlertDialog>
 
-        {/* Floating Action Button - Only visible to admins */}
-        {isAdmin && (
+        {/* Floating Action Button - Only visible to admins on Inventory tab */}
+        {isAdmin && activeTab === 'inventory' && (
           <div className="fixed bottom-28 right-6 z-50 flex flex-col items-end space-y-3">
             {/* FAB Menu - Only shown when expanded */}
             {isFabExpanded && (

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Search, Filter, MoreVertical, Trash2, Edit, Barcode, Download, Tag, Info, Package, Image as ImageIcon } from 'lucide-react';
+import { Plus, Search, Filter, MoreVertical, Trash2, Edit, Barcode, Download, Tag, Info, Package, Image as ImageIcon, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -25,12 +26,18 @@ const nonInventorySchema = z.object({
   barcode: z.string().optional(),
 });
 
+const categorySchema = z.object({
+  name: z.string().min(1, 'Category name is required'),
+});
+
 type NonInventoryFormData = z.infer<typeof nonInventorySchema>;
+type CategoryFormData = z.infer<typeof categorySchema>;
 
 const NonInventoryProducts: React.FC = () => {
   const { toast } = useToast();
   const [products, setProducts] = useState<NonInventoryProduct[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<NonInventoryProduct | null>(null);
@@ -38,6 +45,12 @@ const NonInventoryProducts: React.FC = () => {
   const [editingProduct, setEditingProduct] = useState<NonInventoryProduct | null>(null);
   const [productImage, setProductImage] = useState<string | null>(null);
   const [deletingProduct, setDeletingProduct] = useState<NonInventoryProduct | null>(null);
+
+  // Category management state
+  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<string | null>(null);
+  const [deletingCategory, setDeletingCategory] = useState<string | null>(null);
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
 
   const form = useForm<NonInventoryFormData>({
     resolver: zodResolver(nonInventorySchema),
@@ -50,6 +63,58 @@ const NonInventoryProducts: React.FC = () => {
       barcode: '',
     },
   });
+
+  const categoryForm = useForm<CategoryFormData>({
+    resolver: zodResolver(categorySchema),
+    defaultValues: { name: '' },
+  });
+
+  // Load categories from localStorage
+  const loadCategories = () => {
+    try {
+      const savedCategories = localStorage.getItem('nonInventoryCustomCategories');
+      if (savedCategories) {
+        setCustomCategories(JSON.parse(savedCategories));
+      }
+    } catch (error) {
+      console.error('Error loading categories:', error);
+    }
+  };
+
+  // Save categories to localStorage
+  const saveCategories = (categories: string[]) => {
+    try {
+      localStorage.setItem('nonInventoryCustomCategories', JSON.stringify(categories));
+    } catch (error) {
+      console.error('Error saving categories:', error);
+    }
+  };
+
+  // Add new category or update existing one
+  const handleAddCategory = (data: CategoryFormData) => {
+    if (editingCategory) {
+      if (data.name !== editingCategory && customCategories.includes(data.name)) {
+        toast({ title: 'Error', description: 'Category name already exists', variant: 'destructive' });
+        return;
+      }
+      const newCategories = customCategories.map(c => c === editingCategory ? data.name : c);
+      setCustomCategories(newCategories);
+      saveCategories(newCategories);
+      toast({ title: 'Category Updated', description: `Category has been updated to "${data.name}"` });
+      setEditingCategory(null);
+    } else {
+      if (customCategories.includes(data.name)) {
+        toast({ title: 'Error', description: 'Category already exists', variant: 'destructive' });
+        return;
+      }
+      const newCategories = [...customCategories, data.name];
+      setCustomCategories(newCategories);
+      saveCategories(newCategories);
+      toast({ title: 'Category Added', description: `${data.name} has been added to categories` });
+    }
+    setIsCategoryDialogOpen(false);
+    categoryForm.reset();
+  };
 
   const loadProducts = async () => {
     try {
@@ -67,7 +132,12 @@ const NonInventoryProducts: React.FC = () => {
 
   useEffect(() => {
     loadProducts();
+    loadCategories();
   }, []);
+
+  // Get unique categories for filter chips
+  const allProductCategories = Array.from(new Set(products.map(p => p.category || 'general')));
+  const categories = ['All', ...allProductCategories, ...customCategories.filter(c => !allProductCategories.includes(c))];
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -160,23 +230,56 @@ const NonInventoryProducts: React.FC = () => {
     }
   };
 
-  const filteredProducts = products.filter(p =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (p.barcode && p.barcode.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (p.barcode && p.barcode.toLowerCase().includes(searchTerm.toLowerCase()));
+    const matchesCategory = selectedCategory === 'All' || p.category === selectedCategory;
+    return matchesSearch && matchesCategory;
+  });
 
   return (
     <div className="space-y-6">
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <Input
-            placeholder="Search non-inventory products..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 dark:text-gray-200"
-          />
+        <div className="flex flex-col sm:flex-row gap-3 items-center w-full sm:w-auto">
+          <div className="relative w-full sm:max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Input
+              placeholder="Search non-inventory products..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 dark:text-gray-200"
+            />
+          </div>
+          {/* Category Select */}
+          <div className="w-full sm:w-40">
+            <Select onValueChange={setSelectedCategory} value={selectedCategory}>
+              <SelectTrigger className="h-10 text-sm border-gray-300 dark:border-gray-600 focus:border-[#FF8882]">
+                <SelectValue placeholder="All Categories" />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map(category => (
+                  <SelectItem key={category} value={category}>
+                    {category}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {/* Category Management Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setEditingCategory(null);
+              categoryForm.reset();
+              setIsCategoryDialogOpen(true);
+            }}
+            className="h-10"
+          >
+            <Tag className="w-4 h-4 mr-2" />
+            Categories
+          </Button>
         </div>
         <Button
           onClick={() => {
@@ -351,7 +454,18 @@ const NonInventoryProducts: React.FC = () => {
                     <FormItem>
                       <FormLabel className="dark:text-gray-200">Category</FormLabel>
                       <FormControl>
-                        <Input placeholder="General" {...field} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                        <Select onValueChange={field.onChange} value={field.value || 'general'}>
+                          <SelectTrigger className="dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                            <SelectValue placeholder="Select category" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {categories.map(category => category !== 'All' && (
+                              <SelectItem key={category} value={category}>
+                                {category}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -437,6 +551,42 @@ const NonInventoryProducts: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Category Management Dialog */}
+      <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
+        <DialogContent className="sm:max-w-[425px] bg-white dark:bg-gray-800">
+          <DialogHeader>
+            <DialogTitle className="dark:text-white">
+              {editingCategory ? 'Edit Category' : 'Create Category'}
+            </DialogTitle>
+          </DialogHeader>
+          <Form {...categoryForm}>
+            <form onSubmit={categoryForm.handleSubmit(handleAddCategory)} className="space-y-4 py-2">
+              <FormField
+                control={categoryForm.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="dark:text-gray-200">Category Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Enter category name" {...field} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsCategoryDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" className="bg-[#FF8882] hover:bg-[#FF7770] text-white">
+                  {editingCategory ? 'Update' : 'Create'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

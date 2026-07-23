@@ -108,6 +108,20 @@ export class SmartPOSDB extends Dexie {
       remittances: 'id, staffId, status, createdAt',
       notifications: 'id, type, isRead, createdAt'
     });
+    this.version(6).stores({
+      users: 'id, username, email, mobile, role, staffId',
+      products: 'id, &barcode, name, category',
+      sales: 'id, staffId, createdAt, remitted',
+      saleItems: 'id, saleId, productId',
+      staff: 'id, &staffId, name, firstName, lastName, role, employmentStatus, email, username, branch, createdBy',
+      expenses: 'id, description, category, date',
+      purchases: 'id, productName, date, supplier',
+      creditors: 'id, name, dueDate, isPaid',
+      variants: 'id, productId, name, barcode',
+      nonInventoryProducts: 'id, &barcode, name, category',
+      remittances: 'id, staffId, status, createdAt',
+      notifications: 'id, type, isRead, createdAt'
+    });
   }
 
   async resetDatabase() {
@@ -322,9 +336,26 @@ export class AuthService {
   }
 
   static async createStaff(staffData: {
+    firstName: string;
+    middleName?: string;
+    lastName: string;
     name: string;
     staffId: string;
     passkey: string;
+    role?: string;
+    branch?: string;
+    department?: string;
+    employmentStatus?: string;
+    email?: string;
+    phone?: string;
+    address?: string;
+    birthdate?: string;
+    gender?: string;
+    dateHired?: string;
+    assignedShift?: string;
+    profileImage?: string;
+    username?: string;
+    permissions?: string[];
     createdBy: string;
     tenantId: string;
   }): Promise<Staff> {
@@ -339,11 +370,29 @@ export class AuthService {
     const staff: any = {
       id: generateUUID(),
       tenantId: staffData.tenantId,
+      firstName: staffData.firstName,
+      middleName: staffData.middleName || null,
+      lastName: staffData.lastName,
       name: staffData.name,
       staffId: staffData.staffId,
       passkey: hashedPasskey,
+      role: staffData.role || 'cashier',
+      branch: staffData.branch || null,
+      department: staffData.department || null,
+      employmentStatus: staffData.employmentStatus || 'active',
+      email: staffData.email || null,
+      phone: staffData.phone || null,
+      address: staffData.address || null,
+      birthdate: staffData.birthdate || null,
+      gender: staffData.gender || null,
+      dateHired: staffData.dateHired || null,
+      assignedShift: staffData.assignedShift || null,
+      profileImage: staffData.profileImage || null,
+      username: staffData.username || null,
+      permissions: staffData.permissions || [],
       createdBy: staffData.createdBy,
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
     await db.staff.add(staff);

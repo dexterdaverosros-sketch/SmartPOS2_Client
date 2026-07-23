@@ -98,10 +98,56 @@ export const staff = sqliteTable("staff", {
   id: text("id").primaryKey(),
   tenantId: text("tenant_id").notNull(),
   userId: text("user_id"),
-  name: text("name").notNull(),
+  firstName: text("first_name").notNull(),
+  middleName: text("middle_name"),
+  lastName: text("last_name").notNull(),
+  name: text("name").notNull(), // Full name (computed)
   staffId: text("staff_id").notNull().unique(),
   passkey: text("passkey").notNull(),
+  role: text("role").default("cashier"), // cashier, manager, admin
+  branch: text("branch"),
+  department: text("department"),
+  employmentStatus: text("employment_status").default("active"), // active, inactive, on_leave
+  email: text("email"),
+  phone: text("phone"),
+  address: text("address"),
+  birthdate: integer("birthdate", { mode: 'timestamp' }),
+  gender: text("gender"), // male, female, other
+  dateHired: integer("date_hired", { mode: 'timestamp' }),
+  assignedShift: text("assigned_shift"), // morning, afternoon, evening
+  profileImage: text("profile_image"), // Base64 or URL
+  username: text("username").unique(),
+  lastLogin: integer("last_login", { mode: 'timestamp' }),
+  passwordLastChanged: integer("password_last_changed", { mode: 'timestamp' }),
+  permissions: text("permissions", { mode: 'json' }), // JSON array of permissions
   createdBy: text("created_by"),
+  createdAt: integer("created_at", { mode: 'timestamp' }).default(new Date()),
+  updatedAt: integer("updated_at", { mode: 'timestamp' }).default(new Date()),
+});
+
+// Attendance table
+export const attendance = sqliteTable("attendance", {
+  id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  staffId: text("staff_id").notNull(),
+  date: integer("date", { mode: 'timestamp' }).notNull(),
+  clockIn: integer("clock_in", { mode: 'timestamp' }),
+  clockOut: integer("clock_out", { mode: 'timestamp' }),
+  hoursWorked: real("hours_worked"),
+  isLate: integer("is_late", { mode: 'boolean' }).default(false),
+  createdAt: integer("created_at", { mode: 'timestamp' }).default(new Date()),
+  updatedAt: integer("updated_at", { mode: 'timestamp' }).default(new Date()),
+});
+
+// Login History table
+export const loginHistory = sqliteTable("login_history", {
+  id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  staffId: text("staff_id").notNull(),
+  deviceInfo: text("device_info"),
+  ipAddress: text("ip_address"),
+  loginTime: integer("login_time", { mode: 'timestamp' }).notNull(),
+  logoutTime: integer("logout_time", { mode: 'timestamp' }),
   createdAt: integer("created_at", { mode: 'timestamp' }).default(new Date()),
 });
 
@@ -254,7 +300,21 @@ export const errorLogs = sqliteTable("error_logs", {
   os: text("os"),
   userId: text("user_id"),
   storeId: text("store_id"),
-  timestamp: integer("timestamp", { mode: 'timestamp' }).default(new Date()),
+  timestamp: integer("timestamp", { mode: "timestamp" }).default(new Date()),
+});
+
+// Audit logs for staff changes
+export const auditLogs = sqliteTable("audit_logs", {
+  id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  adminId: text("admin_id"), // ID of admin who made the change
+  adminName: text("admin_name"),
+  action: text("action").notNull(), // e.g., "Updated Staff"
+  staffId: text("staff_id"), // ID of staff affected
+  staffName: text("staff_name"),
+  changedFields: text("changed_fields", { mode: "json" }), // JSON array of changed fields
+  ipAddress: text("ip_address"),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(new Date()),
 });
 
 // Feature flags for remote configuration
@@ -347,9 +407,26 @@ export const insertSaleSchema = createInsertSchema(sales).pick({
 export const insertSaleItemSchema = createInsertSchema(saleItems);
 
 export const insertStaffSchema = createInsertSchema(staff).pick({
+  firstName: true,
+  middleName: true,
+  lastName: true,
   name: true,
   staffId: true,
   passkey: true,
+  role: true,
+  branch: true,
+  department: true,
+  employmentStatus: true,
+  email: true,
+  phone: true,
+  address: true,
+  birthdate: true,
+  gender: true,
+  dateHired: true,
+  assignedShift: true,
+  profileImage: true,
+  username: true,
+  permissions: true,
   createdBy: true,
 });
 

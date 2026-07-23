@@ -5,11 +5,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useDevices } from '@/contexts/DeviceContext';
 import { Home, Package, Scan, Users, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 const BottomNavigation: React.FC = () => {
   const [location, setLocation] = useLocation();
   const { isAdmin } = useAuth();
   const { deviceMode } = useDevices();
+  const { t } = useLanguage();
   const [isMobile, setIsMobile] = useState<boolean>(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
   
   useEffect(() => {
@@ -24,11 +26,11 @@ const BottomNavigation: React.FC = () => {
   if (!isAdmin) return null;
 
   const navItems = [
-    { id: 'dashboard', icon: Home, label: 'Dashboard', path: '/admin-main' },
-    { id: 'inventory', icon: Package, label: 'Inventory', path: '/inventory' },
+    { id: 'dashboard', icon: Home, label: t('dashboard'), path: '/admin-main' },
+    { id: 'inventory', icon: Package, label: t('inventory'), path: '/inventory' },
     { id: 'scanner', icon: Scan, label: '', path: '/pos', isScanner: true },
-    { id: 'staff', icon: Users, label: 'Staff', path: '/staff' },
-    { id: 'profile', icon: User, label: 'Profile', path: '/profile' },
+    { id: 'staff', icon: Users, label: t('staff'), path: '/staff' },
+    { id: 'profile', icon: User, label: t('profile'), path: '/profile' },
   ];
 
   const getContainerMaxWidth = () => {

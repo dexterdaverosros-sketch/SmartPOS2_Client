@@ -56,10 +56,61 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS staff (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    first_name TEXT NOT NULL,
+    middle_name TEXT,
+    last_name TEXT NOT NULL,
+    name TEXT NOT NULL, -- Full name computed field
     staff_id TEXT UNIQUE NOT NULL,
     passkey TEXT,
+    role TEXT DEFAULT 'cashier', -- cashier, manager, admin
+    branch TEXT,
+    department TEXT,
+    employment_status TEXT DEFAULT 'active', -- active, inactive, on_leave
+    email TEXT,
+    phone TEXT,
+    address TEXT,
+    birthdate TIMESTAMPTZ,
+    gender TEXT, -- male, female, other
+    date_hired TIMESTAMPTZ,
+    assigned_shift TEXT, -- morning, afternoon, evening
+    profile_image TEXT, -- Base64 or URL
+    username TEXT UNIQUE,
+    last_login TIMESTAMPTZ,
+    password_last_changed TIMESTAMPTZ,
+    permissions JSONB, -- JSON array of permissions
     created_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- Table: attendance
+-- ============================================
+CREATE TABLE IF NOT EXISTS attendance (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    staff_id UUID REFERENCES staff(id) ON DELETE CASCADE,
+    date TIMESTAMPTZ NOT NULL,
+    clock_in TIMESTAMPTZ,
+    clock_out TIMESTAMPTZ,
+    hours_worked NUMERIC,
+    is_late BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- Table: login_history
+-- ============================================
+CREATE TABLE IF NOT EXISTS login_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    staff_id UUID REFERENCES staff(id) ON DELETE CASCADE,
+    device_info TEXT,
+    ip_address TEXT,
+    login_time TIMESTAMPTZ NOT NULL,
+    logout_time TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -177,7 +228,7 @@ CREATE TABLE IF NOT EXISTS sales (
     total NUMERIC NOT NULL,
     payment_type TEXT NOT NULL,
     payment_amount NUMERIC NOT NULL,
-    staff_id TEXT,
+    staff_id UUID REFERENCES staff(id) ON DELETE SET NULL,
     remitted BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -189,7 +240,7 @@ CREATE TABLE IF NOT EXISTS sale_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
     sale_id UUID REFERENCES sales(id) ON DELETE CASCADE,
-    product_id TEXT NOT NULL,
+    product_id UUID NOT NULL,
     quantity INTEGER NOT NULL,
     price NUMERIC NOT NULL,
     unit TEXT DEFAULT 'pieces',
@@ -203,7 +254,7 @@ CREATE TABLE IF NOT EXISTS sale_items (
 CREATE TABLE IF NOT EXISTS remittances (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    staff_id TEXT NOT NULL,
+    staff_id UUID REFERENCES staff(id) ON DELETE CASCADE,
     staff_name TEXT NOT NULL,
     amount NUMERIC NOT NULL,
     transaction_count INTEGER NOT NULL,
@@ -218,7 +269,7 @@ CREATE TABLE IF NOT EXISTS remittances (
 CREATE TABLE IF NOT EXISTS notifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    user_id TEXT,
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
     type TEXT NOT NULL,
     message TEXT NOT NULL,
     data TEXT,
@@ -253,6 +304,24 @@ CREATE TABLE IF NOT EXISTS purchases (
 );
 
 -- ============================================
+-- Table: audit_logs
+-- ============================================
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    admin_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    admin_name TEXT,
+    action TEXT NOT NULL,
+    staff_id UUID REFERENCES staff(id) ON DELETE SET NULL,
+    staff_name TEXT,
+    changed_fields JSONB,
+    old_values JSONB,
+    new_values JSONB,
+    ip_address TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
 -- Table: settings
 -- ============================================
 CREATE TABLE IF NOT EXISTS settings (
@@ -271,9 +340,11 @@ CREATE TABLE IF NOT EXISTS settings (
 -- ============================================
 ALTER TABLE tenants DISABLE ROW LEVEL SECURITY;
 ALTER TABLE users DISABLE ROW LEVEL SECURITY;
+ALTER TABLE staff DISABLE ROW LEVEL SECURITY;
+ALTER TABLE attendance DISABLE ROW LEVEL SECURITY;
+ALTER TABLE login_history DISABLE ROW LEVEL SECURITY;
 ALTER TABLE products DISABLE ROW LEVEL SECURITY;
 ALTER TABLE variants DISABLE ROW LEVEL SECURITY;
-ALTER TABLE staff DISABLE ROW LEVEL SECURITY;
 ALTER TABLE sales DISABLE ROW LEVEL SECURITY;
 ALTER TABLE sale_items DISABLE ROW LEVEL SECURITY;
 ALTER TABLE customers DISABLE ROW LEVEL SECURITY;
@@ -285,350 +356,5 @@ ALTER TABLE remittances DISABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications DISABLE ROW LEVEL SECURITY;
 ALTER TABLE expenses DISABLE ROW LEVEL SECURITY;
 ALTER TABLE purchases DISABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE settings DISABLE ROW LEVEL SECURITY;
-
--- ============================================
--- RLS Policies for tenants
--- ============================================
-CREATE POLICY "Tenants can view their own data" 
-  ON tenants 
-  FOR SELECT 
-  USING (id = current_tenant_id());
-
-CREATE POLICY "Tenants can update their own data" 
-  ON tenants 
-  FOR UPDATE 
-  USING (id = current_tenant_id());
-
--- ============================================
--- RLS Policies for users
--- ============================================
-CREATE POLICY "Users can view their own tenant's users" 
-  ON users 
-  FOR SELECT 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Users can insert their own tenant's users" 
-  ON users 
-  FOR INSERT 
-  WITH CHECK (tenant_id = current_tenant_id());
-
-CREATE POLICY "Users can update their own tenant's users" 
-  ON users 
-  FOR UPDATE 
-  USING (tenant_id = current_tenant_id());
-
--- ============================================
--- RLS Policies for staff
--- ============================================
-CREATE POLICY "Staff can view their own tenant's staff" 
-  ON staff 
-  FOR SELECT 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Staff can insert their own tenant's staff" 
-  ON staff 
-  FOR INSERT 
-  WITH CHECK (tenant_id = current_tenant_id());
-
-CREATE POLICY "Staff can update their own tenant's staff" 
-  ON staff 
-  FOR UPDATE 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Staff can delete their own tenant's staff" 
-  ON staff 
-  FOR DELETE 
-  USING (tenant_id = current_tenant_id());
-
--- ============================================
--- RLS Policies for products
--- ============================================
-CREATE POLICY "Products can view their own tenant's products" 
-  ON products 
-  FOR SELECT 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Products can insert their own tenant's products" 
-  ON products 
-  FOR INSERT 
-  WITH CHECK (tenant_id = current_tenant_id());
-
-CREATE POLICY "Products can update their own tenant's products" 
-  ON products 
-  FOR UPDATE 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Products can delete their own tenant's products" 
-  ON products 
-  FOR DELETE 
-  USING (tenant_id = current_tenant_id());
-
--- ============================================
--- RLS Policies for variants
--- ============================================
-CREATE POLICY "Variants can view their own tenant's variants" 
-  ON variants 
-  FOR SELECT 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Variants can insert their own tenant's variants" 
-  ON variants 
-  FOR INSERT 
-  WITH CHECK (tenant_id = current_tenant_id());
-
-CREATE POLICY "Variants can update their own tenant's variants" 
-  ON variants 
-  FOR UPDATE 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Variants can delete their own tenant's variants" 
-  ON variants 
-  FOR DELETE 
-  USING (tenant_id = current_tenant_id());
-
--- ============================================
--- RLS Policies for customers
--- ============================================
-CREATE POLICY "Customers can view their own tenant's customers" 
-  ON customers 
-  FOR SELECT 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Customers can insert their own tenant's customers" 
-  ON customers 
-  FOR INSERT 
-  WITH CHECK (tenant_id = current_tenant_id());
-
-CREATE POLICY "Customers can update their own tenant's customers" 
-  ON customers 
-  FOR UPDATE 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Customers can delete their own tenant's customers" 
-  ON customers 
-  FOR DELETE 
-  USING (tenant_id = current_tenant_id());
-
--- ============================================
--- RLS Policies for credits
--- ============================================
-CREATE POLICY "Credits can view their own tenant's credits" 
-  ON credits 
-  FOR SELECT 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Credits can insert their own tenant's credits" 
-  ON credits 
-  FOR INSERT 
-  WITH CHECK (tenant_id = current_tenant_id());
-
-CREATE POLICY "Credits can update their own tenant's credits" 
-  ON credits 
-  FOR UPDATE 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Credits can delete their own tenant's credits" 
-  ON credits 
-  FOR DELETE 
-  USING (tenant_id = current_tenant_id());
-
--- ============================================
--- RLS Policies for payments
--- ============================================
-CREATE POLICY "Payments can view their own tenant's payments" 
-  ON payments 
-  FOR SELECT 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Payments can insert their own tenant's payments" 
-  ON payments 
-  FOR INSERT 
-  WITH CHECK (tenant_id = current_tenant_id());
-
-CREATE POLICY "Payments can update their own tenant's payments" 
-  ON payments 
-  FOR UPDATE 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Payments can delete their own tenant's payments" 
-  ON payments 
-  FOR DELETE 
-  USING (tenant_id = current_tenant_id());
-
--- ============================================
--- RLS Policies for reminders
--- ============================================
-CREATE POLICY "Reminders can view their own tenant's reminders" 
-  ON reminders 
-  FOR SELECT 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Reminders can insert their own tenant's reminders" 
-  ON reminders 
-  FOR INSERT 
-  WITH CHECK (tenant_id = current_tenant_id());
-
-CREATE POLICY "Reminders can update their own tenant's reminders" 
-  ON reminders 
-  FOR UPDATE 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Reminders can delete their own tenant's reminders" 
-  ON reminders 
-  FOR DELETE 
-  USING (tenant_id = current_tenant_id());
-
--- ============================================
--- RLS Policies for non_inventory_products
--- ============================================
-CREATE POLICY "Non-inventory products can view their own tenant's data" 
-  ON non_inventory_products 
-  FOR SELECT 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Non-inventory products can insert their own tenant's data" 
-  ON non_inventory_products 
-  FOR INSERT 
-  WITH CHECK (tenant_id = current_tenant_id());
-
-CREATE POLICY "Non-inventory products can update their own tenant's data" 
-  ON non_inventory_products 
-  FOR UPDATE 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Non-inventory products can delete their own tenant's data" 
-  ON non_inventory_products 
-  FOR DELETE 
-  USING (tenant_id = current_tenant_id());
-
--- ============================================
--- RLS Policies for sales
--- ============================================
-CREATE POLICY "Sales can view their own tenant's sales" 
-  ON sales 
-  FOR SELECT 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Sales can insert their own tenant's sales" 
-  ON sales 
-  FOR INSERT 
-  WITH CHECK (tenant_id = current_tenant_id());
-
-CREATE POLICY "Sales can update their own tenant's sales" 
-  ON sales 
-  FOR UPDATE 
-  USING (tenant_id = current_tenant_id());
-
--- ============================================
--- RLS Policies for sale_items
--- ============================================
-CREATE POLICY "Sale items can view their own tenant's data" 
-  ON sale_items 
-  FOR SELECT 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Sale items can insert their own tenant's data" 
-  ON sale_items 
-  FOR INSERT 
-  WITH CHECK (tenant_id = current_tenant_id());
-
--- ============================================
--- RLS Policies for remittances
--- ============================================
-CREATE POLICY "Remittances can view their own tenant's data" 
-  ON remittances 
-  FOR SELECT 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Remittances can insert their own tenant's data" 
-  ON remittances 
-  FOR INSERT 
-  WITH CHECK (tenant_id = current_tenant_id());
-
-CREATE POLICY "Remittances can update their own tenant's data" 
-  ON remittances 
-  FOR UPDATE 
-  USING (tenant_id = current_tenant_id());
-
--- ============================================
--- RLS Policies for notifications
--- ============================================
-CREATE POLICY "Notifications can view their own tenant's data" 
-  ON notifications 
-  FOR SELECT 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Notifications can insert their own tenant's data" 
-  ON notifications 
-  FOR INSERT 
-  WITH CHECK (tenant_id = current_tenant_id());
-
-CREATE POLICY "Notifications can update their own tenant's data" 
-  ON notifications 
-  FOR UPDATE 
-  USING (tenant_id = current_tenant_id());
-
--- ============================================
--- RLS Policies for expenses
--- ============================================
-CREATE POLICY "Expenses can view their own tenant's expenses" 
-  ON expenses 
-  FOR SELECT 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Expenses can insert their own tenant's expenses" 
-  ON expenses 
-  FOR INSERT 
-  WITH CHECK (tenant_id = current_tenant_id());
-
-CREATE POLICY "Expenses can update their own tenant's expenses" 
-  ON expenses 
-  FOR UPDATE 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Expenses can delete their own tenant's expenses" 
-  ON expenses 
-  FOR DELETE 
-  USING (tenant_id = current_tenant_id());
-
--- ============================================
--- RLS Policies for purchases
--- ============================================
-CREATE POLICY "Purchases can view their own tenant's purchases" 
-  ON purchases 
-  FOR SELECT 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Purchases can insert their own tenant's purchases" 
-  ON purchases 
-  FOR INSERT 
-  WITH CHECK (tenant_id = current_tenant_id());
-
-CREATE POLICY "Purchases can update their own tenant's purchases" 
-  ON purchases 
-  FOR UPDATE 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Purchases can delete their own tenant's purchases" 
-  ON purchases 
-  FOR DELETE 
-  USING (tenant_id = current_tenant_id());
-
--- ============================================
--- RLS Policies for settings
--- ============================================
-CREATE POLICY "Settings can view their own tenant's settings" 
-  ON settings 
-  FOR SELECT 
-  USING (tenant_id = current_tenant_id());
-
-CREATE POLICY "Settings can insert their own tenant's settings" 
-  ON settings 
-  FOR INSERT 
-  WITH CHECK (tenant_id = current_tenant_id());
-
-CREATE POLICY "Settings can update their own tenant's settings" 
-  ON settings 
-  FOR UPDATE 
-  USING (tenant_id = current_tenant_id());

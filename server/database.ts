@@ -166,8 +166,23 @@ export const dbService = {
         name TEXT NOT NULL,
         staffId TEXT UNIQUE NOT NULL,
         passkey TEXT,
+        role TEXT DEFAULT 'cashier',
+        branch TEXT,
+        department TEXT,
+        employmentStatus TEXT DEFAULT 'active',
+        email TEXT UNIQUE,
+        phone TEXT,
+        address TEXT,
+        dateHired TEXT,
+        assignedShift TEXT,
+        profileImage TEXT,
+        username TEXT UNIQUE,
+        lastLogin TEXT,
+        passwordLastChanged TEXT,
+        permissions TEXT,
         createdBy TEXT,
-        createdAt TEXT
+        createdAt TEXT,
+        updatedAt TEXT
       );
 
       CREATE TABLE IF NOT EXISTS users (
@@ -304,6 +319,45 @@ export const dbService = {
         isNonInventory INTEGER DEFAULT 0,
         FOREIGN KEY(saleId) REFERENCES sales(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        admin_id TEXT,
+        admin_name TEXT,
+        action TEXT NOT NULL,
+        staff_id TEXT,
+        staff_name TEXT,
+        changed_fields TEXT,
+        old_values TEXT,
+        new_values TEXT,
+        ip_address TEXT,
+        created_at TEXT
+      );
+      
+      CREATE TABLE IF NOT EXISTS attendance (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        staff_id TEXT NOT NULL,
+        date TEXT NOT NULL,
+        clock_in TEXT,
+        clock_out TEXT,
+        hours_worked REAL,
+        is_late INTEGER DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT
+      );
+      
+      CREATE TABLE IF NOT EXISTS login_history (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        staff_id TEXT NOT NULL,
+        device_info TEXT,
+        ip_address TEXT,
+        login_time TEXT NOT NULL,
+        logout_time TEXT,
+        created_at TEXT
+      );
     `);
 
     // Perform lightweight migrations for missing columns
@@ -315,7 +369,7 @@ export const dbService = {
       'products', 'variants', 'staff', 'users', 'sessions',
       'customers', 'credits', 'payments', 'reminders',
       'non_inventory_products', 'remittances', 'notifications',
-      'sales', 'sale_items'
+      'sales', 'sale_items', 'audit_logs', 'attendance', 'login_history'
     ];
 
     const productCols = getColumns('products').map(c => c.name);
@@ -373,6 +427,66 @@ export const dbService = {
       if (!staffCols.includes('createdAt')) {
         db.exec(`ALTER TABLE staff ADD COLUMN createdAt TEXT`);
       }
+      if (!staffCols.includes('role')) {
+        db.exec(`ALTER TABLE staff ADD COLUMN role TEXT DEFAULT 'cashier'`);
+      }
+      if (!staffCols.includes('branch')) {
+        db.exec(`ALTER TABLE staff ADD COLUMN branch TEXT`);
+      }
+      if (!staffCols.includes('department')) {
+        db.exec(`ALTER TABLE staff ADD COLUMN department TEXT`);
+      }
+      if (!staffCols.includes('employmentStatus')) {
+        db.exec(`ALTER TABLE staff ADD COLUMN employmentStatus TEXT DEFAULT 'active'`);
+      }
+      if (!staffCols.includes('email')) {
+        db.exec(`ALTER TABLE staff ADD COLUMN email TEXT`);
+      }
+      if (!staffCols.includes('phone')) {
+        db.exec(`ALTER TABLE staff ADD COLUMN phone TEXT`);
+      }
+      if (!staffCols.includes('address')) {
+        db.exec(`ALTER TABLE staff ADD COLUMN address TEXT`);
+      }
+      if (!staffCols.includes('dateHired')) {
+        db.exec(`ALTER TABLE staff ADD COLUMN dateHired TEXT`);
+      }
+      if (!staffCols.includes('assignedShift')) {
+        db.exec(`ALTER TABLE staff ADD COLUMN assignedShift TEXT`);
+      }
+      if (!staffCols.includes('profileImage')) {
+        db.exec(`ALTER TABLE staff ADD COLUMN profileImage TEXT`);
+      }
+      if (!staffCols.includes('username')) {
+        db.exec(`ALTER TABLE staff ADD COLUMN username TEXT`);
+      }
+      if (!staffCols.includes('lastLogin')) {
+        db.exec(`ALTER TABLE staff ADD COLUMN lastLogin TEXT`);
+      }
+      if (!staffCols.includes('passwordLastChanged')) {
+        db.exec(`ALTER TABLE staff ADD COLUMN passwordLastChanged TEXT`);
+      }
+      if (!staffCols.includes('permissions')) {
+        db.exec(`ALTER TABLE staff ADD COLUMN permissions TEXT`);
+      }
+      if (!staffCols.includes('firstName')) {
+        db.exec(`ALTER TABLE staff ADD COLUMN firstName TEXT`);
+      }
+      if (!staffCols.includes('middleName')) {
+        db.exec(`ALTER TABLE staff ADD COLUMN middleName TEXT`);
+      }
+      if (!staffCols.includes('lastName')) {
+        db.exec(`ALTER TABLE staff ADD COLUMN lastName TEXT`);
+      }
+      if (!staffCols.includes('birthdate')) {
+        db.exec(`ALTER TABLE staff ADD COLUMN birthdate TEXT`);
+      }
+      if (!staffCols.includes('gender')) {
+        db.exec(`ALTER TABLE staff ADD COLUMN gender TEXT`);
+      }
+      if (!staffCols.includes('updatedAt')) {
+        db.exec(`ALTER TABLE staff ADD COLUMN updatedAt TEXT`);
+      }
 
       // Staff indexes
       db.exec(`CREATE INDEX IF NOT EXISTS idx_staff_staffId ON staff(staffId)`);
@@ -413,14 +527,14 @@ export const dbService = {
           // Restore Products
           const { data: cloudProducts } = await supabase.from('products').select('*');
           if (cloudProducts && cloudProducts.length > 0) {
-            dbService.saveProducts(cloudProducts);
+            dbService.saveProducts(cloudProducts, '');
             console.log(`Restored ${cloudProducts.length} products from Cloud.`);
           }
           
           // Restore Staff
           const { data: cloudStaff } = await supabase.from('staff').select('*');
           if (cloudStaff && cloudStaff.length > 0) {
-            dbService.saveStaff(cloudStaff);
+            dbService.saveStaff(cloudStaff, '');
             console.log(`Restored ${cloudStaff.length} staff from Cloud.`);
           }
 
@@ -686,6 +800,10 @@ export const dbService = {
     return db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   },
 
+  getUserById: (id: string) => {
+    return db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  },
+
   updateAdmin: (id: string, updates: Partial<User>) => {
     const current = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as any;
     if (!current) return undefined;
@@ -809,7 +927,7 @@ export const dbService = {
           try {
             console.log('[SYNC] Starting sale sync to Supabase for sale:', sale.id);
             // Start with ABSOLUTELY MINIMAL data only (required columns)
-            let saleData = {
+            let saleData: Record<string, unknown> = {
               id: sale.id,
               total: sale.total,
               created_at: sale.createdAt instanceof Date ? sale.createdAt.toISOString() : String(sale.createdAt)
@@ -850,7 +968,7 @@ export const dbService = {
             // Sync Sale Items (also ultra defensive)
             for (const item of saleItems) {
               try {
-                let itemData = {
+                let itemData: Record<string, unknown> = {
                   id: item.id || randomUUID(),
                   sale_id: item.saleId || sale.id
                 };
@@ -1414,19 +1532,37 @@ export const dbService = {
           id: String(member.id),
           tenantId: tenantId || member.tenantId || member.tenant_id,
           userId: member.userId || member.user_id || null,
-          name: String(member.name || ''),
+          firstName: String(member.firstName || ''),
+          middleName: member.middleName || null,
+          lastName: String(member.lastName || ''),
+          name: String(member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim()),
           staffId: String(member.staffId || member.staff_id || ''),
           passkey: passkey,
+          role: member.role || 'cashier',
+          branch: member.branch || null,
+          department: member.department || null,
+          employmentStatus: member.employmentStatus || 'active',
+          email: member.email || null,
+          phone: member.phone || null,
+          address: member.address || null,
+          birthdate: member.birthdate || null,
+          gender: member.gender || null,
+          dateHired: member.dateHired || null,
+          assignedShift: member.assignedShift || null,
+          profileImage: member.profileImage || null,
+          username: member.username || null,
+          permissions: member.permissions ? JSON.stringify(member.permissions) : null,
           createdBy: member.createdBy || member.created_by || null,
-          createdAt: createdAt
+          createdAt: createdAt,
+          updatedAt: new Date().toISOString()
         };
       }));
 
       // Now perform SQLite transaction (completely sync!)
       const insert = db.prepare(`
         INSERT OR REPLACE INTO staff 
-        (id, tenant_id, user_id, name, staffId, passkey, createdBy, createdAt) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (id, tenant_id, user_id, firstName, middleName, lastName, name, staffId, passkey, role, branch, department, employmentStatus, email, phone, address, birthdate, gender, dateHired, assignedShift, profileImage, username, permissions, createdBy, createdAt, updatedAt) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       
       const insertMany = db.transaction((staffMembers: any[]) => {
@@ -1435,11 +1571,29 @@ export const dbService = {
             member.id,
             member.tenantId,
             member.userId,
+            member.firstName,
+            member.middleName,
+            member.lastName,
             member.name,
             member.staffId,
             member.passkey,
+            member.role,
+            member.branch,
+            member.department,
+            member.employmentStatus,
+            member.email,
+            member.phone,
+            member.address,
+            member.birthdate,
+            member.gender,
+            member.dateHired,
+            member.assignedShift,
+            member.profileImage,
+            member.username,
+            member.permissions,
             member.createdBy,
-            member.createdAt
+            member.createdAt,
+            member.updatedAt
           );
         }
       });
@@ -1465,12 +1619,30 @@ export const dbService = {
                   const allStaffFields = [
                     { key: 'tenant_id', value: effectiveTenantId },
                     { key: 'user_id', value: m.userId },
+                    { key: 'first_name', value: String(m.firstName || '') },
+                    { key: 'middle_name', value: m.middleName },
+                    { key: 'last_name', value: String(m.lastName || '') },
                     { key: 'name', value: String(m.name || '') },
                     { key: 'staff_id', value: String(m.staffId || '') },
                     { key: 'passhash', value: m.passkey },
                     { key: 'passkey', value: m.passkey },
+                    { key: 'role', value: m.role },
+                    { key: 'branch', value: m.branch },
+                    { key: 'department', value: m.department },
+                    { key: 'employment_status', value: m.employmentStatus },
+                    { key: 'email', value: m.email },
+                    { key: 'phone', value: m.phone },
+                    { key: 'address', value: m.address },
+                    { key: 'birthdate', value: m.birthdate },
+                    { key: 'gender', value: m.gender },
+                    { key: 'date_hired', value: m.dateHired },
+                    { key: 'assigned_shift', value: m.assignedShift },
+                    { key: 'profile_image', value: m.profileImage },
+                    { key: 'username', value: m.username },
+                    { key: 'permissions', value: m.permissions ? JSON.parse(m.permissions) : null },
                     { key: 'created_by', value: m.createdBy },
-                    { key: 'created_at', value: m.createdAt }
+                    { key: 'created_at', value: m.createdAt },
+                    { key: 'updated_at', value: m.updatedAt }
                   ];
                   for (const field of allStaffFields) {
                     try {
@@ -1515,6 +1687,336 @@ export const dbService = {
   getStaffSince: (timestamp: Date, tenantId: string) => {
     return db.prepare('SELECT * FROM staff WHERE datetime(createdAt) > datetime(?) AND tenant_id = ?').all(timestamp.toISOString(), tenantId);
   },
+
+  getStaffById: (id: string, tenantId: string) => {
+    const staff = db.prepare('SELECT * FROM staff WHERE id = ? AND tenant_id = ?').get(id, tenantId);
+    if (staff) {
+      // Parse permissions JSON if exists
+      return {
+        ...staff,
+        permissions: staff.permissions ? JSON.parse(staff.permissions) : []
+      };
+    }
+    return null;
+  },
+
+  updateStaff: async (id: string, tenantId: string, updates: any, adminId?: string, adminName?: string) => {
+    // First get current staff to find changed fields
+    const currentStaff = db.prepare('SELECT * FROM staff WHERE id = ? AND tenant_id = ?').get(id, tenantId);
+    if (!currentStaff) throw new Error('Staff not found');
+
+    // Prepare update data
+    const now = new Date().toISOString();
+    const fieldsToUpdate = [];
+    const values = [];
+    const changedFields = [];
+    const oldValues: any = {};
+    const newValues: any = {};
+
+    const allowedFields = [
+      'firstName', 'middleName', 'lastName', 'name', 
+      'email', 'phone', 'address', 'role', 'branch', 
+      'department', 'employmentStatus', 'birthdate', 'gender',
+      'assignedShift', 'profileImage', 'username', 'permissions'
+    ];
+
+    for (const field of allowedFields) {
+      if (updates[field] !== undefined) {
+        // Handle JSON for permissions
+        let value = updates[field];
+        if (field === 'permissions') {
+          value = JSON.stringify(value);
+        }
+
+        // Check if value changed
+        if (currentStaff[field] !== value) {
+          changedFields.push(field);
+          oldValues[field] = currentStaff[field];
+          newValues[field] = updates[field];
+        }
+
+        fieldsToUpdate.push(`${field} = ?`);
+        values.push(value);
+      }
+    }
+
+    // Always update updatedAt
+    fieldsToUpdate.push('updatedAt = ?');
+    values.push(now);
+
+    if (fieldsToUpdate.length === 0) return currentStaff;
+
+    // Add id and tenantId to values for WHERE clause
+    values.push(id, tenantId);
+
+    // Execute update
+    const stmt = db.prepare(`
+      UPDATE staff 
+      SET ${fieldsToUpdate.join(', ')} 
+      WHERE id = ? AND tenant_id = ?
+    `);
+    stmt.run(...values);
+
+    // Create audit log
+    if (changedFields.length > 0) {
+      dbService.createAuditLog({
+        tenantId,
+        adminId,
+        adminName,
+        action: 'update_staff',
+        staffId: id,
+        staffName: currentStaff.name,
+        changedFields,
+        oldValues,
+        newValues
+      });
+    }
+
+    // Sync to cloud
+    if (useCloud()) {
+      const supabase = getSupabase();
+      if (supabase) {
+        try {
+          // Build cloud data
+          const cloudData: any = {};
+          for (const field of allowedFields) {
+            if (updates[field] !== undefined) {
+              if (field === 'permissions') {
+                cloudData.permissions = updates[field];
+              } else {
+                const cloudFieldMap: Record<string, string> = {
+                  firstName: 'first_name',
+                  middleName: 'middle_name',
+                  lastName: 'last_name',
+                  employmentStatus: 'employment_status',
+                  assignedShift: 'assigned_shift',
+                  profileImage: 'profile_image'
+                };
+                cloudData[cloudFieldMap[field] || field] = updates[field];
+              }
+            }
+          }
+          cloudData.updated_at = now;
+          await supabase.from('staff').update(cloudData).eq('id', id).eq('tenant_id', tenantId);
+        } catch (e) {
+          console.error('Cloud update failed:', e);
+        }
+      }
+    }
+
+    // Return updated staff
+    return dbService.getStaffById(id, tenantId);
+  },
+
+  updateStaffStatus: (id: string, tenantId: string, status: string) => {
+    const now = new Date().toISOString();
+    const stmt = db.prepare(`
+      UPDATE staff 
+      SET employmentStatus = ?, updatedAt = ? 
+      WHERE id = ? AND tenant_id = ?
+    `);
+    stmt.run(status, now, id, tenantId);
+
+    if (useCloud()) {
+      const supabase = getSupabase();
+      if (supabase) {
+        supabase.from('staff').update({ employment_status: status, updated_at: now }).eq('id', id).eq('tenant_id', tenantId);
+      }
+    }
+
+    return dbService.getStaffById(id, tenantId);
+  },
+
+  updateStaffPermissions: (id: string, tenantId: string, permissions: string[]) => {
+    const now = new Date().toISOString();
+    const permissionsJson = JSON.stringify(permissions);
+    const stmt = db.prepare(`
+      UPDATE staff 
+      SET permissions = ?, updatedAt = ? 
+      WHERE id = ? AND tenant_id = ?
+    `);
+    stmt.run(permissionsJson, now, id, tenantId);
+
+    if (useCloud()) {
+      const supabase = getSupabase();
+      if (supabase) {
+        supabase.from('staff').update({ permissions, updated_at: now }).eq('id', id).eq('tenant_id', tenantId);
+      }
+    }
+
+    return dbService.getStaffById(id, tenantId);
+  },
+
+  // Audit log functions
+  createAuditLog: (log: {
+    tenantId: string;
+    adminId?: string;
+    adminName?: string;
+    action: string;
+    staffId?: string;
+    staffName?: string;
+    changedFields?: string[];
+    oldValues?: any;
+    newValues?: any;
+    ipAddress?: string;
+  }) => {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    const stmt = db.prepare(`
+      INSERT INTO audit_logs 
+      (id, tenant_id, admin_id, admin_name, action, staff_id, staff_name, changed_fields, old_values, new_values, ip_address, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      id,
+      log.tenantId,
+      log.adminId || null,
+      log.adminName || null,
+      log.action,
+      log.staffId || null,
+      log.staffName || null,
+      log.changedFields ? JSON.stringify(log.changedFields) : null,
+      log.oldValues ? JSON.stringify(log.oldValues) : null,
+      log.newValues ? JSON.stringify(log.newValues) : null,
+      log.ipAddress || null,
+      now
+    );
+    return { id, ...log, createdAt: now };
+  },
+
+  // Staff performance data
+  getStaffPerformance: (staffId: string, tenantId: string) => {
+    // Calculate today's sales, weekly sales, monthly sales
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const weekStart = new Date(now.setDate(now.getDate() - now.getDay())).toISOString();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+    // Today's sales
+    const todaySales = db.prepare(`
+      SELECT COALESCE(SUM(total), 0) as total
+      FROM sales 
+      WHERE staffId = ? 
+        AND tenant_id = ? 
+        AND datetime(createdAt) >= datetime(?)
+    `).get(staffId, tenantId, todayStart) as any;
+
+    // Weekly sales
+    const weeklySales = db.prepare(`
+      SELECT COALESCE(SUM(total), 0) as total
+      FROM sales 
+      WHERE staffId = ? 
+        AND tenant_id = ? 
+        AND datetime(createdAt) >= datetime(?)
+    `).get(staffId, tenantId, weekStart) as any;
+
+    // Monthly sales
+    const monthlySales = db.prepare(`
+      SELECT COALESCE(SUM(total), 0) as total
+      FROM sales 
+      WHERE staffId = ? 
+        AND tenant_id = ? 
+        AND datetime(createdAt) >= datetime(?)
+    `).get(staffId, tenantId, monthStart) as any;
+
+    // Transaction count
+    const transactionCount = db.prepare(`
+      SELECT COUNT(*) as count
+      FROM sales 
+      WHERE staffId = ? 
+        AND tenant_id = ? 
+        AND datetime(createdAt) >= datetime(?)
+    `).get(staffId, tenantId, todayStart) as any;
+
+    // Items sold
+    const itemsSold = db.prepare(`
+      SELECT COALESCE(SUM(quantity), 0) as total
+      FROM sale_items
+      JOIN sales ON sale_items.saleId = sales.id
+      WHERE sales.staffId = ? 
+        AND sales.tenant_id = ? 
+        AND datetime(sales.createdAt) >= datetime(?)
+    `).get(staffId, tenantId, todayStart) as any;
+
+    return {
+      todaySales: todaySales.total || 0,
+      weeklySales: weeklySales.total || 0,
+      monthlySales: monthlySales.total || 0,
+      transactionCount: transactionCount.count || 0,
+      itemsSold: itemsSold.total || 0
+    };
+  },
+
+  // Staff activity
+  getStaffActivity: (staffId: string, tenantId: string) => {
+    // Get recent activity (sales)
+    const activity = db.prepare(`
+      SELECT id, total, createdAt
+      FROM sales 
+      WHERE staffId = ? 
+        AND tenant_id = ? 
+      ORDER BY datetime(createdAt) DESC
+      LIMIT 20
+    `).all(staffId, tenantId);
+    return activity;
+  },
+
+  // Staff attendance
+  getStaffAttendance: (staffId: string, tenantId: string) => {
+    // Get today's attendance first
+    const today = new Date();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
+
+    let attendance = db.prepare(`
+      SELECT * FROM attendance 
+      WHERE staff_id = ? 
+        AND tenant_id = ? 
+        AND datetime(date) >= datetime(?)
+      ORDER BY datetime(date) DESC
+    `).get(staffId, tenantId, todayStart);
+
+    if (!attendance) {
+      return {
+        date: today.toISOString(),
+        clockIn: null,
+        clockOut: null,
+        hoursWorked: null,
+        isLate: false
+      };
+    }
+
+    return attendance;
+  },
+
+  // Staff login history
+  getStaffLoginHistory: (staffId: string, tenantId: string) => {
+    return db.prepare(`
+      SELECT * FROM login_history 
+      WHERE staff_id = ? 
+        AND tenant_id = ? 
+      ORDER BY datetime(login_time) DESC
+      LIMIT 20
+    `).all(staffId, tenantId);
+  },
+
+  recordStaffLogin: (entry: { id: string; staffId: string; tenantId: string; deviceInfo?: string; ipAddress?: string; loginTime?: string }) => {
+    const now = new Date().toISOString();
+    db.prepare(`
+      INSERT INTO login_history
+      (id, tenant_id, staff_id, device_info, ip_address, login_time, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      entry.id,
+      entry.tenantId,
+      entry.staffId,
+      entry.deviceInfo || null,
+      entry.ipAddress || null,
+      entry.loginTime || now,
+      now
+    );
+  },
+
+
 
   // Auth & Session methods
   getStaffByStaffId: (staffId: string, tenantId: string) => {
@@ -2100,6 +2602,64 @@ export const dbService = {
     }
 
     // 14. Sync Settings
+    // 14a. Sync staff attendance
+    const attendance = db.prepare('SELECT * FROM attendance WHERE tenant_id = ?').all(tenantId) as any[];
+    if (attendance.length > 0) {
+      const cloudAttendance = attendance.map(a => ({
+        id: a.id,
+        tenant_id: tenantId,
+        staff_id: a.staff_id,
+        date: a.date,
+        clock_in: a.clock_in || null,
+        clock_out: a.clock_out || null,
+        hours_worked: a.hours_worked ?? null,
+        is_late: !!a.is_late,
+        created_at: a.created_at || new Date().toISOString(),
+        updated_at: a.updated_at || new Date().toISOString()
+      }));
+      const { error } = await supabase.from('attendance').upsert(cloudAttendance, { onConflict: 'id' });
+      if (error) throw error;
+    }
+
+    // 14b. Sync login history without exposing credentials
+    const loginHistory = db.prepare('SELECT * FROM login_history WHERE tenant_id = ?').all(tenantId) as any[];
+    if (loginHistory.length > 0) {
+      const cloudLoginHistory = loginHistory.map(l => ({
+        id: l.id,
+        tenant_id: tenantId,
+        staff_id: l.staff_id,
+        device_info: l.device_info || null,
+        ip_address: l.ip_address || null,
+        login_time: l.login_time,
+        logout_time: l.logout_time || null,
+        created_at: l.created_at || new Date().toISOString()
+      }));
+      const { error } = await supabase.from('login_history').upsert(cloudLoginHistory, { onConflict: 'id' });
+      if (error) throw error;
+    }
+
+    // 14c. Sync staff audit history
+    const auditLogs = db.prepare('SELECT * FROM audit_logs WHERE tenant_id = ?').all(tenantId) as any[];
+    if (auditLogs.length > 0) {
+      const cloudAuditLogs = auditLogs.map(a => ({
+        id: a.id,
+        tenant_id: tenantId,
+        admin_id: a.admin_id || null,
+        admin_name: a.admin_name || null,
+        action: a.action,
+        staff_id: a.staff_id || null,
+        staff_name: a.staff_name || null,
+        changed_fields: a.changed_fields || null,
+        old_values: a.old_values || null,
+        new_values: a.new_values || null,
+        ip_address: a.ip_address || null,
+        created_at: a.created_at || new Date().toISOString()
+      }));
+      const { error } = await supabase.from('audit_logs').upsert(cloudAuditLogs, { onConflict: 'id' });
+      if (error) throw error;
+    }
+
+    // 14d. Sync settings
     const settings = db.prepare('SELECT * FROM settings').all() as any[];
     if (settings.length > 0) {
       const cloudSettings = settings.map(s => ({
@@ -2172,11 +2732,29 @@ export const dbService = {
         id: s.id,
         tenantId: s.tenant_id,
         userId: s.user_id,
+        firstName: s.first_name || '',
+        middleName: s.middle_name || null,
+        lastName: s.last_name || '',
         name: s.name,
         staffId: s.staff_id,
         passkey: s.passkey,
+        role: s.role || 'cashier',
+        branch: s.branch || null,
+        department: s.department || null,
+        employmentStatus: s.employment_status || 'active',
+        email: s.email || null,
+        phone: s.phone || null,
+        address: s.address || null,
+        birthdate: s.birthdate || null,
+        gender: s.gender || null,
+        dateHired: s.date_hired || null,
+        assignedShift: s.assigned_shift || null,
+        profileImage: s.profile_image || null,
+        username: s.username || null,
+        permissions: s.permissions || [],
         createdBy: s.created_by,
-        createdAt: s.created_at
+        createdAt: s.created_at,
+        updatedAt: s.updated_at
       })), tenantId);
       console.log(`Pulled ${cloudStaff.length} staff`);
     }
@@ -2364,6 +2942,43 @@ export const dbService = {
     }
 
     // 14. Pull Settings
+    // 14a. Pull staff attendance
+    const { data: cloudAttendance, error: attendanceError } = await supabase.from('attendance').select('*').eq('tenant_id', tenantId);
+    if (attendanceError) throw attendanceError;
+    if (cloudAttendance && cloudAttendance.length > 0) {
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO attendance
+        (id, tenant_id, staff_id, date, clock_in, clock_out, hours_worked, is_late, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      db.transaction((rows: any[]) => rows.forEach(a => insert.run(a.id, tenantId, a.staff_id, a.date, a.clock_in, a.clock_out, a.hours_worked, a.is_late ? 1 : 0, a.created_at, a.updated_at)))(cloudAttendance);
+    }
+
+    // 14b. Pull login history
+    const { data: cloudLoginHistory, error: loginHistoryError } = await supabase.from('login_history').select('*').eq('tenant_id', tenantId);
+    if (loginHistoryError) throw loginHistoryError;
+    if (cloudLoginHistory && cloudLoginHistory.length > 0) {
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO login_history
+        (id, tenant_id, staff_id, device_info, ip_address, login_time, logout_time, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      db.transaction((rows: any[]) => rows.forEach(l => insert.run(l.id, tenantId, l.staff_id, l.device_info, l.ip_address, l.login_time, l.logout_time, l.created_at)))(cloudLoginHistory);
+    }
+
+    // 14c. Pull staff audit history
+    const { data: cloudAuditLogs, error: auditError } = await supabase.from('audit_logs').select('*').eq('tenant_id', tenantId);
+    if (auditError) throw auditError;
+    if (cloudAuditLogs && cloudAuditLogs.length > 0) {
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO audit_logs
+        (id, tenant_id, admin_id, admin_name, action, staff_id, staff_name, changed_fields, old_values, new_values, ip_address, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      db.transaction((rows: any[]) => rows.forEach(a => insert.run(a.id, tenantId, a.admin_id, a.admin_name, a.action, a.staff_id, a.staff_name, a.changed_fields, a.old_values, a.new_values, a.ip_address, a.created_at)))(cloudAuditLogs);
+    }
+
+    // 14d. Pull settings
     const { data: cloudSettings, error: setError } = await supabase.from('settings').select('*').eq('tenant_id', tenantId);
     if (setError) throw setError;
     if (cloudSettings && cloudSettings.length > 0) {

@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuRadioGroup, DropdownMenuRadioItem } from '@/components/ui/dropdown-menu';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -23,6 +23,7 @@ import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import type { Notification, Remittance } from '@shared/schema';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 // Schemas for expenses and purchases
 const expenseSchema = z.object({
@@ -82,6 +83,7 @@ interface Creditor {
 const AdminMain: React.FC = () => {
   const { user, logout, socket } = useAuth();
   const { deviceMode } = useDevices();
+  const { language, setLanguage, t } = useLanguage();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [stats, setStats] = useState({
@@ -166,11 +168,11 @@ const AdminMain: React.FC = () => {
       });
       setIsAddExpenseOpen(false);
       expenseForm.reset();
-      toast({ title: 'Expense Added', description: `${data.description} has been added` });
+      toast({ title: t('expenseAdded'), description: `${data.description} has been added` });
       loadFinancialData();
       loadStats();
     } catch (error) {
-      toast({ title: 'Error', description: 'Failed to add expense', variant: 'destructive' });
+      toast({ title: t('error'), description: t('failedToAddExpense'), variant: 'destructive' });
     }
   };
 
@@ -188,11 +190,11 @@ const AdminMain: React.FC = () => {
       });
       setIsAddPurchaseOpen(false);
       purchaseForm.reset();
-      toast({ title: 'Purchase Added', description: `${data.productName} has been added` });
+      toast({ title: t('purchaseAdded'), description: `${data.productName} has been added` });
       loadFinancialData();
       loadStats();
     } catch (error) {
-      toast({ title: 'Error', description: 'Failed to add purchase', variant: 'destructive' });
+      toast({ title: t('error'), description: t('failedToAddPurchase'), variant: 'destructive' });
     }
   };
   
@@ -208,10 +210,10 @@ const AdminMain: React.FC = () => {
       });
       setIsAddCreditorOpen(false);
       creditorForm.reset();
-      toast({ title: 'Creditor Added', description: `${data.name} has been added to the ledger` });
+      toast({ title: t('creditorAdded'), description: `${data.name} has been added to the ledger` });
       loadFinancialData();
     } catch (error) {
-      toast({ title: 'Error', description: 'Failed to add creditor', variant: 'destructive' });
+      toast({ title: t('error'), description: t('failedToAddCreditor'), variant: 'destructive' });
     }
   };
 
@@ -639,7 +641,7 @@ const AdminMain: React.FC = () => {
                     <User className="w-4 h-4 text-white" />
                   </div>
                   <div className="hidden sm:flex flex-col items-start">
-                    <span className="text-[10px] font-bold text-gray-800 uppercase tracking-wider">Admin</span>
+                    <span className="text-[10px] font-bold text-gray-800 uppercase tracking-wider">{t('admin')}</span>
                   </div>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent side="bottom" align="end" className="w-56 bg-white border border-gray-100 shadow-2xl rounded-2xl p-2 z-[60]">
@@ -647,29 +649,41 @@ const AdminMain: React.FC = () => {
                     onClick={async () => { 
                       // We'll implement pushToCloud function
                       try {
-                        toast({ title: 'Syncing to Cloud', description: 'Pushing all data to Supabase...' });
+                        toast({ title: t('syncingToCloud'), description: t('pushingAllData') });
                         // Call server endpoint to sync
                         const result = await api.post('/api/sync/push-all', {});
                         if (result.success) {
-                          toast({ title: 'Success!', description: 'All data backed up to the cloud' });
+                          toast({ title: t('success'), description: t('allDataBackedUp') });
                         } else {
-                          toast({ title: 'Sync Failed', description: result.error || 'Something went wrong', variant: 'destructive' });
+                          toast({ title: t('syncFailed'), description: result.error || t('somethingWentWrong'), variant: 'destructive' });
                         }
                       } catch (error) {
-                        toast({ title: 'Sync Failed', description: error instanceof Error ? error.message : 'Something went wrong', variant: 'destructive' });
+                        toast({ title: t('syncFailed'), description: error instanceof Error ? error.message : t('somethingWentWrong'), variant: 'destructive' });
                       }
                     }}
                     className="h-12 px-4 rounded-xl text-sm font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-600 cursor-pointer flex items-center group"
                   >
                     <Cloud className="w-4 h-4 mr-3 text-gray-400 group-hover:text-blue-500" />
-                    <span>Push to Cloud</span>
+                    <span>{t('pushToCloud')}</span>
                   </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger className="h-12 px-4 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 cursor-pointer">
+                      <span>{t('language')}</span>
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-40 bg-white border border-gray-100 shadow-2xl rounded-2xl p-2 z-[60]">
+                      <DropdownMenuRadioGroup value={language} onValueChange={(value) => setLanguage(value as 'en' | 'tl')}>
+                        <DropdownMenuRadioItem value="en" className="h-10 rounded-xl cursor-pointer">{t('english')}</DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="tl" className="h-10 rounded-xl cursor-pointer">{t('tagalog')}</DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
                   <DropdownMenuItem
                     onClick={() => { logout(); setLocation('/role-selection'); }}
                     className="h-12 px-4 rounded-xl text-sm font-semibold text-gray-700 hover:bg-red-50 hover:text-red-600 cursor-pointer flex items-center group"
                   >
                     <LogOut className="w-4 h-4 mr-3 text-gray-400 group-hover:text-red-500" />
-                    <span>Terminate Session</span>
+                    <span>{t('terminateSession')}</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -700,14 +714,14 @@ const AdminMain: React.FC = () => {
               <div className="relative z-10">
                 <div className="inline-flex items-center gap-2 px-2 py-0.5 rounded-full bg-[#BF953F]/10 border border-[#BF953F]/20 mb-2">
                   <div className="w-1 h-1 rounded-full bg-[#BF953F] animate-pulse"></div>
-                  <span className="text-[8px] font-black uppercase tracking-[0.2em] text-[#BF953F]">Active</span>
+                  <span className="text-[8px] font-black uppercase tracking-[0.2em] text-[#BF953F]">{t('active')}</span>
                 </div>
                 <h1 className="text-xl font-black text-gray-900 tracking-tighter leading-tight">
                   Hi, <span className="gold-gradient-text">{user?.ownerName || user?.username || 'Admin'}</span>
                 </h1>
                 <div className="mt-2 flex gap-2">
-                  <Button size="sm" variant="outline" className="h-7 text-[9px] font-bold uppercase" onClick={() => setLocation('/admin/reports')}>Reports</Button>
-                  <Button size="sm" variant="outline" className="h-7 text-[9px] font-bold uppercase" onClick={handleExportCSV}>Export</Button>
+                  <Button size="sm" variant="outline" className="h-7 text-[9px] font-bold uppercase" onClick={() => setLocation('/admin/reports')}>{t('reports')}</Button>
+                  <Button size="sm" variant="outline" className="h-7 text-[9px] font-bold uppercase" onClick={handleExportCSV}>{t('export')}</Button>
                 </div>
               </div>
             </motion.div>
@@ -796,15 +810,15 @@ const AdminMain: React.FC = () => {
               "modern-card p-4 flex flex-col",
               (deviceMode === 'pc' || deviceMode === 'tablet') ? "lg:col-span-4" : ""
             )}>
-              <h2 className="text-[10px] font-black uppercase tracking-widest text-gray-900 mb-3">Executive Tools</h2>
+              <h2 className="text-[10px] font-black uppercase tracking-widest text-gray-900 mb-3">{t('executiveTools')}</h2>
               <div className="grid grid-cols-2 gap-2 overflow-y-auto pr-1 flex-1">
                 {[
-                  { title: 'Inventory', icon: Package, path: '/inventory', color: 'pink' },
-                  { title: 'Financials', icon: CreditCard, path: '/ledger', color: 'indigo' },
-                  { title: 'Expenses', icon: DollarSign, path: '/expenses', color: 'emerald' },
-                  { title: 'Book Keeping', icon: Receipt, path: '/bookkeeping', color: 'blue' },
-                  { title: 'History', icon: History, path: '/transaction-history', color: 'purple' },
-                  { title: 'Analytics', icon: BarChart3, path: '/admin/reports', color: 'amber' },
+                  { title: t('inventory'), icon: Package, path: '/inventory', color: 'pink' },
+                  { title: t('financials'), icon: CreditCard, path: '/ledger', color: 'indigo' },
+                  { title: t('expenses'), icon: DollarSign, path: '/expenses', color: 'emerald' },
+                  { title: t('bookkeeping'), icon: Receipt, path: '/bookkeeping', color: 'blue' },
+                  { title: t('history'), icon: History, path: '/transaction-history', color: 'purple' },
+                  { title: t('analytics'), icon: BarChart3, path: '/admin/reports', color: 'amber' },
                 ].map((tool) => (
                   <Button
                     key={tool.title}
@@ -829,11 +843,11 @@ const AdminMain: React.FC = () => {
                 <div className="flex gap-3">
                   <div className="flex items-center gap-1.5">
                     <div className="w-1.5 h-1.5 rounded-full bg-[#BF953F]"></div>
-                    <span className="text-[8px] font-black uppercase text-gray-400">Income</span>
+                    <span className="text-[8px] font-black uppercase text-gray-400">{t('income')}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <div className="w-1.5 h-1.5 rounded-full bg-gray-200"></div>
-                    <span className="text-[8px] font-black uppercase text-gray-400">Costs</span>
+                    <span className="text-[8px] font-black uppercase text-gray-400">{t('costs')}</span>
                   </div>
                 </div>
               </div>
@@ -872,7 +886,7 @@ const AdminMain: React.FC = () => {
               "modern-card p-4 flex flex-col",
               (deviceMode === 'pc' || deviceMode === 'tablet') ? "lg:col-span-5" : ""
             )}>
-              <h2 className="text-[10px] font-black uppercase tracking-widest text-gray-900 mb-3">Top Sellers</h2>
+              <h2 className="text-[10px] font-black uppercase tracking-widest text-gray-900 mb-3">{t('topSellers')}</h2>
               <div className="space-y-3 overflow-y-auto pr-1 flex-1">
                 {topProducts.map((product, i) => (
                   <div key={product.name} className="space-y-1">
@@ -899,16 +913,16 @@ const AdminMain: React.FC = () => {
               (deviceMode === 'pc' || deviceMode === 'tablet') ? "lg:col-span-7" : ""
             )}>
               <div className="flex items-center justify-between mb-3 flex-none">
-                <h2 className="text-[10px] font-black uppercase tracking-widest text-gray-900">Recent Activity</h2>
-                <Button variant="ghost" className="h-6 text-[8px] font-black uppercase tracking-widest text-[#BF953F]" onClick={() => setLocation('/transaction-history')}>View All</Button>
+                <h2 className="text-[10px] font-black uppercase tracking-widest text-gray-900">{t('recentActivity')}</h2>
+                <Button variant="ghost" className="h-6 text-[8px] font-black uppercase tracking-widest text-[#BF953F]" onClick={() => setLocation('/transaction-history')}>{t('viewAll')}</Button>
               </div>
               <div className="overflow-x-auto flex-1 overflow-y-auto pr-1">
                 <table className="w-full text-left">
                   <thead className="sticky top-0 bg-white">
                     <tr className="border-b border-gray-50">
-                      <th className="pb-2 text-[9px] font-black uppercase tracking-widest text-gray-400">Order</th>
-                      <th className="pb-2 text-[9px] font-black uppercase tracking-widest text-gray-400">Staff</th>
-                      <th className="pb-2 text-[9px] font-black uppercase tracking-widest text-gray-400 text-right">Total</th>
+                      <th className="pb-2 text-[9px] font-black uppercase tracking-widest text-gray-400">{t('order')}</th>
+                      <th className="pb-2 text-[9px] font-black uppercase tracking-widest text-gray-400">{t('staff')}</th>
+                      <th className="pb-2 text-[9px] font-black uppercase tracking-widest text-gray-400 text-right">{t('total')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">

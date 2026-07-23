@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { AppProvider } from "@/contexts/AppContext";
 import { DeviceProvider } from "@/contexts/DeviceContext";
+import { LanguageProvider } from "@/contexts/LanguageContext";
 import { queryClient } from "./lib/queryClient";
 
 // Import pages
@@ -118,10 +119,12 @@ function App() {
       <TooltipProvider>
         <AuthProvider>
           <AppProvider>
-            <DeviceProvider>
-              <Toaster />
-              <Router />
-            </DeviceProvider>
+            <LanguageProvider>
+              <DeviceProvider>
+                <Toaster />
+                <Router />
+              </DeviceProvider>
+            </LanguageProvider>
           </AppProvider>
         </AuthProvider>
       </TooltipProvider>

@@ -13,6 +13,48 @@ import bcrypt from "bcryptjs";
 import { getSupabase } from "./supabase";
 import { DeveloperService } from "./developer-service";
 
+const staffRoles = ['cashier', 'manager', 'admin'] as const;
+const employmentStatuses = ['active', 'inactive', 'on_leave'] as const;
+const assignedShifts = ['morning', 'afternoon', 'evening'] as const;
+const staffGenders = ['male', 'female', 'other'] as const;
+const staffPermissions = ['sales.create', 'sales.view', 'products.manage', 'customers.manage', 'staff.view', 'reports.view'] as const;
+
+const staffCreateSchema = z.object({
+  firstName: z.string().trim().min(1).max(100),
+  middleName: z.string().trim().max(100).optional().nullable(),
+  lastName: z.string().trim().min(1).max(100),
+  name: z.string().trim().min(1).max(250),
+  staffId: z.string().trim().min(1).max(50),
+  passkey: z.string().min(4).max(200),
+  role: z.enum(staffRoles).default('cashier'),
+  branch: z.string().trim().max(150).optional().nullable(),
+  department: z.string().trim().max(150).optional().nullable(),
+  employmentStatus: z.enum(employmentStatuses).default('active'),
+  email: z.string().trim().email().max(254).optional().nullable(),
+  phone: z.string().trim().max(40).optional().nullable(),
+  address: z.string().trim().max(500).optional().nullable(),
+  birthdate: z.coerce.date().optional().nullable(),
+  gender: z.enum(staffGenders).optional().nullable(),
+  dateHired: z.coerce.date().optional().nullable(),
+  assignedShift: z.enum(assignedShifts).optional().nullable(),
+  profileImage: z.string().max(5_000_000).optional().nullable(),
+  username: z.string().trim().max(100).optional().nullable(),
+  permissions: z.array(z.enum(staffPermissions)).default([]),
+});
+
+const staffUpdateSchema = staffCreateSchema.partial().omit({ staffId: true, passkey: true, name: true });
+const staffStatusSchema = z.object({ status: z.enum(employmentStatuses) });
+const staffPermissionsSchema = z.object({ permissions: z.array(z.enum(staffPermissions)).max(staffPermissions.length) });
+
+const getStaffAdminContext = (req: Request) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) return { adminId: undefined, adminName: undefined };
+  const session = dbService.getSessionByToken(authHeader.slice('Bearer '.length));
+  if (!session) return { adminId: undefined, adminName: undefined };
+  const admin = dbService.getUserById(session.user_id);
+  return { adminId: session.user_id, adminName: admin?.username || admin?.ownerName || undefined };
+};
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize database schema for products and staff
   dbService.initSchema();
@@ -632,6 +674,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       dbService.createSession(session);
+      dbService.recordStaffLogin({
+        id: randomUUID(),
+        staffId: staff.id,
+        tenantId: session.tenant_id,
+        deviceInfo: session.device_info,
+        ipAddress: session.ip_address,
+      });
 
       // Auto-pull all data from cloud on login for multi-device sync ONLY IF we have a real tenant in Supabase
       if (useCloud() && tenant && tenant.id !== 'default-tenant-id') {
@@ -1321,6 +1370,248 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get staff by ID with all details
+  app.get('/api/staff/:id', (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const { id } = req.params;
+      const staff = dbService.getStaffById(id, tenantId);
+      if (!staff) {
+        return res.status(404).json({ error: 'Staff not found' });
+      }
+
+      // Get additional data
+      const performance = dbService.getStaffPerformance(staff.id, tenantId);
+      const attendance = dbService.getStaffAttendance(staff.id, tenantId);
+      const activity = dbService.getStaffActivity(staff.id, tenantId);
+      const loginHistory = dbService.getStaffLoginHistory(staff.id, tenantId);
+
+      res.status(200).json({
+        ...staff,
+        performance,
+        attendance,
+        activity,
+        loginHistory
+      });
+    } catch (error) {
+      console.error('Error fetching staff:', error);
+      res.status(500).json({ error: 'Failed to fetch staff' });
+    }
+  });
+
+  // Update staff
+  app.put('/api/staff/:id', async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const { id } = req.params;
+      const parsed = staffUpdateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Invalid staff update', details: parsed.error.flatten() });
+      }
+      const updates = parsed.data;
+
+      // Get current staff to find changed fields
+      const currentStaff = dbService.getStaffById(id, tenantId);
+      if (!currentStaff) {
+        return res.status(404).json({ error: 'Staff not found' });
+      }
+
+      // Update staff
+      // Resolve current admin for audit context
+      const { adminId, adminName } = getStaffAdminContext(req);
+      const updatedStaff = await dbService.updateStaff(id, tenantId, updates, adminId || undefined, adminName || undefined);
+
+      res.status(200).json(updatedStaff);
+    } catch (error) {
+      console.error('Error updating staff:', error);
+      res.status(500).json({ error: 'Failed to update staff' });
+    }
+  });
+
+  // Update staff status
+  app.patch('/api/staff/:id/status', (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const { id } = req.params;
+      const parsed = staffStatusSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Invalid employment status', details: parsed.error.flatten() });
+      }
+      const { status } = parsed.data;
+      const currentStaff = dbService.getStaffById(id, tenantId);
+      if (!currentStaff) {
+        return res.status(404).json({ error: 'Staff not found' });
+      }
+
+      const updatedStaff = dbService.updateStaffStatus(id, tenantId, status);
+
+      // Create audit log
+      const { adminId, adminName } = getStaffAdminContext(req);
+
+      dbService.createAuditLog({
+        tenantId,
+        adminId,
+        adminName,
+        action: 'Updated Staff Status',
+        staffId: id,
+        staffName: updatedStaff.name,
+        changedFields: ['employmentStatus'],
+        oldValues: { employmentStatus: currentStaff.employmentStatus },
+        newValues: { employmentStatus: status },
+        ipAddress: req.ip || req.socket.remoteAddress
+      });
+
+      res.status(200).json(updatedStaff);
+    } catch (error) {
+      console.error('Error updating staff status:', error);
+      res.status(500).json({ error: 'Failed to update staff status' });
+    }
+  });
+
+  // Update staff permissions
+  app.patch('/api/staff/:id/permissions', (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const { id } = req.params;
+      const parsed = staffPermissionsSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Invalid permissions', details: parsed.error.flatten() });
+      }
+      const { permissions } = parsed.data;
+      const currentStaff = dbService.getStaffById(id, tenantId);
+      if (!currentStaff) {
+        return res.status(404).json({ error: 'Staff not found' });
+      }
+
+      const updatedStaff = dbService.updateStaffPermissions(id, tenantId, permissions);
+
+      // Create audit log
+      const { adminId, adminName } = getStaffAdminContext(req);
+
+      dbService.createAuditLog({
+        tenantId,
+        adminId,
+        adminName,
+        action: 'Updated Staff Permissions',
+        staffId: id,
+        staffName: updatedStaff.name,
+        changedFields: ['permissions'],
+        oldValues: { permissions: currentStaff.permissions || [] },
+        newValues: { permissions: permissions || [] },
+        ipAddress: req.ip || req.socket.remoteAddress
+      });
+
+      res.status(200).json(updatedStaff);
+    } catch (error) {
+      console.error('Error updating staff permissions:', error);
+      res.status(500).json({ error: 'Failed to update staff permissions' });
+    }
+  });
+
+  // Deactivate staff while preserving sales, attendance, login, and audit history.
+  app.delete('/api/staff/:id', (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const { id } = req.params;
+      const currentStaff = dbService.getStaffById(id, tenantId);
+      if (!currentStaff) {
+        return res.status(404).json({ error: 'Staff not found' });
+      }
+
+      const { adminId, adminName } = getStaffAdminContext(req);
+      const updatedStaff = dbService.updateStaffStatus(id, tenantId, 'inactive');
+      dbService.createAuditLog({
+        tenantId,
+        adminId,
+        adminName,
+        action: 'deactivate_staff',
+        staffId: id,
+        staffName: currentStaff.name,
+        changedFields: ['employmentStatus'],
+        oldValues: { employmentStatus: currentStaff.employmentStatus },
+        newValues: { employmentStatus: 'inactive' },
+        ipAddress: req.ip || req.socket.remoteAddress,
+      });
+
+      res.status(200).json({ success: true, staff: updatedStaff });
+    } catch (error) {
+      console.error('Error deactivating staff:', error);
+      res.status(500).json({ error: 'Failed to remove staff' });
+    }
+  });
+
+  // Get staff activity
+  app.get('/api/staff/:id/activity', (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const { id } = req.params;
+      const staff = dbService.getStaffById(id, tenantId);
+      if (!staff) {
+        return res.status(404).json({ error: 'Staff not found' });
+      }
+
+      const activity = dbService.getStaffActivity(staff.id, tenantId);
+      res.status(200).json(activity);
+    } catch (error) {
+      console.error('Error fetching staff activity:', error);
+      res.status(500).json({ error: 'Failed to fetch staff activity' });
+    }
+  });
+
+  // Get staff attendance
+  app.get('/api/staff/:id/attendance', (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const { id } = req.params;
+      const staff = dbService.getStaffById(id, tenantId);
+      if (!staff) {
+        return res.status(404).json({ error: 'Staff not found' });
+      }
+
+      const attendance = dbService.getStaffAttendance(staff.id, tenantId);
+      res.status(200).json(attendance);
+    } catch (error) {
+      console.error('Error fetching staff attendance:', error);
+      res.status(500).json({ error: 'Failed to fetch staff attendance' });
+    }
+  });
+
+  // Get staff performance
+  app.get('/api/staff/:id/performance', (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const { id } = req.params;
+      const staff = dbService.getStaffById(id, tenantId);
+      if (!staff) {
+        return res.status(404).json({ error: 'Staff not found' });
+      }
+
+      const performance = dbService.getStaffPerformance(staff.id, tenantId);
+      res.status(200).json(performance);
+    } catch (error) {
+      console.error('Error fetching staff performance:', error);
+      res.status(500).json({ error: 'Failed to fetch staff performance' });
+    }
+  });
+
+  // Get staff login history
+  app.get('/api/staff/:id/login-history', (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const { id } = req.params;
+      const staff = dbService.getStaffById(id, tenantId);
+      if (!staff) {
+        return res.status(404).json({ error: 'Staff not found' });
+      }
+
+      const loginHistory = dbService.getStaffLoginHistory(staff.id, tenantId);
+      res.status(200).json(loginHistory);
+    } catch (error) {
+      console.error('Error fetching staff login history:', error);
+      res.status(500).json({ error: 'Failed to fetch staff login history' });
+    }
+  });
+
   app.get('/api/cloud/staff', async (_req: Request, res: Response) => {
     try {
       const supabase = getSupabase();
@@ -1329,11 +1620,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error) return res.status(500).json({ error: 'Failed to fetch staff' });
       const mapped = (data || []).map((s: any) => ({
         id: String(s.id),
+        tenantId: s.tenant_id,
+        userId: s.user_id || null,
+        firstName: s.first_name || '',
+        middleName: s.middle_name || null,
+        lastName: s.last_name || '',
         name: s.name,
         staffId: s.staff_id,
         passkey: '',
+        role: s.role || 'cashier',
+        branch: s.branch || null,
+        department: s.department || null,
+        employmentStatus: s.employment_status || 'active',
+        email: s.email || null,
+        phone: s.phone || null,
+        address: s.address || null,
+        birthdate: s.birthdate || null,
+        gender: s.gender || null,
+        dateHired: s.date_hired || null,
+        assignedShift: s.assigned_shift || null,
+        profileImage: s.profile_image || null,
+        username: s.username || null,
+        permissions: s.permissions || [],
         createdBy: s.created_by || null,
-        createdAt: s.created_at || null
+        createdAt: s.created_at || null,
+        updatedAt: s.updated_at || null
       }));
       res.status(200).json(mapped);
     } catch {
@@ -1362,11 +1673,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Sync staff endpoint - allows clients to sync staff accounts
   app.post('/api/sync-staff', (req: Request, res: Response) => {
     try {
+      const tenantId = (req as any).tenantId;
       const { lastSyncTimestamp } = req.body;
       const timestamp = lastSyncTimestamp ? new Date(lastSyncTimestamp) : new Date(0);
       
       // Get all staff updated since the last sync
-      const staff = (dbService.getStaffSince(timestamp) as any[])
+      const staff = (dbService.getStaffSince(timestamp, tenantId) as any[])
         .map((member: any) => ({
           id: member.id,
           name: member.name,
@@ -2058,14 +2370,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Staff update
   app.post('/api/staff', async (req: Request, res: Response) => {
     try {
-      const staff = req.body;
       const tenantId = (req as any).tenantId;
-      if (Array.isArray(staff)) {
-        await dbService.saveStaff(staff, tenantId);
-        res.status(200).json({ message: 'Staff updated successfully' });
-      } else {
-        res.status(400).json({ error: 'Invalid staff data' });
+      const payload = Array.isArray(req.body) ? req.body : [req.body];
+      if (payload.length === 0 || payload.some(member => !member || typeof member !== 'object')) {
+        return res.status(400).json({ error: 'Invalid staff data' });
       }
+      const invalidMember = payload.find(member => !staffCreateSchema.safeParse(member).success);
+      if (invalidMember) {
+        return res.status(400).json({ error: 'Invalid staff data', details: staffCreateSchema.safeParse(invalidMember).error?.flatten() });
+      }
+      const normalized = payload.map(member => ({
+        ...member,
+        tenantId,
+        tenant_id: tenantId,
+      }));
+      await dbService.saveStaff(normalized, tenantId);
+      res.status(200).json({ message: 'Staff updated successfully', count: normalized.length });
     } catch (error) {
       console.error('Error updating staff:', error);
       res.status(500).json({ error: 'Failed to update staff' });
@@ -2100,12 +2420,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
           id: String(m.id),
           tenant_id: effectiveTenantId,
           user_id: m.userId || m.user_id || null,
+          first_name: String(m.firstName || m.first_name || ''),
+          middle_name: m.middleName || m.middle_name || null,
+          last_name: String(m.lastName || m.last_name || ''),
           name: String(m.name || ''),
           staff_id: String(m.staffId || m.staff_id || ''),
+          role: m.role || 'cashier',
+          branch: m.branch || null,
+          department: m.department || null,
+          employment_status: m.employmentStatus || m.employment_status || 'active',
+          email: m.email || null,
+          phone: m.phone || null,
+          address: m.address || null,
+          birthdate: m.birthdate || null,
+          gender: m.gender || null,
+          date_hired: m.dateHired || m.date_hired || null,
+          assigned_shift: m.assignedShift || m.assigned_shift || null,
+          profile_image: m.profileImage || m.profile_image || null,
+          username: m.username || null,
+          permissions: m.permissions || [],
           passhash,
           passkey: passhash,
           created_by: m.createdBy || m.created_by || null,
-          created_at: createdAt
+          created_at: createdAt,
+          updated_at: m.updatedAt || m.updated_at || new Date().toISOString()
         };
       }));
       
@@ -2132,12 +2470,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const allStaffFields = [
               { key: 'tenant_id', value: effectiveTenantId },
               { key: 'user_id', value: m.userId || m.user_id || null },
+              { key: 'first_name', value: String(m.firstName || m.first_name || '') },
+              { key: 'middle_name', value: m.middleName || m.middle_name || null },
+              { key: 'last_name', value: String(m.lastName || m.last_name || '') },
               { key: 'name', value: String(m.name || '') },
               { key: 'staff_id', value: String(m.staffId || m.staff_id || '') },
+              { key: 'role', value: m.role || 'cashier' },
+              { key: 'branch', value: m.branch || null },
+              { key: 'department', value: m.department || null },
+              { key: 'employment_status', value: m.employmentStatus || m.employment_status || 'active' },
+              { key: 'email', value: m.email || null },
+              { key: 'phone', value: m.phone || null },
+              { key: 'address', value: m.address || null },
+              { key: 'birthdate', value: m.birthdate || null },
+              { key: 'gender', value: m.gender || null },
+              { key: 'date_hired', value: m.dateHired || m.date_hired || null },
+              { key: 'assigned_shift', value: m.assignedShift || m.assigned_shift || null },
+              { key: 'profile_image', value: m.profileImage || m.profile_image || null },
+              { key: 'username', value: m.username || null },
+              { key: 'permissions', value: m.permissions || [] },
               { key: 'passhash', value: passhash },
               { key: 'passkey', value: passhash },
               { key: 'created_by', value: m.createdBy || m.created_by || null },
-              { key: 'created_at', value: m.createdAt || m.created_at || new Date().toISOString() }
+              { key: 'created_at', value: m.createdAt || m.created_at || new Date().toISOString() },
+              { key: 'updated_at', value: m.updatedAt || m.updated_at || new Date().toISOString() }
             ];
             for (const field of allStaffFields) {
               try {

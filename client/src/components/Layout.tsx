@@ -5,6 +5,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useDevices } from '@/contexts/DeviceContext';
 import { WifiOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -16,6 +17,7 @@ const Layout: React.FC<LayoutProps> = ({ children, showNavigation = true, fullWi
   const { isAuthenticated, isAdmin } = useAuth();
   const { isOffline } = useApp();
   const { deviceMode } = useDevices();
+  const { t } = useLanguage();
   const [windowWidth, setWindowWidth] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 0);
   
   useEffect(() => {
@@ -52,7 +54,7 @@ const Layout: React.FC<LayoutProps> = ({ children, showNavigation = true, fullWi
       {isOffline && (
         <div className="fixed top-0 left-0 right-0 bg-warning-500 text-white text-center py-2 text-sm z-50 flex items-center justify-center">
           <WifiOff className="w-4 h-4 inline-block mr-2" />
-          <span>Offline Mode</span>
+          <span>{t('offlineMode')}</span>
         </div>
       )}
       
