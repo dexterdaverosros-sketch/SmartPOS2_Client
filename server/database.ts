@@ -1659,8 +1659,8 @@ export const dbService = {
                   try {
                     const { error: staffError } = await supabase.from('staff').upsert(staffData, { onConflict: 'id' });
                     if (staffError) {
-                      console.warn(`[SYNC] Failed to sync staff ${m.id}, trying only id...`, staffError);
-                      await supabase.from('staff').upsert({ id: String(m.id) }, { onConflict: 'id' });
+                      console.warn(`[SYNC] Failed to sync staff ${m.id}, trying with id and tenant_id...`, staffError);
+                      await supabase.from('staff').upsert({ id: String(m.id), tenant_id: effectiveTenantId }, { onConflict: 'id' });
                     }
                   } catch (finalErr) {
                     console.error(`[SYNC] Could not sync staff ${m.id} at all`, finalErr);
@@ -2356,8 +2356,8 @@ export const dbService = {
         try {
           const { error: staffError } = await supabase.from('staff').upsert(staffData, { onConflict: 'id' });
           if (staffError) {
-            console.warn(`[SYNC] Failed to sync staff ${s.id}, trying only id...`, staffError);
-            await supabase.from('staff').upsert({ id: String(s.id) }, { onConflict: 'id' });
+            console.warn(`[SYNC] Failed to sync staff ${s.id}, trying with id and tenant_id...`, staffError);
+            await supabase.from('staff').upsert({ id: String(s.id), tenant_id: tenantId }, { onConflict: 'id' });
           }
         } catch (finalErr) {
           console.error(`[SYNC] Could not sync staff ${s.id} at all`, finalErr);

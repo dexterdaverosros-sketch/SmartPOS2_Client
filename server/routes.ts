@@ -2608,6 +2608,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get('/api/remittances/confirmed', async (req: Request, res: Response) => {
+    try {
+      const confirmed = dbService.listConfirmedRemittances();
+      res.json(confirmed);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch confirmed remittances' });
+    }
+  });
+
   app.get('/api/sales/remitted/:staffId', async (req: Request, res: Response) => {
     try {
       const { staffId } = req.params;
