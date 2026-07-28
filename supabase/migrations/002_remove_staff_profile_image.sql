@@ -1,0 +1,1 @@
+ALTER TABLE IF EXISTS staff DROP COLUMN IF EXISTS profile_image;

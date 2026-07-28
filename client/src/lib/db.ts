@@ -113,7 +113,7 @@ export class SmartPOSDB extends Dexie {
       products: 'id, &barcode, name, category',
       sales: 'id, staffId, createdAt, remitted',
       saleItems: 'id, saleId, productId',
-      staff: 'id, &staffId, name, firstName, lastName, role, employmentStatus, email, username, branch, createdBy',
+      staff: 'id, &staffId, name, firstName, lastName, role, employmentStatus, email, branch, createdBy',
       expenses: 'id, description, category, date',
       purchases: 'id, productName, date, supplier',
       creditors: 'id, name, dueDate, isPaid',
@@ -353,8 +353,6 @@ export class AuthService {
     gender?: string;
     dateHired?: string;
     assignedShift?: string;
-    profileImage?: string;
-    username?: string;
     permissions?: string[];
     createdBy: string;
     tenantId: string;
@@ -387,8 +385,6 @@ export class AuthService {
       gender: staffData.gender || null,
       dateHired: staffData.dateHired || null,
       assignedShift: staffData.assignedShift || null,
-      profileImage: staffData.profileImage || null,
-      username: staffData.username || null,
       permissions: staffData.permissions || [],
       createdBy: staffData.createdBy,
       createdAt: new Date().toISOString(),
@@ -1062,6 +1058,28 @@ export class StaffService {
 
   static async deleteStaff(id: string): Promise<void> {
     await db.staff.delete(id);
+  }
+
+  static async updateStaff(id: string, updates: Partial<Staff>): Promise<void> {
+    const existing = await db.staff.get(id);
+    if (!existing) throw new Error('Staff not found');
+    const now = new Date().toISOString();
+    await db.staff.update(id, {
+      ...updates,
+      updatedAt: now,
+    } as any);
+  }
+
+  static async updateStaffPassword(id: string, newPassword: string): Promise<void> {
+    const existing = await db.staff.get(id);
+    if (!existing) throw new Error('Staff not found');
+    const hashed = await hashPassword(newPassword);
+    const now = new Date().toISOString();
+    await db.staff.update(id, {
+      passkey: hashed,
+      passwordLastChanged: now,
+      updatedAt: now,
+    } as any);
   }
 }
 

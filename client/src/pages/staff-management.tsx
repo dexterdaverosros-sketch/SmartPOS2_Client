@@ -12,6 +12,7 @@ import {
   Eye,
   Edit,
   Lock,
+  Key,
   Activity,
   Clock,
   Plus,
@@ -63,7 +64,7 @@ import { Separator } from '@/components/ui/separator';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { AuthService, StaffService } from '@/lib/db';
+import { AuthService, StaffService, db } from '@/lib/db';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import type { Staff } from '@shared/schema';
@@ -89,8 +90,6 @@ const staffSchema = z.object({
   gender: z.enum(['male', 'female', 'other']).optional(),
   dateHired: z.string().optional(),
   assignedShift: z.enum(['morning', 'afternoon', 'evening']).optional(),
-  profileImage: z.string().optional(),
-  username: z.string().optional(),
   permissions: z.array(z.string()),
 });
 
@@ -189,8 +188,6 @@ const StaffManagement: React.FC = () => {
       gender: undefined,
       dateHired: '',
       assignedShift: undefined,
-      profileImage: '',
-      username: '',
       permissions: [],
     },
   });
@@ -234,16 +231,32 @@ const StaffManagement: React.FC = () => {
     if (!selectedStaff) return;
     setIsSaving(true);
     try {
-      const response = await api.put(`/api/staff/${selectedStaff.id}`, data);
+      let response;
+      try {
+        response = await api.put(`/api/staff/${selectedStaff.id}`, data);
+      } catch (serverErr: any) {
+        console.warn('[Staff Edit] Server update failed, falling back to local IndexedDB:', serverErr?.message || serverErr);
+        if (typeof StaffService.updateStaff === 'function') {
+          await StaffService.updateStaff(selectedStaff.id, data);
+          const local = await db.staff.get(selectedStaff.id);
+          if (local) response = local;
+        }
+        if (!response) throw serverErr;
+      }
       setSelectedStaff(response);
       toast({ title: 'Success', description: 'Staff updated successfully' });
       setEditDialogOpen(false);
       await loadStaff();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving staff:', error);
+      const msg = error?.details
+        ? typeof error.details === 'object'
+          ? Object.entries(error.details).flatMap(([k, v]) => Array.isArray(v) ? v.map(item => `${k}: ${item}`) : [`${k}: ${v}`]).join('; ')
+          : String(error.details)
+        : error?.error || error?.message || 'Failed to save staff';
       toast({
-        title: 'Error',
-        description: 'Failed to save staff',
+        title: 'Error Saving Staff',
+        description: String(msg).slice(0, 160),
         variant: 'destructive',
       });
     } finally {
@@ -708,10 +721,9 @@ const StaffManagement: React.FC = () => {
                 <div className="space-y-6 py-4">
                   {/* Profile Section */}
                   <div className="flex items-center gap-4">
-                    <Avatar className="w-20 h-20">
-                      <AvatarImage src={selectedStaff.profileImage ?? undefined} />
-                      <AvatarFallback>{getInitials(selectedStaff.name)}</AvatarFallback>
-                    </Avatar>
+                    <div className={`w-20 h-20 rounded-2xl bg-gradient-to-br ${getGradient(selectedStaff.name)} flex items-center justify-center text-white font-bold text-2xl shadow-md`}>
+                      {getInitials(selectedStaff.name)}
+                    </div>
                     <div>
                       <h2 className="text-2xl font-bold">{selectedStaff.name}</h2>
                       <div className="flex items-center gap-2 text-sm text-gray-500">
@@ -728,10 +740,6 @@ const StaffManagement: React.FC = () => {
                     <div className="space-y-1">
                       <p className="text-sm text-gray-500">Staff ID</p>
                       <p className="font-medium">{selectedStaff.staffId}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-gray-500">Username</p>
-                      <p className="font-medium">{selectedStaff.username || '-'}</p>
                     </div>
                     <div className="space-y-1">
                       <p className="text-sm text-gray-500">Email</p>
@@ -1000,9 +1008,6 @@ const StaffManagement: React.FC = () => {
                     </FormItem>
                   )}
                 />
-                <FormField control={form.control} name="username" render={({ field }) => (
-                  <FormItem><FormLabel>Username</FormLabel><FormControl><Input placeholder="Login username" {...field} /></FormControl><FormMessage /></FormItem>
-                )} />
                 <FormField control={form.control} name="email" render={({ field }) => (
                   <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" placeholder="staff@example.com" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
@@ -1152,10 +1157,56 @@ const EditStaffForm = ({
     birthdate: staff.birthdate ? String(staff.birthdate).slice(0, 10) : '',
     gender: staff.gender || '',
     dateHired: staff.dateHired ? String(staff.dateHired).slice(0, 10) : '',
-    profileImage: staff.profileImage || '',
-    username: staff.username || '',
     permissions: staff.permissions || [],
   });
+
+  // Password reset state
+  const [pwOpen, setPwOpen] = useState(false);
+  const [pwNew, setPwNew] = useState('');
+  const [pwConfirm, setPwConfirm] = useState('');
+  const [pwSaving, setPwSaving] = useState(false);
+  const { toast: pwToast } = useToast();
+
+  const handleResetPassword = async () => {
+    if (!pwNew || pwNew.length < 4) {
+      pwToast({ title: 'Password too short', description: 'New password must be at least 4 characters.', variant: 'destructive' });
+      return;
+    }
+    if (pwNew !== pwConfirm) {
+      pwToast({ title: 'Passwords do not match', description: 'Please re-enter the new password in both fields.', variant: 'destructive' });
+      return;
+    }
+    setPwSaving(true);
+    try {
+      let ok = false;
+      try {
+        await api.put(`/api/staff/${staff.id}/password`, { newPassword: pwNew, confirmPassword: pwConfirm });
+        ok = true;
+      } catch (serverErr: any) {
+        console.warn('[Staff Password Reset] Server failed, falling back to IndexedDB:', serverErr?.message || serverErr);
+        if (typeof StaffService.updateStaffPassword === 'function') {
+          await StaffService.updateStaffPassword(staff.id, pwNew);
+          ok = true;
+        }
+        if (!ok) throw serverErr;
+      }
+      if (ok) {
+        pwToast({ title: 'Password updated', description: `${staff.name}'s password has been reset successfully.` });
+        setPwNew('');
+        setPwConfirm('');
+        setPwOpen(false);
+      }
+    } catch (err: any) {
+      console.error('Password reset error:', err);
+      pwToast({
+        title: 'Password reset failed',
+        description: String(err?.error || err?.message || 'Unknown error').slice(0, 160),
+        variant: 'destructive'
+      });
+    } finally {
+      setPwSaving(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1167,6 +1218,11 @@ const EditStaffForm = ({
     onSave({
       ...formData,
       name: [formData.firstName, formData.middleName, formData.lastName].filter(Boolean).join(' '),
+      email: formData.email || null,
+      phone: formData.phone || null,
+      address: formData.address || null,
+      branch: formData.branch || null,
+      department: formData.department || null,
       birthdate: formData.birthdate || null,
       dateHired: formData.dateHired || null,
       gender: formData.gender || null,
@@ -1174,26 +1230,17 @@ const EditStaffForm = ({
     });
   };
 
-  const handlePhotoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setFormData((current: any) => ({ ...current, profileImage: String(reader.result || '') }));
-    reader.readAsDataURL(file);
-  };
-
   return (
     <form onSubmit={handleSubmit} className="space-y-6 py-4">
       {/* Profile Section */}
       <div className="flex items-center gap-4">
-        <Avatar className="w-20 h-20">
-          <AvatarImage src={formData.profileImage} />
-          <AvatarFallback>{getInitials(staff.name)}</AvatarFallback>
-        </Avatar>
-        <Input type="file" accept="image/*" onChange={handlePhotoChange} className="max-w-xs" />
-        <Button type="button" variant="outline" onClick={() => setFormData({ ...formData, profileImage: '' })}>
-          Change Photo
-        </Button>
+        <div className={`w-20 h-20 rounded-2xl bg-gradient-to-br ${getGradient(staff.name)} flex items-center justify-center text-white font-bold text-2xl shadow-md`}>
+          {getInitials(staff.name)}
+        </div>
+        <div>
+          <h2 className="text-xl font-bold">{staff.name}</h2>
+          <p className="text-sm text-gray-500">Staff ID: {staff.staffId}</p>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -1220,13 +1267,6 @@ const EditStaffForm = ({
           <Input
             value={formData.phone}
             onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-sm font-medium">Username</label>
-          <Input
-            value={formData.username}
-            onChange={(e) => setFormData({ ...formData, username: e.target.value })}
           />
         </div>
         <div className="space-y-1 col-span-2">
@@ -1345,6 +1385,88 @@ const EditStaffForm = ({
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Password Reset Section */}
+      <Separator className="my-2" />
+      <div className="pt-2">
+        <button
+          type="button"
+          onClick={() => setPwOpen(!pwOpen)}
+          className="w-full flex items-center justify-between p-4 rounded-xl bg-gray-50 hover:bg-gray-100 dark:bg-gray-800/60 dark:hover:bg-gray-800 transition border border-gray-100 dark:border-gray-700"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+              <Key className="w-5 h-5 text-red-600 dark:text-red-300" />
+            </div>
+            <div className="text-left">
+              <div className="font-semibold text-gray-800 dark:text-gray-100">Reset Staff Password</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                {staff.passwordLastChanged
+                  ? `Last changed ${new Date(staff.passwordLastChanged).toLocaleDateString()}`
+                  : 'Password has never been reset since creation'}
+              </div>
+            </div>
+          </div>
+          <ChevronRight className={`w-5 h-5 text-gray-400 transition-transform ${pwOpen ? 'rotate-90' : ''}`} />
+        </button>
+
+        {pwOpen && (
+          <div className="mt-4 space-y-4 p-4 rounded-xl border border-red-100 dark:border-red-900/30 bg-red-50/60 dark:bg-red-950/20">
+            <div className="flex items-start gap-3">
+              <Shield className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
+              <div className="text-xs text-red-700 dark:text-red-300/90 leading-relaxed">
+                After resetting this password, share the new credentials with the staff member securely. They will need to use this new password on their next login. Consider rotating temporary passwords immediately.
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-200">New Password</label>
+                <Input
+                  type="password"
+                  placeholder="Enter new password (min 4 characters)"
+                  autoComplete="new-password"
+                  value={pwNew}
+                  onChange={(e) => setPwNew(e.target.value)}
+                  className="bg-white dark:bg-gray-800"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Confirm New Password</label>
+                <Input
+                  type="password"
+                  placeholder="Re-enter new password"
+                  autoComplete="new-password"
+                  value={pwConfirm}
+                  onChange={(e) => setPwConfirm(e.target.value)}
+                  className="bg-white dark:bg-gray-800"
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setPwOpen(false);
+                    setPwNew('');
+                    setPwConfirm('');
+                  }}
+                  className="flex-1 rounded-xl"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleResetPassword}
+                  disabled={pwSaving}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white rounded-xl"
+                >
+                  {pwSaving ? 'Updating...' : 'Reset Password'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Buttons */}

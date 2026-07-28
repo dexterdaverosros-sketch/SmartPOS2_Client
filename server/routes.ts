@@ -37,12 +37,27 @@ const staffCreateSchema = z.object({
   gender: z.enum(staffGenders).optional().nullable(),
   dateHired: z.coerce.date().optional().nullable(),
   assignedShift: z.enum(assignedShifts).optional().nullable(),
-  profileImage: z.string().max(5_000_000).optional().nullable(),
-  username: z.string().trim().max(100).optional().nullable(),
   permissions: z.array(z.enum(staffPermissions)).default([]),
 });
 
-const staffUpdateSchema = staffCreateSchema.partial().omit({ staffId: true, passkey: true, name: true });
+const staffUpdateSchema = z.preprocess(
+  (raw: any) => {
+    if (!raw || typeof raw !== 'object') return raw;
+    const cleaned: Record<string, any> = { ...raw };
+    const emptyAsNull = ['phone', 'address', 'branch', 'department', 'firstName', 'middleName', 'lastName'];
+    const emptyAsUndefined = ['email', 'role', 'employmentStatus', 'gender', 'assignedShift', 'birthdate', 'dateHired'];
+    for (const k of Object.keys(cleaned)) {
+      const v = cleaned[k];
+      if (typeof v === 'string' && v.trim() === '') {
+        if (emptyAsNull.includes(k)) cleaned[k] = null;
+        else if (emptyAsUndefined.includes(k)) cleaned[k] = undefined;
+        else cleaned[k] = undefined;
+      }
+    }
+    return cleaned;
+  },
+  staffCreateSchema.partial().omit({ staffId: true, passkey: true, name: true })
+);
 const staffStatusSchema = z.object({ status: z.enum(employmentStatuses) });
 const staffPermissionsSchema = z.object({ permissions: z.array(z.enum(staffPermissions)).max(staffPermissions.length) });
 
@@ -1468,6 +1483,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Reset / update staff password (admin-only)
+  app.put('/api/staff/:id/password', async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const { id } = req.params;
+      const { newPassword, confirmPassword } = req.body;
+
+      if (typeof newPassword !== 'string' || newPassword.length < 4 || newPassword.length > 200) {
+        return res.status(400).json({ error: 'New password must be 4–200 characters' });
+      }
+      if (typeof confirmPassword !== 'string' || confirmPassword !== newPassword) {
+        return res.status(400).json({ error: 'Passwords do not match' });
+      }
+
+      const currentStaff = dbService.getStaffById(id, tenantId);
+      if (!currentStaff) {
+        return res.status(404).json({ error: 'Staff not found' });
+      }
+
+      const hashed = await bcrypt.hash(newPassword, 10);
+      const updatedStaff = await dbService.updateStaffPassword(id, tenantId, hashed);
+
+      const { adminId, adminName } = getStaffAdminContext(req);
+      dbService.createAuditLog({
+        tenantId,
+        adminId,
+        adminName,
+        action: 'Reset Staff Password',
+        staffId: id,
+        staffName: currentStaff.name,
+        changedFields: ['passkey'],
+        oldValues: { passkey: '[REDACTED]' },
+        newValues: { passkey: '[REDACTED]' },
+        ipAddress: req.ip || req.socket.remoteAddress
+      });
+
+      res.status(200).json({ ok: true, staff: updatedStaff });
+    } catch (error: any) {
+      console.error('Error updating staff password:', error);
+      res.status(500).json({ error: error?.message || 'Failed to update staff password' });
+    }
+  });
+
   // Update staff permissions
   app.patch('/api/staff/:id/permissions', (req: Request, res: Response) => {
     try {
@@ -1639,8 +1697,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         gender: s.gender || null,
         dateHired: s.date_hired || null,
         assignedShift: s.assigned_shift || null,
-        profileImage: s.profile_image || null,
-        username: s.username || null,
         permissions: s.permissions || [],
         createdBy: s.created_by || null,
         createdAt: s.created_at || null,
@@ -2436,8 +2492,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           gender: m.gender || null,
           date_hired: m.dateHired || m.date_hired || null,
           assigned_shift: m.assignedShift || m.assigned_shift || null,
-          profile_image: m.profileImage || m.profile_image || null,
-          username: m.username || null,
           permissions: m.permissions || [],
           passhash,
           passkey: passhash,
@@ -2486,8 +2540,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
               { key: 'gender', value: m.gender || null },
               { key: 'date_hired', value: m.dateHired || m.date_hired || null },
               { key: 'assigned_shift', value: m.assignedShift || m.assigned_shift || null },
-              { key: 'profile_image', value: m.profileImage || m.profile_image || null },
-              { key: 'username', value: m.username || null },
               { key: 'permissions', value: m.permissions || [] },
               { key: 'passhash', value: passhash },
               { key: 'passkey', value: passhash },

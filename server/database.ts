@@ -175,8 +175,6 @@ export const dbService = {
         address TEXT,
         dateHired TEXT,
         assignedShift TEXT,
-        profileImage TEXT,
-        username TEXT UNIQUE,
         lastLogin TEXT,
         passwordLastChanged TEXT,
         permissions TEXT,
@@ -453,12 +451,6 @@ export const dbService = {
       }
       if (!staffCols.includes('assignedShift')) {
         db.exec(`ALTER TABLE staff ADD COLUMN assignedShift TEXT`);
-      }
-      if (!staffCols.includes('profileImage')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN profileImage TEXT`);
-      }
-      if (!staffCols.includes('username')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN username TEXT`);
       }
       if (!staffCols.includes('lastLogin')) {
         db.exec(`ALTER TABLE staff ADD COLUMN lastLogin TEXT`);
@@ -1549,8 +1541,6 @@ export const dbService = {
           gender: member.gender || null,
           dateHired: member.dateHired || null,
           assignedShift: member.assignedShift || null,
-          profileImage: member.profileImage || null,
-          username: member.username || null,
           permissions: member.permissions ? JSON.stringify(member.permissions) : null,
           createdBy: member.createdBy || member.created_by || null,
           createdAt: createdAt,
@@ -1561,8 +1551,8 @@ export const dbService = {
       // Now perform SQLite transaction (completely sync!)
       const insert = db.prepare(`
         INSERT OR REPLACE INTO staff 
-        (id, tenant_id, user_id, firstName, middleName, lastName, name, staffId, passkey, role, branch, department, employmentStatus, email, phone, address, birthdate, gender, dateHired, assignedShift, profileImage, username, permissions, createdBy, createdAt, updatedAt) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, tenant_id, user_id, firstName, middleName, lastName, name, staffId, passkey, role, branch, department, employmentStatus, email, phone, address, birthdate, gender, dateHired, assignedShift, username, permissions, createdBy, createdAt, updatedAt) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       
       const insertMany = db.transaction((staffMembers: any[]) => {
@@ -1588,8 +1578,6 @@ export const dbService = {
             member.gender,
             member.dateHired,
             member.assignedShift,
-            member.profileImage,
-            member.username,
             member.permissions,
             member.createdBy,
             member.createdAt,
@@ -1637,8 +1625,6 @@ export const dbService = {
                     { key: 'gender', value: m.gender },
                     { key: 'date_hired', value: m.dateHired },
                     { key: 'assigned_shift', value: m.assignedShift },
-                    { key: 'profile_image', value: m.profileImage },
-                    { key: 'username', value: m.username },
                     { key: 'permissions', value: m.permissions ? JSON.parse(m.permissions) : null },
                     { key: 'created_by', value: m.createdBy },
                     { key: 'created_at', value: m.createdAt },
@@ -1717,7 +1703,7 @@ export const dbService = {
       'firstName', 'middleName', 'lastName', 'name', 
       'email', 'phone', 'address', 'role', 'branch', 
       'department', 'employmentStatus', 'birthdate', 'gender',
-      'assignedShift', 'profileImage', 'username', 'permissions'
+      'assignedShift', 'permissions'
     ];
 
     for (const field of allowedFields) {
@@ -1789,8 +1775,7 @@ export const dbService = {
                   middleName: 'middle_name',
                   lastName: 'last_name',
                   employmentStatus: 'employment_status',
-                  assignedShift: 'assigned_shift',
-                  profileImage: 'profile_image'
+                  assignedShift: 'assigned_shift'
                 };
                 cloudData[cloudFieldMap[field] || field] = updates[field];
               }
@@ -1824,6 +1809,33 @@ export const dbService = {
       }
     }
 
+    return dbService.getStaffById(id, tenantId);
+  },
+
+  updateStaffPassword: async (id: string, tenantId: string, newPasskeyHash: string) => {
+    const now = new Date().toISOString();
+    const stmt = db.prepare(`
+      UPDATE staff 
+      SET passkey = ?, passwordLastChanged = ?, updatedAt = ? 
+      WHERE id = ? AND tenant_id = ?
+    `);
+    stmt.run(newPasskeyHash, now, now, id, tenantId);
+
+    if (useCloud()) {
+      const supabase = getSupabase();
+      if (supabase) {
+        try {
+          await supabase.from('staff').update({
+            passhash: newPasskeyHash,
+            passkey: newPasskeyHash,
+            password_last_changed: now,
+            updated_at: now
+          }).eq('id', id).eq('tenant_id', tenantId);
+        } catch (e) {
+          console.error('Cloud staff password update failed:', e);
+        }
+      }
+    }
     return dbService.getStaffById(id, tenantId);
   },
 
@@ -2749,8 +2761,6 @@ export const dbService = {
         gender: s.gender || null,
         dateHired: s.date_hired || null,
         assignedShift: s.assigned_shift || null,
-        profileImage: s.profile_image || null,
-        username: s.username || null,
         permissions: s.permissions || [],
         createdBy: s.created_by,
         createdAt: s.created_at,

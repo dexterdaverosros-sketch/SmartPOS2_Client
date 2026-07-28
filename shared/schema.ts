@@ -115,7 +115,6 @@ export const staff = sqliteTable("staff", {
   gender: text("gender"), // male, female, other
   dateHired: integer("date_hired", { mode: 'timestamp' }),
   assignedShift: text("assigned_shift"), // morning, afternoon, evening
-  profileImage: text("profile_image"), // Base64 or URL
   username: text("username").unique(),
   lastLogin: integer("last_login", { mode: 'timestamp' }),
   passwordLastChanged: integer("password_last_changed", { mode: 'timestamp' }),
@@ -424,8 +423,6 @@ export const insertStaffSchema = createInsertSchema(staff).pick({
   gender: true,
   dateHired: true,
   assignedShift: true,
-  profileImage: true,
-  username: true,
   permissions: true,
   createdBy: true,
 });

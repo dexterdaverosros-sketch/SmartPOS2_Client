@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Save, LogOut, User, Store, Settings, Wifi, Shield, Key, Bell, Smartphone, Scan, Camera, Moon, Sun, Info, Mail, Database, RefreshCw, ChevronRight, Printer, Cpu, Wallet, HelpCircle, HardDrive, DollarSign, ShoppingCart } from 'lucide-react';
+import { ArrowLeft, Save, LogOut, User, Store, Settings, Wifi, Shield, Key, Bell, Smartphone, Scan, Camera, Moon, Sun, Info, Mail, Database, RefreshCw, ChevronRight, Printer, Cpu, Wallet, HelpCircle, HardDrive, DollarSign, ShoppingCart, Play, Pause } from 'lucide-react';
 import { useLocation } from 'wouter';
 import Layout from '@/components/Layout';
 import { Button } from '@/components/ui/button';
@@ -127,6 +127,9 @@ const ProfileSettings: React.FC = () => {
   const [showStoreInfoDialog, setShowStoreInfoDialog] = useState(false);
   const [showBackupDialog, setShowBackupDialog] = useState(false);
   const [showSecurityQuestions, setShowSecurityQuestions] = useState(false);
+  const [showHelpSupportDialog, setShowHelpSupportDialog] = useState(false);
+  const [helpQuery, setHelpQuery] = useState('');
+  const [isTutorialPlaying, setIsTutorialPlaying] = useState(false);
   
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
@@ -278,6 +281,20 @@ const ProfileSettings: React.FC = () => {
     if (newTheme === 'dark') document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
     toast({ title: 'Theme Changed', description: `Switched to ${newTheme} mode` });
+  };
+
+  const handleSendSupportEmail = () => {
+    if (!helpQuery.trim()) {
+      toast({ title: 'Query Required', description: 'Please describe your issue or question before sending.', variant: 'destructive' });
+      return;
+    }
+
+    const supportEmail = 'support@smartpos.com';
+    const subject = encodeURIComponent('SmartPOS Help Request');
+    const body = encodeURIComponent(helpQuery.trim());
+    window.location.href = `mailto:${supportEmail}?subject=${subject}&body=${body}`;
+    toast({ title: 'Email Client Opened', description: 'Your help request has been prepared for sending.' });
+    setHelpQuery('');
   };
 
   const onSubmitProfile = async (data: ProfileFormData) => {
@@ -567,7 +584,7 @@ const ProfileSettings: React.FC = () => {
                 setBackupCounts({users, products, sales, saleItems, staff, expenses, purchases, creditors});
                 setShowBackupDialog(true);
               }} />
-              <SettingsCard icon={HelpCircle} title="Help & Support" subtitle="Guides & Tutorials" color="blue" onClick={() => {}} />
+              <SettingsCard icon={HelpCircle} title="Help & Support" subtitle="Guides & Tutorials" color="blue" onClick={() => setShowHelpSupportDialog(true)} />
             </div>
           </div>
 
@@ -660,6 +677,73 @@ const ProfileSettings: React.FC = () => {
         <HardwareSettingsDialog open={showHardwareSettings} onOpenChange={setShowHardwareSettings} />
 
         {/* Other Dialogs */}
+        <Dialog open={showHelpSupportDialog} onOpenChange={setShowHelpSupportDialog}>
+          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <HelpCircle className="w-5 h-5 text-[#BF953F]" />
+                Help & Support
+              </DialogTitle>
+              <DialogDescription>
+                Reach out to the developer team and review a quick tutorial placeholder.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-5 py-2">
+              <div className="flex items-center gap-4 rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#BF953F] text-lg font-black text-white">
+                  BD
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-gray-900">BSIS Developer</h3>
+                  <p className="text-sm text-gray-500">Temporary support contact for SmartPOS assistance.</p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Your Query</Label>
+                <Textarea
+                  value={helpQuery}
+                  onChange={(e) => setHelpQuery(e.target.value)}
+                  placeholder="Type your question or issue here..."
+                  className="min-h-24 rounded-2xl border-gray-200"
+                />
+                <Button onClick={handleSendSupportEmail} className="w-full rounded-2xl bg-[#BF953F] hover:bg-[#B38728]">
+                  <Mail className="mr-2 h-4 w-4" /> Send Email
+                </Button>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-black text-gray-900">System Tutorial</h4>
+                    <p className="text-sm text-gray-500">Temporary placeholder video section.</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsTutorialPlaying(prev => !prev)}
+                    className="rounded-full"
+                  >
+                    {isTutorialPlaying ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
+                    {isTutorialPlaying ? 'Pause' : 'Play'}
+                  </Button>
+                </div>
+                <div className="mt-4 flex min-h-36 items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-white/80 px-4 text-center">
+                  <div>
+                    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#BF953F]/10 text-[#BF953F]">
+                      {isTutorialPlaying ? <Pause className="h-5 w-5" /> : <Play className="ml-1 h-5 w-5" />}
+                    </div>
+                    <p className="text-sm font-semibold text-gray-700">
+                      {isTutorialPlaying ? 'Tutorial preview is now playing.' : 'Video tutorial placeholder will appear here.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         <Dialog open={showAccountDetails} onOpenChange={setShowAccountDetails}>
           <DialogContent className="sm:max-w-md rounded-3xl">
             <DialogHeader>
