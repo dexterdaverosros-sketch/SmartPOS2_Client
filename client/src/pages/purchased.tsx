@@ -112,6 +112,7 @@ export default function PurchasedPage() {
       // Note: This matches the current schema where each row is a purchase/product
       for (const prod of addedProducts) {
         await PurchaseService.addPurchase({
+          tenantId: '',
           productName: prod.name,
           quantity: prod.quantity,
           cost: prod.cost,

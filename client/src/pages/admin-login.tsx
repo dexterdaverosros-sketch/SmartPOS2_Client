@@ -271,7 +271,7 @@ const AdminLogin: React.FC = () => {
                   createdAt: new Date().toISOString()
                 };
                 
-                login(guestUser, 'guest-token-' + Date.now());
+                login(guestUser as any, 'guest-token-' + Date.now());
                 toast({
                   title: 'Welcome to Guest Mode!',
                   description: 'Your data will be automatically deleted after 5 days.',

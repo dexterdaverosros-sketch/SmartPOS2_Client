@@ -225,8 +225,9 @@ export class DatabaseSyncService {
           // Passkeys are stored locally when admin creates them
           await db.staff.add({
             ...staffMember,
+            tenantId: (staffMember as any).tenantId || (staffMember as any).tenant_id || 'default-tenant-id',
             passkey: '', // Will be set locally by admin
-          });
+          } as any);
         }
       }
     });

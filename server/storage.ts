@@ -31,6 +31,7 @@ export class MemStorage implements IStorage {
     const id = randomUUID();
     const user: User = { 
       id, 
+      tenantId: (insertUser as any).tenantId || 'default-tenant-id',
       username: insertUser.username || null,
       email: insertUser.email || null,
       mobile: insertUser.mobile || null,

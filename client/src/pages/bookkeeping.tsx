@@ -105,6 +105,7 @@ const BookKeeping: React.FC = () => {
     try {
       if (data.type === 'expense') {
         await ExpenseService.addExpense({
+          tenantId: '',
           description: data.description,
           amount: data.amount,
           category: data.category,

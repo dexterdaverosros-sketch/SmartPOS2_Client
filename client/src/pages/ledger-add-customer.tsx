@@ -28,6 +28,7 @@ export default function AddCreditorPage() {
     setIsLoading(true);
     try {
       await CreditorService.addCreditor({
+        tenantId: '',
         name: name.trim(),
         phone: phone.trim() || null,
         amount: Number(amount) || 0,
@@ -35,7 +36,7 @@ export default function AddCreditorPage() {
         isPaid: false,
         description: notes.trim() || null,
         createdAt: new Date(),
-      });
+      } as any);
       toast({ title: 'Success', description: 'Creditor added successfully' });
       setLocation('/ledger');
     } catch (error) {

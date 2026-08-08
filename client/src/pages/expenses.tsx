@@ -24,10 +24,12 @@ import { Expense } from "@shared/schema";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useDevices } from "@/contexts/DeviceContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
 export default function ExpensesPage() {
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
   const { deviceMode } = useDevices();
   const { toast } = useToast();
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -106,6 +108,7 @@ export default function ExpensesPage() {
 
     try {
       await ExpenseService.addExpense({
+        tenantId: (user as any)?.tenantId || '',
         amount,
         category: newExpenseCategory,
         description: newExpenseDetails,

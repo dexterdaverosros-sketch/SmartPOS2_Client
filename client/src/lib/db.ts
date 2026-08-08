@@ -239,6 +239,7 @@ export class AuthService {
     
     const user: User = {
       id: generateUUID(),
+      tenantId: (userData as any).tenantId || generateUUID(),
       username: userData.mobile,
       email: null,
       mobile: userData.mobile,
@@ -313,6 +314,7 @@ export class AuthService {
     // Return a user-like object for staff
     return {
       id: staffMember.id,
+      tenantId: (staffMember as any).tenantId || (staffMember as any).tenant_id || '',
       username: staffMember.name,
       email: '',
       mobile: '',
@@ -561,6 +563,7 @@ export class ProductService {
 
     const product: Product = {
       id: generateUUID(),
+      tenantId: (productData as any).tenantId || (productData as any).tenant_id || '',
       name: productData.name.trim(),
       barcode: productData.barcode.trim(),
       price: Math.round(productData.price * 100) / 100, // Round to 2 decimal places
@@ -749,6 +752,7 @@ export class NonInventoryProductService {
 
     const product: NonInventoryProduct = {
       id: generateUUID(),
+      tenantId: (productData as any).tenantId || (productData as any).tenant_id || '',
       name: productData.name.trim(),
       price: Math.round(productData.price * 100) / 100,
       category: productData.category?.trim() || 'general',
@@ -859,6 +863,7 @@ export class SalesService {
 
     const sale: Omit<Sale, 'items'> = {
       id: generateUUID(),
+      tenantId: (saleData as any).tenantId || (saleData as any).tenant_id || '',
       total: Math.round(saleData.total * 100) / 100,
       paymentType: saleData.paymentType,
       paymentAmount: Math.round(saleData.paymentAmount * 100) / 100,
@@ -873,6 +878,7 @@ export class SalesService {
     for (const item of saleData.items) {
         const saleItem: SaleItem = {
             id: generateUUID(),
+            tenantId: (saleData as any).tenantId || (saleData as any).tenant_id || '',
             saleId: sale.id,
             productId: item.productId,
             quantity: item.quantity,
@@ -1022,6 +1028,7 @@ export class SalesService {
         // Map server fields back to Dexie fields if necessary
         const dexieSales = serverSales.map((s: any) => ({
           id: s.id,
+          tenantId: s.tenantId || s.tenant_id || '',
           total: Number(s.total || 0),
           paymentType: s.payment_type || 'cash',
           paymentAmount: Number(s.payment_amount || 0),

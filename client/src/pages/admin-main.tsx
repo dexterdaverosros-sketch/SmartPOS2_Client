@@ -161,6 +161,7 @@ const AdminMain: React.FC = () => {
   const handleAddExpense = async (data: ExpenseFormData) => {
     try {
       await ExpenseService.addExpense({
+        tenantId: (user as any)?.tenantId || '',
         description: data.description,
         amount: data.amount,
         category: data.category,
@@ -179,6 +180,7 @@ const AdminMain: React.FC = () => {
   const handleAddPurchase = async (data: PurchaseFormData) => {
     try {
       await PurchaseService.addPurchase({
+        tenantId: (user as any)?.tenantId || '',
         productName: data.productName,
         quantity: data.quantity,
         cost: data.cost,
@@ -201,6 +203,7 @@ const AdminMain: React.FC = () => {
   const handleAddCreditor = async (data: CreditorFormData) => {
     try {
       await CreditorService.addCreditor({
+        tenantId: (user as any)?.tenantId || '',
         name: data.name,
         amount: data.amount,
         description: data.description,

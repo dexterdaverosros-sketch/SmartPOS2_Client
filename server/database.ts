@@ -12,6 +12,8 @@ import {
   User
 } from '@shared/schema';
 
+import { runMigrations } from "./migrations/migrationRunner";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -42,6 +44,7 @@ export const dbService = {
   // Initialize tables if they do not exist
   initSchema: async () => {
     const sqlite = initSQLite();
+    runMigrations(sqlite);
     // Check for staff table schema mismatch (INTEGER id vs TEXT id)
     try {
       const staffInfo = sqlite.prepare('PRAGMA table_info(staff)').all() as any[];
@@ -563,14 +566,14 @@ export const dbService = {
     return db.prepare('SELECT * FROM tenants ORDER BY created_at DESC').all();
   },
   // Ledger: Customers
-  createCustomer: (input: { id: string; name: string; phone: string; address?: string | null; credit_rating: 'good'|'bad'; photo_url?: string | null; }) => {
+  createCustomer: (tenantId: string, input: { id: string; name: string; phone: string; address?: string | null; credit_rating: 'good'|'bad'; photo_url?: string | null; }) => {
     const now = new Date().toISOString();
-    const stmt = db.prepare(`INSERT INTO customers (id, name, phone, address, credit_rating, photo_url, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)`);
-    stmt.run(input.id, input.name, input.phone, input.address ?? null, input.credit_rating, input.photo_url ?? null, now, now);
-    return db.prepare(`SELECT * FROM customers WHERE id = ?`).get(input.id);
+    const stmt = db.prepare(`INSERT INTO customers (id, tenant_id, name, phone, address, credit_rating, photo_url, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)`);
+    stmt.run(input.id, tenantId, input.name, input.phone, input.address ?? null, input.credit_rating, input.photo_url ?? null, now, now);
+    return db.prepare(`SELECT * FROM customers WHERE id = ? AND tenant_id = ?`).get(input.id, tenantId);
   },
-  updateCustomer: (id: string, updates: Partial<{ name: string; phone: string; address: string | null; credit_rating: 'good'|'bad'; photo_url: string | null; }>) => {
-    const current = db.prepare(`SELECT * FROM customers WHERE id = ?`).get(id) as any;
+  updateCustomer: (tenantId: string, id: string, updates: Partial<{ name: string; phone: string; address: string | null; credit_rating: 'good'|'bad'; photo_url: string | null; }>) => {
+    const current = db.prepare(`SELECT * FROM customers WHERE id = ? AND tenant_id = ?`).get(id, tenantId) as any;
     if (!current) return undefined;
     const next = {
       name: updates.name ?? current.name,
@@ -580,121 +583,123 @@ export const dbService = {
       photo_url: updates.photo_url ?? current.photo_url,
       updated_at: new Date().toISOString(),
     };
-    db.prepare(`UPDATE customers SET name = ?, phone = ?, address = ?, credit_rating = ?, photo_url = ?, updated_at = ? WHERE id = ?`).run(
-      next.name, next.phone, next.address, next.credit_rating, next.photo_url, next.updated_at, id
+    db.prepare(`UPDATE customers SET name = ?, phone = ?, address = ?, credit_rating = ?, photo_url = ?, updated_at = ? WHERE id = ? AND tenant_id = ?`).run(
+      next.name, next.phone, next.address, next.credit_rating, next.photo_url, next.updated_at, id, tenantId
     );
-    return db.prepare(`SELECT * FROM customers WHERE id = ?`).get(id);
+    return db.prepare(`SELECT * FROM customers WHERE id = ? AND tenant_id = ?`).get(id, tenantId);
   },
-  deleteCustomer: (id: string) => {
-    const info = db.prepare(`DELETE FROM customers WHERE id = ?`).run(id);
+  deleteCustomer: (tenantId: string, id: string) => {
+    const info = db.prepare(`DELETE FROM customers WHERE id = ? AND tenant_id = ?`).run(id, tenantId);
     return info.changes ?? 0;
   },
-  getCustomer: (id: string) => {
-    return db.prepare(`SELECT * FROM customers WHERE id = ?`).get(id);
+  getCustomer: (tenantId: string, id: string) => {
+    return db.prepare(`SELECT * FROM customers WHERE id = ? AND tenant_id = ?`).get(id, tenantId);
   },
-  listCustomers: () => {
-    return db.prepare(`SELECT * FROM customers ORDER BY name ASC`).all();
+  listCustomers: (tenantId: string) => {
+    return db.prepare(`SELECT * FROM customers WHERE tenant_id = ? ORDER BY name ASC`).all(tenantId);
   },
-  updateCustomerPhoto: (id: string, photoUrl: string) => {
-    db.prepare(`UPDATE customers SET photo_url = ?, updated_at = ? WHERE id = ?`).run(photoUrl, new Date().toISOString(), id);
-    return db.prepare(`SELECT * FROM customers WHERE id = ?`).get(id);
+  updateCustomerPhoto: (tenantId: string, id: string, photoUrl: string) => {
+    db.prepare(`UPDATE customers SET photo_url = ?, updated_at = ? WHERE id = ? AND tenant_id = ?`).run(photoUrl, new Date().toISOString(), id, tenantId);
+    return db.prepare(`SELECT * FROM customers WHERE id = ? AND tenant_id = ?`).get(id, tenantId);
   },
 
   // Ledger: Credits
-  addCredit: (input: { id: string; customer_id: string; amount: number; remarks?: string | null; created_at?: string }) => {
+  addCredit: (tenantId: string, input: { id: string; customer_id: string; amount: number; remarks?: string | null; created_at?: string }) => {
     const created = input.created_at ?? new Date().toISOString();
-    db.prepare(`INSERT INTO credits (id, customer_id, amount, due_date, remarks, created_at) VALUES (?,?,?,?,?,?)`).run(
-      input.id, input.customer_id, input.amount, null, input.remarks ?? null, created
+    db.prepare(`INSERT INTO credits (id, tenant_id, customer_id, amount, due_date, remarks, created_at) VALUES (?,?,?,?,?,?,?)`).run(
+      input.id, tenantId, input.customer_id, input.amount, null, input.remarks ?? null, created
     );
-    return db.prepare(`SELECT * FROM credits WHERE id = ?`).get(input.id);
+    return db.prepare(`SELECT * FROM credits WHERE id = ? AND tenant_id = ?`).get(input.id, tenantId);
   },
-  updateCredit: (id: string, updates: Partial<{ amount: number; due_date: string | null; remarks: string | null }>) => {
-    const current = db.prepare(`SELECT * FROM credits WHERE id = ?`).get(id) as any;
+  updateCredit: (tenantId: string, id: string, updates: Partial<{ amount: number; due_date: string | null; remarks: string | null }>) => {
+    const current = db.prepare(`SELECT * FROM credits WHERE id = ? AND tenant_id = ?`).get(id, tenantId) as any;
     if (!current) return undefined;
     const next = {
       amount: updates.amount ?? current.amount,
       due_date: updates.due_date ?? current.due_date ?? null,
       remarks: updates.remarks ?? current.remarks,
     };
-    db.prepare(`UPDATE credits SET amount = ?, due_date = ?, remarks = ? WHERE id = ?`).run(next.amount, next.due_date, next.remarks, id);
-    return db.prepare(`SELECT * FROM credits WHERE id = ?`).get(id);
+    db.prepare(`UPDATE credits SET amount = ?, due_date = ?, remarks = ? WHERE id = ? AND tenant_id = ?`).run(next.amount, next.due_date, next.remarks, id, tenantId);
+    return db.prepare(`SELECT * FROM credits WHERE id = ? AND tenant_id = ?`).get(id, tenantId);
   },
-  deleteCredit: (id: string) => {
-    const info = db.prepare(`DELETE FROM credits WHERE id = ?`).run(id);
+  deleteCredit: (tenantId: string, id: string) => {
+    const info = db.prepare(`DELETE FROM credits WHERE id = ? AND tenant_id = ?`).run(id, tenantId);
     return info.changes ?? 0;
   },
-  listCredits: (customerId: string) => {
-    return db.prepare(`SELECT * FROM credits WHERE customer_id = ? ORDER BY datetime(created_at) DESC`).all(customerId);
+  listCredits: (tenantId: string, customerId: string) => {
+    return db.prepare(`SELECT * FROM credits WHERE customer_id = ? AND tenant_id = ? ORDER BY datetime(created_at) DESC`).all(customerId, tenantId);
   },
-  sumCredits: (customerId: string) => {
-    const row = db.prepare(`SELECT COALESCE(SUM(amount), 0) AS total FROM credits WHERE customer_id = ?`).get(customerId) as any;
+  sumCredits: (tenantId: string, customerId: string) => {
+    const row = db.prepare(`SELECT COALESCE(SUM(amount), 0) AS total FROM credits WHERE customer_id = ? AND tenant_id = ?`).get(customerId, tenantId) as any;
     return row?.total ?? 0;
   },
 
   // Ledger: Payments
-  addPayment: (input: { id: string; customer_id: string; amount: number; payment_method: string; remarks?: string | null; created_at?: string }) => {
+  addPayment: (tenantId: string, input: { id: string; customer_id: string; amount: number; payment_method: string; remarks?: string | null; created_at?: string }) => {
     const created = input.created_at ?? new Date().toISOString();
-    db.prepare(`INSERT INTO payments (id, customer_id, amount, payment_method, remarks, created_at) VALUES (?,?,?,?,?,?)`).run(
-      input.id, input.customer_id, input.amount, input.payment_method, input.remarks ?? null, created
+    db.prepare(`INSERT INTO payments (id, tenant_id, customer_id, amount, payment_method, remarks, created_at) VALUES (?,?,?,?,?,?,?)`).run(
+      input.id, tenantId, input.customer_id, input.amount, input.payment_method, input.remarks ?? null, created
     );
-    return db.prepare(`SELECT * FROM payments WHERE id = ?`).get(input.id);
+    return db.prepare(`SELECT * FROM payments WHERE id = ? AND tenant_id = ?`).get(input.id, tenantId);
   },
-  updatePayment: (id: string, updates: Partial<{ amount: number; payment_method: string; remarks: string | null }>) => {
-    const current = db.prepare(`SELECT * FROM payments WHERE id = ?`).get(id) as any;
+  updatePayment: (tenantId: string, id: string, updates: Partial<{ amount: number; payment_method: string; remarks: string | null }>) => {
+    const current = db.prepare(`SELECT * FROM payments WHERE id = ? AND tenant_id = ?`).get(id, tenantId) as any;
     if (!current) return undefined;
     const next = {
       amount: updates.amount ?? current.amount,
       payment_method: updates.payment_method ?? current.payment_method,
       remarks: updates.remarks ?? current.remarks,
     };
-    db.prepare(`UPDATE payments SET amount = ?, payment_method = ?, remarks = ? WHERE id = ?`).run(next.amount, next.payment_method, next.remarks, id);
-    return db.prepare(`SELECT * FROM payments WHERE id = ?`).get(id);
+    db.prepare(`UPDATE payments SET amount = ?, payment_method = ?, remarks = ? WHERE id = ? AND tenant_id = ?`).run(next.amount, next.payment_method, next.remarks, id, tenantId);
+    return db.prepare(`SELECT * FROM payments WHERE id = ? AND tenant_id = ?`).get(id, tenantId);
   },
-  deletePayment: (id: string) => {
-    const info = db.prepare(`DELETE FROM payments WHERE id = ?`).run(id);
+  deletePayment: (tenantId: string, id: string) => {
+    const info = db.prepare(`DELETE FROM payments WHERE id = ? AND tenant_id = ?`).run(id, tenantId);
     return info.changes ?? 0;
   },
-  listPayments: (customerId: string) => {
-    return db.prepare(`SELECT * FROM payments WHERE customer_id = ? ORDER BY datetime(created_at) DESC`).all(customerId);
+  listPayments: (tenantId: string, customerId: string) => {
+    return db.prepare(`SELECT * FROM payments WHERE customer_id = ? AND tenant_id = ? ORDER BY datetime(created_at) DESC`).all(customerId, tenantId);
   },
-  sumPayments: (customerId: string) => {
-    const row = db.prepare(`SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE customer_id = ?`).get(customerId) as any;
+  sumPayments: (tenantId: string, customerId: string) => {
+    const row = db.prepare(`SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE customer_id = ? AND tenant_id = ?`).get(customerId, tenantId) as any;
     return row?.total ?? 0;
   },
 
   // Balance
-  getBalance: (customerId: string) => {
-    const total_credit = (db.prepare(`SELECT COALESCE(SUM(amount),0) AS total FROM credits WHERE customer_id = ?`).get(customerId) as any)?.total ?? 0;
-    const total_payment = (db.prepare(`SELECT COALESCE(SUM(amount),0) AS total FROM payments WHERE customer_id = ?`).get(customerId) as any)?.total ?? 0;
+  getBalance: (tenantId: string, customerId: string) => {
+    const total_credit = (db.prepare(`SELECT COALESCE(SUM(amount),0) AS total FROM credits WHERE customer_id = ? AND tenant_id = ?`).get(customerId, tenantId) as any)?.total ?? 0;
+    const total_payment = (db.prepare(`SELECT COALESCE(SUM(amount),0) AS total FROM payments WHERE customer_id = ? AND tenant_id = ?`).get(customerId, tenantId) as any)?.total ?? 0;
     return { total_credit, total_payment, balance: total_credit - total_payment };
   },
-  customersCount: () => {
-    const row = db.prepare(`SELECT COUNT(*) AS cnt FROM customers`).get() as any;
+  customersCount: (tenantId: string) => {
+    const row = db.prepare(`SELECT COUNT(*) AS cnt FROM customers WHERE tenant_id = ?`).get(tenantId) as any;
     return row?.cnt ?? 0;
   },
-  totalCredits: () => {
-    const row = db.prepare(`SELECT COALESCE(SUM(amount),0) AS total FROM credits`).get() as any;
+  totalCredits: (tenantId: string) => {
+    const row = db.prepare(`SELECT COALESCE(SUM(amount),0) AS total FROM credits WHERE tenant_id = ?`).get(tenantId) as any;
     return row?.total ?? 0;
   },
-  totalPayments: () => {
-    const row = db.prepare(`SELECT COALESCE(SUM(amount),0) AS total FROM payments`).get() as any;
+  totalPayments: (tenantId: string) => {
+    const row = db.prepare(`SELECT COALESCE(SUM(amount),0) AS total FROM payments WHERE tenant_id = ?`).get(tenantId) as any;
     return row?.total ?? 0;
   },
 
   // Reminders
-  addReminder: (input: { id: string; customer_id: string; message_type: string; message: string; status: string; created_at?: string }) => {
+  addReminder: (tenantId: string, input: { id: string; customer_id: string; message_type: string; message: string; status: string; created_at?: string }) => {
     const created = input.created_at ?? new Date().toISOString();
-    db.prepare(`INSERT INTO reminders (id, customer_id, message_type, message, status, created_at) VALUES (?,?,?,?,?,?)`).run(
-      input.id, input.customer_id, input.message_type, input.message, input.status, created
+    db.prepare(`INSERT INTO reminders (id, tenant_id, customer_id, message_type, message, status, created_at) VALUES (?,?,?,?,?,?,?)`).run(
+      input.id, tenantId, input.customer_id, input.message_type, input.message, input.status, created
     );
-    return db.prepare(`SELECT * FROM reminders WHERE id = ?`).get(input.id);
+    return db.prepare(`SELECT * FROM reminders WHERE id = ? AND tenant_id = ?`).get(input.id, tenantId);
   },
-  listReminders: (customerId: string) => {
-    return db.prepare(`SELECT * FROM reminders WHERE customer_id = ? ORDER BY datetime(created_at) DESC`).all(customerId);
+  listReminders: (tenantId: string, customerId: string) => {
+    return db.prepare(`SELECT * FROM reminders WHERE customer_id = ? AND tenant_id = ? ORDER BY datetime(created_at) DESC`).all(customerId, tenantId);
   },
   // Settings
-  getSettings: () => {
-    const rows = db.prepare(`SELECT key, value FROM settings`).all() as any[];
+  getSettings: (tenantId?: string) => {
+    const rows = (tenantId 
+      ? db.prepare(`SELECT key, value FROM settings WHERE tenant_id = ?`).all(tenantId) 
+      : db.prepare(`SELECT key, value FROM settings`).all()) as any[];
     const obj: Record<string, any> = {};
     for (const r of rows) {
       try {
@@ -705,20 +710,29 @@ export const dbService = {
     }
     return obj;
   },
-  upsertSettings: (settings: Record<string, any>) => {
-    const stmt = db.prepare(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`);
+  upsertSettings: (tenantId: string | Record<string, any>, settings?: Record<string, any>) => {
+    const effTenantId = typeof tenantId === 'string' ? tenantId : null;
+    const settingsObj = typeof tenantId === 'object' ? tenantId : (settings || {});
+    const stmt = db.prepare(`INSERT INTO settings (key, value, tenant_id) VALUES (?, ?, ?) ON CONFLICT(key, tenant_id) DO UPDATE SET value = excluded.value`);
     const tx = db.transaction(() => {
-      for (const [k, v] of Object.entries(settings)) {
+      for (const [k, v] of Object.entries(settingsObj)) {
         const val = typeof v === 'string' ? v : JSON.stringify(v);
-        stmt.run(k, val);
+        stmt.run(k, val, effTenantId);
       }
     });
     tx();
-    return dbService.getSettings();
+    return dbService.getSettings(effTenantId || undefined);
   },
   // Admin/User methods
-  getAdmins: () => {
-    return db.prepare('SELECT * FROM users WHERE role = ?').all('admin');
+  getAdmins: (tenantId?: string) => {
+    return tenantId 
+      ? db.prepare('SELECT * FROM users WHERE role = ? AND tenant_id = ?').all('admin', tenantId)
+      : db.prepare('SELECT * FROM users WHERE role = ?').all('admin');
+  },
+  getAdmin: (tenantId?: string) => {
+    return tenantId 
+      ? db.prepare('SELECT * FROM users WHERE role = ? AND tenant_id = ?').get('admin', tenantId)
+      : db.prepare('SELECT * FROM users WHERE role = ?').get('admin');
   },
   saveAdmin: (user: any) => {
     const effectiveTenantId = user.tenantId || user.tenant_id;
@@ -873,13 +887,13 @@ export const dbService = {
     db.prepare('UPDATE users SET failedAttemptCount = 0, lockoutUntil = NULL WHERE username = ?').run(username);
   },
 
-  addSale: (sale: Sale, saleItems: SaleItem[]) => {
+  addSale: (tenantId: string, sale: Sale, saleItems: SaleItem[]) => {
     const result = db.transaction(() => {
-      // Insert sale
+      // Insert sale with tenant_id
       db.prepare(`
-        INSERT INTO sales (id, total, paymentType, paymentAmount, staffId, remitted, createdAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(sale.id, sale.total, sale.paymentType, sale.paymentAmount, sale.staffId, sale.remitted ? 1 : 0, sale.createdAt instanceof Date ? sale.createdAt.toISOString() : String(sale.createdAt));
+        INSERT INTO sales (id, tenant_id, total, paymentType, paymentAmount, staffId, remitted, createdAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(sale.id, tenantId, sale.total, sale.paymentType, sale.paymentAmount, sale.staffId, sale.remitted ? 1 : 0, sale.createdAt instanceof Date ? sale.createdAt.toISOString() : String(sale.createdAt));
 
       // Insert sale items and update product/variant quantities
       for (const item of saleItems) {
@@ -888,21 +902,21 @@ export const dbService = {
         const itemSaleId = item.saleId || sale.id;
         
         db.prepare(`
-          INSERT INTO sale_items (id, saleId, productId, quantity, price, unit, productName, isNonInventory)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(itemId, itemSaleId, item.productId, item.quantity, item.price, item.unit, item.productName, item.isNonInventory ? 1 : 0);
+          INSERT INTO sale_items (id, tenant_id, saleId, productId, quantity, price, unit, productName, isNonInventory)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(itemId, tenantId, itemSaleId, item.productId, item.quantity, item.price, item.unit, item.productName, item.isNonInventory ? 1 : 0);
 
         if (!item.isNonInventory) {
-          // Deduct from product or variant
-          const product = db.prepare('SELECT id, quantity FROM products WHERE id = ?').get(item.productId) as { id: string, quantity: number } | undefined;
+          // Deduct from product or variant with tenant_id filter
+          const product = db.prepare('SELECT id, quantity FROM products WHERE id = ? AND tenant_id = ?').get(item.productId, tenantId) as { id: string, quantity: number } | undefined;
           if (product) {
             const newQuantity = product.quantity - item.quantity;
-            db.prepare('UPDATE products SET quantity = ?, updatedAt = ? WHERE id = ?').run(newQuantity, new Date().toISOString(), product.id);
+            db.prepare('UPDATE products SET quantity = ?, updatedAt = ? WHERE id = ? AND tenant_id = ?').run(newQuantity, new Date().toISOString(), product.id, tenantId);
           } else {
-            const variant = db.prepare('SELECT id, quantity FROM variants WHERE id = ?').get(item.productId) as { id: string, quantity: number } | undefined;
+            const variant = db.prepare('SELECT id, quantity FROM variants WHERE id = ? AND tenant_id = ?').get(item.productId, tenantId) as { id: string, quantity: number } | undefined;
             if (variant) {
               const newQuantity = variant.quantity - item.quantity;
-              db.prepare('UPDATE variants SET quantity = ?, updated_at = ? WHERE id = ?').run(newQuantity, new Date().toISOString(), variant.id);
+              db.prepare('UPDATE variants SET quantity = ?, updated_at = ? WHERE id = ? AND tenant_id = ?').run(newQuantity, new Date().toISOString(), variant.id, tenantId);
             } else {
               console.warn(`Product or variant with ID ${item.productId} not found for inventory deduction during sale ${sale.id}.`);
             }
@@ -1287,7 +1301,7 @@ export const dbService = {
     };
   },
 
-  getAllSalesWithStaff: async () => {
+  getAllSalesWithStaff: async (tenantId: string) => {
     let sales = db.prepare(`
       SELECT
         s.id AS saleId,
@@ -1299,9 +1313,10 @@ export const dbService = {
         s.createdAt,
         st.name AS staffName
       FROM sales s
-      LEFT JOIN staff st ON s.staffId = st.staffId
+      LEFT JOIN staff st ON (s.staffId = st.staffId AND st.tenant_id = ?)
+      WHERE s.tenant_id = ?
       ORDER BY s.createdAt DESC
-    `).all() as any[];
+    `).all(tenantId, tenantId) as any[];
 
     // If local sales is empty and cloud is available, try fetching from Supabase
     if (sales.length === 0 && useCloud()) {
@@ -1541,6 +1556,9 @@ export const dbService = {
           gender: member.gender || null,
           dateHired: member.dateHired || null,
           assignedShift: member.assignedShift || null,
+          username: member.username || null,
+          lastLogin: member.lastLogin || member.last_login || null,
+          passwordLastChanged: member.passwordLastChanged || member.password_last_changed || null,
           permissions: member.permissions ? JSON.stringify(member.permissions) : null,
           createdBy: member.createdBy || member.created_by || null,
           createdAt: createdAt,
@@ -1551,8 +1569,8 @@ export const dbService = {
       // Now perform SQLite transaction (completely sync!)
       const insert = db.prepare(`
         INSERT OR REPLACE INTO staff 
-        (id, tenant_id, user_id, firstName, middleName, lastName, name, staffId, passkey, role, branch, department, employmentStatus, email, phone, address, birthdate, gender, dateHired, assignedShift, username, permissions, createdBy, createdAt, updatedAt) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, tenant_id, user_id, firstName, middleName, lastName, name, staffId, passkey, role, branch, department, employmentStatus, email, phone, address, birthdate, gender, dateHired, assignedShift, username, lastLogin, passwordLastChanged, permissions, createdBy, createdAt, updatedAt) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       
       const insertMany = db.transaction((staffMembers: any[]) => {
@@ -1578,6 +1596,9 @@ export const dbService = {
             member.gender,
             member.dateHired,
             member.assignedShift,
+            member.username,
+            member.lastLogin,
+            member.passwordLastChanged,
             member.permissions,
             member.createdBy,
             member.createdAt,
@@ -2093,148 +2114,223 @@ export const dbService = {
   },
 
   // Remittance methods
-  createRemittance: (remittance: any) => {
+  createRemittance: (tenantId: string | any, remittance?: any) => {
+    const effTenantId = typeof tenantId === 'string' ? tenantId : (remittance?.tenantId || remittance?.tenant_id || null);
+    const data = typeof tenantId === 'object' ? tenantId : remittance;
     const stmt = db.prepare(`
-      INSERT INTO remittances (id, staff_id, staff_name, amount, transaction_count, status, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO remittances (id, tenant_id, staff_id, staff_name, amount, transaction_count, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
-      remittance.id,
-      remittance.staffId,
-      remittance.staffName,
-      remittance.amount,
-      remittance.transactionCount,
+      data.id,
+      effTenantId,
+      data.staffId || data.staff_id,
+      data.staffName || data.staff_name,
+      data.amount,
+      data.transactionCount || data.transaction_count,
       'pending',
       new Date().toISOString()
     );
-    return remittance;
+    return data;
   },
 
-  getRemittanceById: (id: string) => {
-    return db.prepare('SELECT * FROM remittances WHERE id = ?').get(id);
+  getRemittanceById: (tenantId: string | any, id?: string) => {
+    const effId = typeof tenantId === 'string' && id ? id : (typeof tenantId === 'string' ? tenantId : id);
+    const effTenantId = typeof tenantId === 'string' && id ? tenantId : null;
+    return effTenantId 
+      ? db.prepare('SELECT * FROM remittances WHERE id = ? AND tenant_id = ?').get(effId, effTenantId)
+      : db.prepare('SELECT * FROM remittances WHERE id = ?').get(effId);
   },
 
-  getRemittedSalesForStaff: (staffId: string) => {
-    return db.prepare('SELECT id FROM sales WHERE (staffId = ? OR staffId = ?) AND remitted = 1').all(staffId, staffId);
+  getRemittedSalesForStaff: (tenantId: string | any, staffId?: string) => {
+    const effStaffId = typeof tenantId === 'string' && staffId ? staffId : (typeof tenantId === 'string' ? tenantId : staffId);
+    const effTenantId = typeof tenantId === 'string' && staffId ? tenantId : null;
+    return effTenantId
+      ? db.prepare('SELECT id FROM sales WHERE (staffId = ? OR staffId = ?) AND remitted = 1 AND tenant_id = ?').all(effStaffId, effStaffId, effTenantId)
+      : db.prepare('SELECT id FROM sales WHERE (staffId = ? OR staffId = ?) AND remitted = 1').all(effStaffId, effStaffId);
   },
 
-  confirmRemittance: (id: string) => {
+  confirmRemittance: (tenantId: string | any, id?: string) => {
+    const effId = typeof tenantId === 'string' && id ? id : (typeof tenantId === 'string' ? tenantId : id);
+    const effTenantId = typeof tenantId === 'string' && id ? tenantId : null;
     const now = new Date().toISOString();
     
     return db.transaction(() => {
       // Update remittance status
-      db.prepare(`
-        UPDATE remittances 
-        SET status = 'confirmed', confirmed_at = ?
-        WHERE id = ?
-      `).run(now, id);
+      if (effTenantId) {
+        db.prepare(`
+          UPDATE remittances 
+          SET status = 'confirmed', confirmed_at = ?
+          WHERE id = ? AND tenant_id = ?
+        `).run(now, effId, effTenantId);
+      } else {
+        db.prepare(`
+          UPDATE remittances 
+          SET status = 'confirmed', confirmed_at = ?
+          WHERE id = ?
+        `).run(now, effId);
+      }
       
-      const remittance = db.prepare('SELECT * FROM remittances WHERE id = ?').get(id) as any;
+      const remittance = (effTenantId
+        ? db.prepare('SELECT * FROM remittances WHERE id = ? AND tenant_id = ?').get(effId, effTenantId)
+        : db.prepare('SELECT * FROM remittances WHERE id = ?').get(effId)) as any;
       if (!remittance) return null;
 
       // Mark all unremitted sales for this staff as remitted
-      db.prepare(`
-        UPDATE sales 
-        SET remitted = 1 
-        WHERE (staffId = ? OR staffId = ?) AND remitted = 0
-      `).run(remittance.staff_id, remittance.staff_id); 
-
-      // NEW: Sync Inventory with Cloud (Supabase) if configured
-      // if (useCloud()) {
-      //   const supabase = getSupabase();
-      //   if (supabase) {
-      //     // Get all products to sync current local state to cloud
-      //     const products = db.prepare('SELECT * FROM products').all();
-      //     if (products && products.length > 0) {
-      //       supabase.from('products').upsert(products).then(({ error }) => {
-      //         if (error) console.error('Cloud inventory sync error on remit:', error);
-      //         else console.log(`Cloud inventory sync on remit: ${products.length} products synced.`);
-      //       });
-      //     }
-      //   }
-      // }
+      if (effTenantId) {
+        db.prepare(`
+          UPDATE sales 
+          SET remitted = 1 
+          WHERE (staffId = ? OR staffId = ?) AND remitted = 0 AND tenant_id = ?
+        `).run(remittance.staff_id, remittance.staff_id, effTenantId);
+      } else {
+        db.prepare(`
+          UPDATE sales 
+          SET remitted = 1 
+          WHERE (staffId = ? OR staffId = ?) AND remitted = 0
+        `).run(remittance.staff_id, remittance.staff_id);
+      }
 
       return remittance;
     })();
   },
 
-  listPendingRemittances: () => {
-    return db.prepare("SELECT * FROM remittances WHERE status = 'pending' ORDER BY created_at DESC").all();
+  listPendingRemittances: (tenantId?: string) => {
+    return tenantId 
+      ? db.prepare("SELECT * FROM remittances WHERE status = 'pending' AND tenant_id = ? ORDER BY created_at DESC").all(tenantId)
+      : db.prepare("SELECT * FROM remittances WHERE status = 'pending' ORDER BY created_at DESC").all();
   },
 
-  cancelRemittance: (id: string) => {
+  cancelRemittance: (tenantId: string | any, id?: string) => {
+    const effId = typeof tenantId === 'string' && id ? id : (typeof tenantId === 'string' ? tenantId : id);
+    const effTenantId = typeof tenantId === 'string' && id ? tenantId : null;
     return db.transaction(() => {
-      // Update remittance status
-      db.prepare(`
-        UPDATE remittances 
-        SET status = 'cancelled'
-        WHERE id = ?
-      `).run(id);
+      if (effTenantId) {
+        db.prepare(`
+          UPDATE remittances 
+          SET status = 'cancelled'
+          WHERE id = ? AND tenant_id = ?
+        `).run(effId, effTenantId);
+      } else {
+        db.prepare(`
+          UPDATE remittances 
+          SET status = 'cancelled'
+          WHERE id = ?
+        `).run(effId);
+      }
       
-      const remittance = db.prepare('SELECT * FROM remittances WHERE id = ?').get(id) as any;
+      const remittance = (effTenantId
+        ? db.prepare('SELECT * FROM remittances WHERE id = ? AND tenant_id = ?').get(effId, effTenantId)
+        : db.prepare('SELECT * FROM remittances WHERE id = ?').get(effId)) as any;
       if (!remittance) return null;
 
       return remittance;
     })();
   },
 
-  listConfirmedRemittances: () => {
-    return db.prepare("SELECT * FROM remittances WHERE status = 'confirmed' ORDER BY created_at DESC").all();
+  listConfirmedRemittances: (tenantId?: string) => {
+    return tenantId 
+      ? db.prepare("SELECT * FROM remittances WHERE status = 'confirmed' AND tenant_id = ? ORDER BY created_at DESC").all(tenantId)
+      : db.prepare("SELECT * FROM remittances WHERE status = 'confirmed' ORDER BY created_at DESC").all();
   },
 
   // Notification methods
-  createNotification: (notification: any) => {
+  createNotification: (tenantId: string | any, notification?: any) => {
+    const effTenantId = typeof tenantId === 'string' ? tenantId : (notification?.tenantId || notification?.tenant_id || null);
+    const data = typeof tenantId === 'object' ? tenantId : notification;
     const stmt = db.prepare(`
-      INSERT INTO notifications (id, user_id, type, message, data, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO notifications (id, tenant_id, user_id, type, message, data, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
     const id = randomUUID();
     stmt.run(
       id,
-      notification.userId || null,
-      notification.type,
-      notification.message,
-      notification.data ? JSON.stringify(notification.data) : null,
+      effTenantId,
+      data.userId || data.user_id || null,
+      data.type,
+      data.message,
+      data.data ? JSON.stringify(data.data) : null,
       new Date().toISOString()
     );
-    return { id, ...notification };
+    return { id, ...data };
   },
 
-  listNotifications: (userId: string | null) => {
-    if (userId) {
-      return db.prepare('SELECT * FROM notifications WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC LIMIT 50').all(userId);
+  listNotifications: (tenantId: string | any, userId?: string | null) => {
+    const effUserId = typeof tenantId === 'string' ? userId : tenantId;
+    const effTenantId = typeof tenantId === 'string' ? tenantId : null;
+    if (effTenantId) {
+      if (effUserId) {
+        return db.prepare('SELECT * FROM notifications WHERE (user_id = ? OR user_id IS NULL) AND tenant_id = ? ORDER BY created_at DESC LIMIT 50').all(effUserId, effTenantId);
+      }
+      return db.prepare('SELECT * FROM notifications WHERE user_id IS NULL AND tenant_id = ? ORDER BY created_at DESC LIMIT 50').all(effTenantId);
+    }
+    if (effUserId) {
+      return db.prepare('SELECT * FROM notifications WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC LIMIT 50').all(effUserId);
     }
     return db.prepare('SELECT * FROM notifications WHERE user_id IS NULL ORDER BY created_at DESC LIMIT 50').all();
   },
 
-  markNotificationRead: (id: string) => {
-    return db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ?').run(id);
+  markNotificationRead: (tenantId: string | any, id?: string) => {
+    const effId = typeof tenantId === 'string' && id ? id : (typeof tenantId === 'string' ? tenantId : id);
+    const effTenantId = typeof tenantId === 'string' && id ? tenantId : null;
+    return effTenantId 
+      ? db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND tenant_id = ?').run(effId, effTenantId)
+      : db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ?').run(effId);
   },
 
-  getUnreadNotificationCount: (userId: string | null) => {
-    if (userId) {
-      const row = db.prepare('SELECT COUNT(*) as count FROM notifications WHERE (user_id = ? OR user_id IS NULL) AND is_read = 0').get(userId) as any;
+  getUnreadNotificationCount: (tenantId: string | any, userId?: string | null) => {
+    const effUserId = typeof tenantId === 'string' ? userId : tenantId;
+    const effTenantId = typeof tenantId === 'string' ? tenantId : null;
+    if (effTenantId) {
+      if (effUserId) {
+        const row = db.prepare('SELECT COUNT(*) as count FROM notifications WHERE (user_id = ? OR user_id IS NULL) AND is_read = 0 AND tenant_id = ?').get(effUserId, effTenantId) as any;
+        return row?.count || 0;
+      }
+      const row = db.prepare('SELECT COUNT(*) as count FROM notifications WHERE user_id IS NULL AND is_read = 0 AND tenant_id = ?').get(effTenantId) as any;
+      return row?.count || 0;
+    }
+    if (effUserId) {
+      const row = db.prepare('SELECT COUNT(*) as count FROM notifications WHERE (user_id = ? OR user_id IS NULL) AND is_read = 0').get(effUserId) as any;
       return row?.count || 0;
     }
     const row = db.prepare('SELECT COUNT(*) as count FROM notifications WHERE user_id IS NULL AND is_read = 0').get() as any;
     return row?.count || 0;
   },
 
-  markAllNotificationsRead: (userId: string | null) => {
-    if (userId) {
-      return db.prepare('UPDATE notifications SET is_read = 1 WHERE (user_id = ? OR user_id IS NULL) AND is_read = 0').run(userId);
+  markAllNotificationsRead: (tenantId: string | any, userId?: string | null) => {
+    const effUserId = typeof tenantId === 'string' ? userId : tenantId;
+    const effTenantId = typeof tenantId === 'string' ? tenantId : null;
+    if (effTenantId) {
+      if (effUserId) {
+        return db.prepare('UPDATE notifications SET is_read = 1 WHERE (user_id = ? OR user_id IS NULL) AND is_read = 0 AND tenant_id = ?').run(effUserId, effTenantId);
+      }
+      return db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id IS NULL AND is_read = 0 AND tenant_id = ?').run(effTenantId);
+    }
+    if (effUserId) {
+      return db.prepare('UPDATE notifications SET is_read = 1 WHERE (user_id = ? OR user_id IS NULL) AND is_read = 0').run(effUserId);
     }
     return db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id IS NULL AND is_read = 0').run();
   },
 
-  deleteNotification: (id: string) => {
-    return db.prepare('DELETE FROM notifications WHERE id = ?').run(id);
+  deleteNotification: (tenantId: string | any, id?: string) => {
+    const effId = typeof tenantId === 'string' && id ? id : (typeof tenantId === 'string' ? tenantId : id);
+    const effTenantId = typeof tenantId === 'string' && id ? tenantId : null;
+    return effTenantId
+      ? db.prepare('DELETE FROM notifications WHERE id = ? AND tenant_id = ?').run(effId, effTenantId)
+      : db.prepare('DELETE FROM notifications WHERE id = ?').run(effId);
   },
 
-  deleteNotifications: (ids: string[]) => {
-    const placeholders = ids.map(() => '?').join(',');
+  deleteNotifications: (tenantId: string | string[], ids?: string[]) => {
+    const effIds = Array.isArray(tenantId) ? tenantId : (ids || []);
+    const effTenantId = typeof tenantId === 'string' ? tenantId : null;
+    if (effIds.length === 0) return { changes: 0 };
+    const placeholders = effIds.map(() => '?').join(',');
+    if (effTenantId) {
+      const stmt = db.prepare(`DELETE FROM notifications WHERE id IN (${placeholders}) AND tenant_id = ?`);
+      return stmt.run(...effIds, effTenantId);
+    }
     const stmt = db.prepare(`DELETE FROM notifications WHERE id IN (${placeholders})`);
-    return stmt.run(...ids);
+    return stmt.run(...effIds);
   },
 
   // ==============================================
@@ -2343,15 +2439,34 @@ export const dbService = {
       for (const s of staff) {
         let staffData: any = { id: String(s.id) };
         const allStaffFields = [
-                  { key: 'tenant_id', value: tenantId },
-                  { key: 'user_id', value: s.userId || s.user_id || null },
-                  { key: 'name', value: s.name },
-                  { key: 'staff_id', value: s.staffId || s.staff_id },
-                  { key: 'passkey', value: s.passkey || null },
-                  { key: 'passhash', value: s.passkey || null }, // for possible staff table with passhash instead of passkey
-                  { key: 'created_by', value: s.createdBy || s.created_by || null },
-                  { key: 'created_at', value: s.createdAt || s.created_at || new Date().toISOString() }
-                ];
+          { key: 'tenant_id', value: tenantId },
+          { key: 'user_id', value: s.userId || s.user_id || null },
+          { key: 'first_name', value: s.firstName || s.first_name || '' },
+          { key: 'middle_name', value: s.middleName || s.middle_name || null },
+          { key: 'last_name', value: s.lastName || s.last_name || '' },
+          { key: 'name', value: s.name },
+          { key: 'staff_id', value: s.staffId || s.staff_id },
+          { key: 'passkey', value: s.passkey || null },
+          { key: 'passhash', value: s.passkey || null },
+          { key: 'role', value: s.role || 'cashier' },
+          { key: 'branch', value: s.branch || null },
+          { key: 'department', value: s.department || null },
+          { key: 'employment_status', value: s.employmentStatus || s.employment_status || 'active' },
+          { key: 'email', value: s.email || null },
+          { key: 'phone', value: s.phone || null },
+          { key: 'address', value: s.address || null },
+          { key: 'birthdate', value: s.birthdate || null },
+          { key: 'gender', value: s.gender || null },
+          { key: 'date_hired', value: s.dateHired || s.date_hired || null },
+          { key: 'assigned_shift', value: s.assignedShift || s.assigned_shift || null },
+          { key: 'username', value: s.username || null },
+          { key: 'last_login', value: s.lastLogin || s.last_login || null },
+          { key: 'password_last_changed', value: s.passwordLastChanged || s.password_last_changed || null },
+          { key: 'permissions', value: s.permissions ? (typeof s.permissions === 'string' ? JSON.parse(s.permissions) : s.permissions) : null },
+          { key: 'created_by', value: s.createdBy || s.created_by || null },
+          { key: 'created_at', value: s.createdAt || s.created_at || new Date().toISOString() },
+          { key: 'updated_at', value: s.updatedAt || s.updated_at || new Date().toISOString() }
+        ];
         for (const field of allStaffFields) {
           try {
             const testData = { ...staffData, [field.key]: field.value };
@@ -2749,7 +2864,7 @@ export const dbService = {
         lastName: s.last_name || '',
         name: s.name,
         staffId: s.staff_id,
-        passkey: s.passkey,
+        passkey: s.passkey || s.passhash,
         role: s.role || 'cashier',
         branch: s.branch || null,
         department: s.department || null,
@@ -2761,6 +2876,9 @@ export const dbService = {
         gender: s.gender || null,
         dateHired: s.date_hired || null,
         assignedShift: s.assigned_shift || null,
+        username: s.username || null,
+        lastLogin: s.last_login || null,
+        passwordLastChanged: s.password_last_changed || null,
         permissions: s.permissions || [],
         createdBy: s.created_by,
         createdAt: s.created_at,
@@ -3000,7 +3118,7 @@ export const dbService = {
           settingsObj[s.key] = s.value;
         }
       }
-      dbService.upsertSettings(settingsObj);
+      dbService.upsertSettings(tenantId, settingsObj);
       console.log(`Pulled ${cloudSettings.length} settings`);
     }
 

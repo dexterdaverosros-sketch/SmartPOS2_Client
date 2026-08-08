@@ -309,7 +309,7 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           const iface = config.interfaces[0];
           if (iface.alternate?.endpoints) {
             usbEndpoint = iface.alternate.endpoints.find(
-              ep => ep.type === 'bulk' && ep.direction === 'out'
+              (ep: any) => ep.type === 'bulk' && ep.direction === 'out'
             );
           }
         }
@@ -467,7 +467,7 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       let device = printer.device;
       
       // Prepare ESC/POS data
-      const encoder = new TextEncoder('utf-8'); // Explicitly use UTF-8
+      const encoder = new TextEncoder();
       const escPosInit = new Uint8Array([0x1B, 0x40]);
       // Explicitly set character set to support peso sign if possible
       const escPosCharSet = new Uint8Array([0x1B, 0x74, 0x00]); // Select character set 0 (PC437)
@@ -508,7 +508,7 @@ export const DeviceProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             const iface = currentConfig.interfaces[0];
             if (iface.alternate?.endpoints) {
               outEndpoint = iface.alternate.endpoints.find(
-                ep => ep.type === 'bulk' && ep.direction === 'out'
+                (ep: any) => ep.type === 'bulk' && ep.direction === 'out'
               );
             }
           }

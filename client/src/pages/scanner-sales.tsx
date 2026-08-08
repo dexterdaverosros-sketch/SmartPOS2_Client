@@ -306,6 +306,7 @@ const ScannerSales: React.FC = () => {
       }));
       const adaptedNonInventory: UIProduct[] = (allNonInventory as unknown as any[]).map(p => ({
         id: p.id,
+        tenantId: p.tenantId || p.tenant_id || '',
         name: p.name,
         barcode: (p.barcode ?? null) as string | null,
         price: p.price,
@@ -381,6 +382,7 @@ const ScannerSales: React.FC = () => {
     // Create a product-like object for the cart
     const variantProduct: UIProduct = {
       id: variant.id, 
+      tenantId: (variant as any).tenantId || (variant as any).tenant_id || '',
       name: `${selectedProductForVariant?.name} (${variant.name})`,
       price: variant.price,
       quantity: variant.quantity ?? 0,
@@ -459,6 +461,7 @@ const ScannerSales: React.FC = () => {
         if (niProduct) {
           product = {
             id: niProduct.id,
+            tenantId: (niProduct as any).tenantId || (niProduct as any).tenant_id || '',
             name: niProduct.name,
             barcode: (niProduct.barcode as string | null) ?? null,
             price: niProduct.price,

@@ -2,7 +2,12 @@ import express, { type Express, Request, Response, NextFunction } from "express"
 import { createServer, type Server } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import cors from "cors";
-import type { Staff, Sale, SaleItem, User } from "@shared/schema"; // Import Sale and SaleItem types
+import {
+  type Staff, type Sale, type SaleItem, type User,
+  staffRoles, employmentStatuses, assignedShifts, staffGenders, staffPermissions,
+  staffCreateSchema, staffUpdateSchema, staffStatusSchema, staffPermissionsSchema,
+  customerSchema, creditSchema, paymentSchema
+} from "@shared/schema";
 import dbService, { useCloud, initSQLite } from "./database";
 import { scanWifiNetworks, getWifiStatus } from "./network";
 import { randomUUID } from "crypto";
@@ -13,53 +18,6 @@ import bcrypt from "bcryptjs";
 import { getSupabase } from "./supabase";
 import { DeveloperService } from "./developer-service";
 
-const staffRoles = ['cashier', 'manager', 'admin'] as const;
-const employmentStatuses = ['active', 'inactive', 'on_leave'] as const;
-const assignedShifts = ['morning', 'afternoon', 'evening'] as const;
-const staffGenders = ['male', 'female', 'other'] as const;
-const staffPermissions = ['sales.create', 'sales.view', 'products.manage', 'customers.manage', 'staff.view', 'reports.view'] as const;
-
-const staffCreateSchema = z.object({
-  firstName: z.string().trim().min(1).max(100),
-  middleName: z.string().trim().max(100).optional().nullable(),
-  lastName: z.string().trim().min(1).max(100),
-  name: z.string().trim().min(1).max(250),
-  staffId: z.string().trim().min(1).max(50),
-  passkey: z.string().min(4).max(200),
-  role: z.enum(staffRoles).default('cashier'),
-  branch: z.string().trim().max(150).optional().nullable(),
-  department: z.string().trim().max(150).optional().nullable(),
-  employmentStatus: z.enum(employmentStatuses).default('active'),
-  email: z.string().trim().email().max(254).optional().nullable(),
-  phone: z.string().trim().max(40).optional().nullable(),
-  address: z.string().trim().max(500).optional().nullable(),
-  birthdate: z.coerce.date().optional().nullable(),
-  gender: z.enum(staffGenders).optional().nullable(),
-  dateHired: z.coerce.date().optional().nullable(),
-  assignedShift: z.enum(assignedShifts).optional().nullable(),
-  permissions: z.array(z.enum(staffPermissions)).default([]),
-});
-
-const staffUpdateSchema = z.preprocess(
-  (raw: any) => {
-    if (!raw || typeof raw !== 'object') return raw;
-    const cleaned: Record<string, any> = { ...raw };
-    const emptyAsNull = ['phone', 'address', 'branch', 'department', 'firstName', 'middleName', 'lastName'];
-    const emptyAsUndefined = ['email', 'role', 'employmentStatus', 'gender', 'assignedShift', 'birthdate', 'dateHired'];
-    for (const k of Object.keys(cleaned)) {
-      const v = cleaned[k];
-      if (typeof v === 'string' && v.trim() === '') {
-        if (emptyAsNull.includes(k)) cleaned[k] = null;
-        else if (emptyAsUndefined.includes(k)) cleaned[k] = undefined;
-        else cleaned[k] = undefined;
-      }
-    }
-    return cleaned;
-  },
-  staffCreateSchema.partial().omit({ staffId: true, passkey: true, name: true })
-);
-const staffStatusSchema = z.object({ status: z.enum(employmentStatuses) });
-const staffPermissionsSchema = z.object({ permissions: z.array(z.enum(staffPermissions)).max(staffPermissions.length) });
 
 const getStaffAdminContext = (req: Request) => {
   const authHeader = req.headers.authorization;
@@ -97,10 +55,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
-  // Quick test endpoint to check what's in Supabase (for debugging) - NO TENANT CHECK!
+  // Quick test endpoint to check what's in Supabase - PROTECTED by Developer Mode RBAC (x-developer-auth: true)
   app.get("/api/test/supabase-users", async (req, res) => {
     try {
-      console.log("=== TEST ENDPOINT HIT ===");
+      // Developer Mode RBAC check (mirrors authenticateDev pattern)
+      const isDev = req.headers['x-developer-auth'] === 'true';
+      if (!isDev) return res.status(403).json({ error: 'Unauthorized: developer mode required' });
+
+      console.log("=== TEST ENDPOINT HIT (developer mode) ===");
       const supabase = getSupabase();
       if (!supabase) return res.status(500).json({ error: "No Supabase connection" });
       
@@ -312,7 +274,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/auth/status', async (req: Request, res: Response) => {
     try {
       const tenant = await getTenantFromHeader(req);
-      const admin = dbService.getAdmin();
+      const admin = dbService.getAdmin(tenant?.id);
       const adminExists = !!admin;
       console.log('/api/auth/status hit, tenant:', tenant);
       console.log('/api/auth/status, admin exists:', adminExists);
@@ -333,7 +295,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Settings API
   app.get('/api/settings', (req, res) => {
     try {
-      const settings = dbService.getSettings();
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+      const settings = dbService.getSettings(tenantId);
       // Wrap in receipt key to match client expectation
       const response = {
         receipt: settings.receipt || {}
@@ -347,9 +310,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put('/api/settings', (req, res) => {
     try {
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
       const { receipt } = req.body;
       // Save receipt settings
-      const result = dbService.upsertSettings({ receipt });
+      const result = dbService.upsertSettings(tenantId, { receipt });
       res.json(result);
     } catch (error) {
       console.error('Error in PUT /api/settings:', error);
@@ -357,16 +321,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Test print endpoint (simple placeholder)
-  app.post('/api/print/test-receipt', (req, res) => {
-    try {
-      console.log('Test receipt print requested');
-      res.json({ success: true, message: 'Test receipt queued for printing' });
-    } catch (error) {
-      console.error('Error in test print:', error);
-      res.status(500).json({ error: 'Failed to print test receipt' });
-    }
-  });
+
 
   // Auth API
   app.post('/api/auth/admin-login', async (req: Request, res: Response) => {
@@ -606,7 +561,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // Skip tenantContext for public endpoints
     const publicEndpoints = [
       '/health',
-      '/test/supabase-users',
       '/tenants/register',
       '/auth/status',
       '/auth/login',
@@ -792,10 +746,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     // Update activity
     dbService.updateSessionActivity(token);
-    console.log('Server Auth: Session valid, user ID:', session.user_id);
+    console.log('Server Auth: Session valid, user ID:', session.user_id, 'tenant ID:', session.tenant_id);
 
-    // Attach user ID to request for downstream use
+    // Attach session-verified user ID and tenant ID to request for downstream use (Header CANNOT override session)
     (req as any).userId = session.user_id;
+    if (session.tenant_id) {
+      (req as any).tenantId = session.tenant_id;
+    }
     next();
   };
 
@@ -930,7 +887,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       dbService.updateSessionActivity(token);
 
       // Get user info
-      const allStaff = dbService.getStaff() as any[];
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+      const allStaff = dbService.getStaff(tenantId) as any[];
       const user = allStaff.find(s => s.id === session.user_id);
 
       if (!user) {
@@ -971,6 +929,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/sales', async (req: Request, res: Response) => {
     try {
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
       const { sale, items } = req.body; // Expecting sale and items separately
       
       if (!sale || !items || !Array.isArray(items) || items.length === 0) {
@@ -982,8 +941,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sale.staffId = 'unknown'; // Or fetch from session if admin is making the sale
       }
 
-      // Use the new atomic addSale method
-      dbService.addSale(sale, items);
+      // Use the atomic addSale method with tenantId
+      dbService.addSale(tenantId, sale, items);
       
       // Emit specific inventory updates and a new sale event
       for (const item of items) {
@@ -1002,7 +961,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/sales-history', async (req: Request, res: Response) => {
     try {
-      const salesHistory = await dbService.getAllSalesWithStaff();
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+      const salesHistory = await dbService.getAllSalesWithStaff(tenantId);
       res.status(200).json(salesHistory);
     } catch (error) {
       console.error('Error fetching sales history:', error);
@@ -1130,13 +1090,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { expenses } = req.body;
       if (!Array.isArray(expenses)) return res.status(400).json({ error: 'Invalid data format' });
 
-      const mappedExpenses = expenses.map(e => ({
-        id: e.id,
-        description: e.description,
-        amount: e.amount,
-        category: e.category,
-        date: e.date
-      }));
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+      if (!tenantId) return res.status(400).json({ error: 'Tenant ID is required' });
+
+      const mappedExpenses = expenses.map(e => {
+        const effTenantId = e.tenantId || e.tenant_id || tenantId;
+        if (!effTenantId) throw new Error(`Expense ${e.id} missing tenant_id`);
+        if (!e.id || e.amount == null || !e.description || !e.category || !e.date) {
+          throw new Error(`Expense validation failed for id=${e.id}: required fields: id, description, amount, category, date, tenant_id`);
+        }
+        return {
+          id: String(e.id),
+          tenant_id: String(effTenantId),
+          description: String(e.description),
+          amount: Number(e.amount),
+          category: String(e.category),
+          date: e.date instanceof Date ? e.date.toISOString() : String(e.date)
+        };
+      });
 
       const { error } = await supabase.from('expenses').upsert(mappedExpenses, { onConflict: 'id' });
       if (error) throw error;
@@ -1835,41 +1806,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const httpServer = createServer(app);
 
-  // Ledger: validation schemas
-  const customerSchema = z.object({
-    name: z.string().min(1),
-    phone: z.string().min(5),
-    address: z.string().optional(),
-    credit_rating: z.enum(['good','bad']),
-    photo_url: z.string().url().optional(),
-  });
-
-  // List all products (server database)
-  app.get('/api/products', (req: Request, res: Response) => {
-    try {
-      const tenantId = (req as any).tenantId;
-      const products = dbService.getProducts(tenantId);
-      res.status(200).json(products);
-    } catch (error) {
-      console.error('Error listing products:', error);
-      res.status(500).json({ error: 'Failed to list products' });
-    }
-  });
-
-  const creditSchema = z.object({
-    amount: z.number().positive(),
-    due_date: z.string().datetime().optional(),
-    remarks: z.string().optional(),
-    date: z.string().datetime().optional(),
-  });
-
-  const paymentSchema = z.object({
-    amount: z.number().positive(),
-    payment_method: z.enum(['cash','gcash','bank','others']),
-    remarks: z.string().optional(),
-    date: z.string().datetime().optional(),
-  });
-
   // Ensure photo directory exists
   const photoDir = path.resolve(import.meta.dirname, 'data', 'photos');
   if (!fs.existsSync(photoDir)) fs.mkdirSync(photoDir, { recursive: true });
@@ -1878,10 +1814,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Customers
   app.post('/api/customers', (req, res) => {
     try {
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
       const parsed = customerSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: 'Invalid customer data', details: parsed.error.flatten() });
       const id = randomUUID();
-      const created = dbService.createCustomer({ id, name: parsed.data.name, phone: parsed.data.phone, address: parsed.data.address ?? null, credit_rating: parsed.data.credit_rating, photo_url: parsed.data.photo_url ?? null });
+      const created = dbService.createCustomer(tenantId, { id, name: parsed.data.name, phone: parsed.data.phone, address: parsed.data.address ?? null, credit_rating: parsed.data.credit_rating, photo_url: parsed.data.photo_url ?? null });
       res.status(201).json(created);
     } catch (e) {
       res.status(500).json({ error: 'Failed to create customer' });
@@ -1890,9 +1827,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/customers', (req, res) => {
     try {
-      const customers = dbService.listCustomers() as any[];
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+      const customers = dbService.listCustomers(tenantId) as any[];
       const enriched = customers.map((c) => {
-        const bal = dbService.getBalance(c.id);
+        const bal = dbService.getBalance(tenantId, c.id);
         return { ...c, ...bal };
       });
       const sortBy = (req.query.sort_by as string) || 'name';
@@ -1912,7 +1850,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const beforeTime = dueBefore ? Date.parse(dueBefore) : undefined;
         const afterTime = dueAfter ? Date.parse(dueAfter) : undefined;
         out = out.filter((c) => {
-          const rows = dbService.listCredits(c.id) as any[];
+          const rows = dbService.listCredits(tenantId, c.id) as any[];
           const hasDue = rows.some((cr) => {
             if (!cr.due_date) return false;
             const t = Date.parse(cr.due_date);
@@ -1939,18 +1877,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get('/api/customers/:id', (req, res) => {
-    const c = dbService.getCustomer(req.params.id) as any;
+    const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+    const c = dbService.getCustomer(tenantId, req.params.id) as any;
     if (!c) return res.status(404).json({ error: 'Customer not found' });
-    const bal = dbService.getBalance(req.params.id);
+    const bal = dbService.getBalance(tenantId, req.params.id);
     res.status(200).json({ ...c, ...bal });
   });
 
   app.put('/api/customers/:id', (req, res) => {
     try {
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
       const parsed = customerSchema.partial().safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: 'Invalid customer data', details: parsed.error.flatten() });
       if (parsed.data.credit_rating && !['good','bad'].includes(parsed.data.credit_rating)) return res.status(400).json({ error: 'Invalid credit rating' });
-      const updated = dbService.updateCustomer(req.params.id, parsed.data);
+      const updated = dbService.updateCustomer(tenantId, req.params.id, parsed.data);
       if (!updated) return res.status(404).json({ error: 'Customer not found' });
       res.status(200).json(updated);
     } catch (e) {
@@ -1959,7 +1899,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.delete('/api/customers/:id', (req, res) => {
-    const changes = dbService.deleteCustomer(req.params.id);
+    const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+    const changes = dbService.deleteCustomer(tenantId, req.params.id);
     if (!changes) return res.status(404).json({ error: 'Customer not found' });
     res.status(204).send();
   });
@@ -1967,6 +1908,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Photo upload via base64 JSON: { "photo_data": "data:image/png;base64,..." }
   app.post('/api/customers/:id/upload-photo', (req, res) => {
     try {
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
       const { photo_data } = req.body || {};
       if (!photo_data || typeof photo_data !== 'string') return res.status(400).json({ error: 'photo_data base64 string required' });
       const match = photo_data.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
@@ -1977,7 +1919,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const file = path.join(photoDir, `${req.params.id}.${ext}`);
       fs.writeFileSync(file, Buffer.from(b64, 'base64'));
       const rel = `/photos/${req.params.id}.${ext}`;
-      const updated = dbService.updateCustomerPhoto(req.params.id, rel) as any;
+      const updated = dbService.updateCustomerPhoto(tenantId, req.params.id, rel) as any;
       if (!updated) return res.status(404).json({ error: 'Customer not found' });
       res.status(200).json(updated);
     } catch (e) {
@@ -1987,97 +1929,100 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Credits
   app.post('/api/customers/:id/credits', (req, res) => {
+    const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
     const parsed = creditSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Invalid credit data', details: parsed.error.flatten() });
     const id = randomUUID();
     const created_at = parsed.data.date ?? new Date().toISOString();
-    const created = dbService.addCredit({ id, customer_id: req.params.id, amount: parsed.data.amount, remarks: parsed.data.remarks ?? null, created_at });
-    if (parsed.data.due_date) dbService.updateCredit(id, { due_date: parsed.data.due_date });
+    const created = dbService.addCredit(tenantId, { id, customer_id: req.params.id, amount: parsed.data.amount, remarks: parsed.data.remarks ?? null, created_at });
+    if (parsed.data.due_date) dbService.updateCredit(tenantId, id, { due_date: parsed.data.due_date });
     res.status(201).json(created);
   });
 
   app.get('/api/customers/:id/credits', (req, res) => {
-    const rows = dbService.listCredits(req.params.id);
+    const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+    const rows = dbService.listCredits(tenantId, req.params.id);
     res.status(200).json(rows);
   });
 
   app.put('/api/credits/:credit_id', (req, res) => {
+    const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
     const parsed = creditSchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Invalid credit update', details: parsed.error.flatten() });
-    const updated = dbService.updateCredit(req.params.credit_id, { amount: parsed.data.amount, due_date: parsed.data.due_date ?? null, remarks: parsed.data.remarks ?? null });
+    const updated = dbService.updateCredit(tenantId, req.params.credit_id, { amount: parsed.data.amount, due_date: parsed.data.due_date ?? null, remarks: parsed.data.remarks ?? null });
     if (!updated) return res.status(404).json({ error: 'Credit not found' });
     res.status(200).json(updated);
   });
 
   app.delete('/api/credits/:credit_id', (req, res) => {
-    const changes = dbService.deleteCredit(req.params.credit_id);
+    const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+    const changes = dbService.deleteCredit(tenantId, req.params.credit_id);
     if (!changes) return res.status(404).json({ error: 'Credit not found' });
     res.status(204).send();
   });
 
   // Payments
   app.post('/api/customers/:id/payments', (req, res) => {
+    const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
     const parsed = paymentSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Invalid payment data', details: parsed.error.flatten() });
     const id = randomUUID();
     const created_at = parsed.data.date ?? new Date().toISOString();
-    const created = dbService.addPayment({ id, customer_id: req.params.id, amount: parsed.data.amount, payment_method: parsed.data.payment_method, remarks: parsed.data.remarks ?? null, created_at });
+    const created = dbService.addPayment(tenantId, { id, customer_id: req.params.id, amount: parsed.data.amount, payment_method: parsed.data.payment_method, remarks: parsed.data.remarks ?? null, created_at });
     res.status(201).json(created);
   });
 
   app.get('/api/customers/:id/payments', (req, res) => {
-    const rows = dbService.listPayments(req.params.id);
+    const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+    const rows = dbService.listPayments(tenantId, req.params.id);
     res.status(200).json(rows);
   });
 
   app.put('/api/payments/:payment_id', (req, res) => {
+    const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
     const parsed = paymentSchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Invalid payment update', details: parsed.error.flatten() });
-    const updated = dbService.updatePayment(req.params.payment_id, { amount: parsed.data.amount, payment_method: parsed.data.payment_method, remarks: parsed.data.remarks ?? null });
+    const updated = dbService.updatePayment(tenantId, req.params.payment_id, { amount: parsed.data.amount, payment_method: parsed.data.payment_method, remarks: parsed.data.remarks ?? null });
     if (!updated) return res.status(404).json({ error: 'Payment not found' });
     res.status(200).json(updated);
   });
 
   app.delete('/api/payments/:payment_id', (req, res) => {
-    const changes = dbService.deletePayment(req.params.payment_id);
+    const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+    const changes = dbService.deletePayment(tenantId, req.params.payment_id);
     if (!changes) return res.status(404).json({ error: 'Payment not found' });
     res.status(204).send();
   });
 
   // Balance
   app.get('/api/customers/:id/balance', (req, res) => {
-    const bal = dbService.getBalance(req.params.id);
+    const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+    const bal = dbService.getBalance(tenantId, req.params.id);
     res.status(200).json(bal);
   });
 
   // Send reminder
   app.post('/api/customers/:id/send-reminder', (req, res) => {
+    const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
     const { message_type } = req.body || {};
     const types = ['sms','email','push'];
     const mt = String(message_type || '').toLowerCase();
     if (!types.includes(mt)) return res.status(400).json({ error: 'Invalid message type', supported: types });
-    const cust = dbService.getCustomer(req.params.id) as any;
+    const cust = dbService.getCustomer(tenantId, req.params.id) as any;
     if (!cust) return res.status(404).json({ error: 'Customer not found' });
-    const bal = dbService.getBalance(req.params.id);
+    const bal = dbService.getBalance(tenantId, req.params.id);
     const msg = `Hello ${cust.name}, your current balance is ${bal.balance}. Please settle before due.`;
     const status = 'queued';
-    const log = dbService.addReminder({ id: randomUUID(), customer_id: req.params.id, message_type: mt, message: msg, status });
+    const log = dbService.addReminder(tenantId, { id: randomUUID(), customer_id: req.params.id, message_type: mt, message: msg, status });
     res.status(200).json({ delivery_status: status, reminder: log });
   });
 
-  // Settings
-  app.get('/api/settings', (req, res) => {
-    const settings = dbService.getSettings();
-    res.status(200).json(settings);
-  });
-  app.put('/api/settings', (req, res) => {
-    const updated = dbService.upsertSettings(req.body || {});
-    res.status(200).json(updated);
-  });
+
 
   app.post('/api/print/test-receipt', (req, res) => {
     try {
-      const settings = dbService.getSettings() as any;
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+      const settings = dbService.getSettings(tenantId) as any;
       const receipt = settings.receipt || {};
       const paperWidth = receipt.paperWidth || '58mm';
       const sep = paperWidth === '80mm' ? '------------------------------------------------' : '--------------------------------';
@@ -2143,7 +2088,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/print/sale', (req, res) => {
     try {
-      const settings = dbService.getSettings() as any;
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+      const settings = dbService.getSettings(tenantId) as any;
       const receipt = settings.receipt || {};
       const paperWidth = receipt.paperWidth || '58mm';
       const sep = paperWidth === '80mm' ? '------------------------------------------------' : '--------------------------------';
@@ -2203,27 +2149,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Customer ledger composite
   app.get('/api/customers/:id/ledger', (req, res) => {
-    const customer = dbService.getCustomer(req.params.id) as any;
+    const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+    const customer = dbService.getCustomer(tenantId, req.params.id) as any;
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
-    const credits = dbService.listCredits(req.params.id);
-    const payments = dbService.listPayments(req.params.id);
-    const bal = dbService.getBalance(req.params.id);
+    const credits = dbService.listCredits(tenantId, req.params.id);
+    const payments = dbService.listPayments(tenantId, req.params.id);
+    const bal = dbService.getBalance(tenantId, req.params.id);
     res.status(200).json({ customer, credits, payments, ...bal });
   });
 
   // Dashboard cards
   app.get('/api/customers/count', (req, res) => {
-    res.status(200).json({ count: dbService.customersCount() });
+    const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+    res.status(200).json({ count: dbService.customersCount(tenantId) });
   });
   app.get('/api/payments/total', (req, res) => {
-    res.status(200).json({ total_payment: dbService.totalPayments() });
+    const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+    res.status(200).json({ total_payment: dbService.totalPayments(tenantId) });
   });
   app.get('/api/credits/total', (req, res) => {
-    res.status(200).json({ total_credit: dbService.totalCredits() });
+    const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+    res.status(200).json({ total_credit: dbService.totalCredits(tenantId) });
   });
   app.get('/api/ledger/summary', (req, res) => {
-    const total_credit = dbService.totalCredits();
-    const total_payment = dbService.totalPayments();
+    const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+    const total_credit = dbService.totalCredits(tenantId);
+    const total_payment = dbService.totalPayments(tenantId);
     res.status(200).json({ total_credit, total_payment, balance: total_credit - total_payment });
   });
 
@@ -2600,9 +2551,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Remittance & Notifications Routes
   app.post('/api/remit', authenticateUser, async (req: Request, res: Response) => {
     try {
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
       const { staffId, staffName, amount, transactionCount } = req.body;
       const id = randomUUID();
-      const remittance = dbService.createRemittance({
+      const remittance = dbService.createRemittance(tenantId, {
         id,
         staffId,
         staffName,
@@ -2611,7 +2563,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Create notification for admin
-      const notification = dbService.createNotification({
+      const notification = dbService.createNotification(tenantId, {
         type: 'remittance',
         message: `${staffName} remitted ₱${amount.toLocaleString()} for ${transactionCount} transactions.`,
         data: { remittanceId: id, staffName, amount, transactionCount }
@@ -2630,12 +2582,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/remit/confirm/:id', async (req: Request, res: Response) => {
     try {
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
       const { id } = req.params;
-      const remittance = dbService.confirmRemittance(id) as any;
+      const remittance = dbService.confirmRemittance(tenantId, id) as any;
       if (!remittance) return res.status(404).json({ error: 'Remittance not found' });
 
       // Create notification about confirmation (optional)
-      const notification = dbService.createNotification({
+      const notification = dbService.createNotification(tenantId, {
         type: 'system_update',
         message: `Remittance of ₱${remittance.amount} from ${remittance.staff_name} has been confirmed.`,
         data: { remittanceId: id }
@@ -2653,7 +2606,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/remittances/pending', async (req: Request, res: Response) => {
     try {
-      const pending = dbService.listPendingRemittances();
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+      const pending = dbService.listPendingRemittances(tenantId);
       res.json(pending);
     } catch (error) {
       res.status(500).json({ error: 'Failed to fetch pending remittances' });
@@ -2662,7 +2616,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/remittances/confirmed', async (req: Request, res: Response) => {
     try {
-      const confirmed = dbService.listConfirmedRemittances();
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+      const confirmed = dbService.listConfirmedRemittances(tenantId);
       res.json(confirmed);
     } catch (error) {
       res.status(500).json({ error: 'Failed to fetch confirmed remittances' });
@@ -2671,8 +2626,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/sales/remitted/:staffId', async (req: Request, res: Response) => {
     try {
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
       const { staffId } = req.params;
-      const remittedSales = dbService.getRemittedSalesForStaff(staffId);
+      const remittedSales = dbService.getRemittedSalesForStaff(tenantId, staffId);
       res.json(remittedSales);
     } catch (error) {
       console.error('Error fetching remitted sales:', error);
@@ -2682,8 +2638,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/notifications', async (req: Request, res: Response) => {
     try {
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
       const userId = (req.query.userId as string) || null;
-      const notifications = dbService.listNotifications(userId);
+      const notifications = dbService.listNotifications(tenantId, userId);
       res.json(notifications);
     } catch (error) {
       res.status(500).json({ error: 'Failed to fetch notifications' });
@@ -2692,8 +2649,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/notifications/unread-count', async (req: Request, res: Response) => {
     try {
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
       const userId = (req.query.userId as string) || null;
-      const count = dbService.getUnreadNotificationCount(userId);
+      const count = dbService.getUnreadNotificationCount(tenantId, userId);
       res.json({ count });
     } catch (error) {
       res.status(500).json({ error: 'Failed to fetch unread count' });
@@ -2702,7 +2660,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch('/api/notifications/:id/read', async (req: Request, res: Response) => {
     try {
-      dbService.markNotificationRead(req.params.id);
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+      dbService.markNotificationRead(tenantId, req.params.id);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: 'Failed to mark notification as read' });
@@ -2711,8 +2670,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch('/api/notifications/mark-all-read', async (req: Request, res: Response) => {
     try {
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
       const userId = (req.query.userId as string) || null;
-      dbService.markAllNotificationsRead(userId);
+      dbService.markAllNotificationsRead(tenantId, userId);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: 'Failed to mark all notifications as read' });
@@ -2721,7 +2681,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete('/api/notifications/:id', async (req: Request, res: Response) => {
     try {
-      dbService.deleteNotification(req.params.id);
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+      dbService.deleteNotification(tenantId, req.params.id);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: 'Failed to delete notification' });

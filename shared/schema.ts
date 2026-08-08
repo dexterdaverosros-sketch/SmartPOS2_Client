@@ -344,27 +344,24 @@ export const developerSessions = sqliteTable("developer_sessions", {
   expiresAt: integer("expires_at", { mode: 'timestamp' }),
 });
 
+// Staff Constants
+export const staffRoles = ['cashier', 'manager', 'admin'] as const;
+export const employmentStatuses = ['active', 'inactive', 'on_leave'] as const;
+export const assignedShifts = ['morning', 'afternoon', 'evening'] as const;
+export const staffGenders = ['male', 'female', 'other'] as const;
+export const staffPermissions = ['sales.create', 'sales.view', 'products.manage', 'customers.manage', 'staff.view', 'reports.view'] as const;
+
 // Insert schemas
+export const insertTenantSchema = createInsertSchema(tenants);
+export const insertAttendanceSchema = createInsertSchema(attendance);
+export const insertLoginHistorySchema = createInsertSchema(loginHistory);
+export const insertAuditLogSchema = createInsertSchema(auditLogs);
 export const insertActivityLogSchema = createInsertSchema(activityLogs);
 export const insertSecurityEventSchema = createInsertSchema(securityEvents);
 export const insertErrorLogSchema = createInsertSchema(errorLogs);
 export const insertFeatureFlagSchema = createInsertSchema(featureFlags);
 export const insertSystemSettingSchema = createInsertSchema(systemSettings);
 export const insertDeveloperSessionSchema = createInsertSchema(developerSessions);
-
-// Types
-export type ActivityLog = typeof activityLogs.$inferSelect;
-export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
-export type SecurityEvent = typeof securityEvents.$inferSelect;
-export type InsertSecurityEvent = z.infer<typeof insertSecurityEventSchema>;
-export type ErrorLog = typeof errorLogs.$inferSelect;
-export type InsertErrorLog = z.infer<typeof insertErrorLogSchema>;
-export type FeatureFlag = typeof featureFlags.$inferSelect;
-export type InsertFeatureFlag = z.infer<typeof insertFeatureFlagSchema>;
-export type SystemSetting = typeof systemSettings.$inferSelect;
-export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
-export type DeveloperSession = typeof developerSessions.$inferSelect;
-export type InsertDeveloperSession = z.infer<typeof insertDeveloperSessionSchema>;
 
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
@@ -427,12 +424,80 @@ export const insertStaffSchema = createInsertSchema(staff).pick({
   createdBy: true,
 });
 
+export const staffCreateSchema = z.object({
+  firstName: z.string().trim().min(1).max(100),
+  middleName: z.string().trim().max(100).optional().nullable(),
+  lastName: z.string().trim().min(1).max(100),
+  name: z.string().trim().min(1).max(250),
+  staffId: z.string().trim().min(1).max(50),
+  passkey: z.string().min(4).max(200),
+  role: z.enum(staffRoles).default('cashier'),
+  branch: z.string().trim().max(150).optional().nullable(),
+  department: z.string().trim().max(150).optional().nullable(),
+  employmentStatus: z.enum(employmentStatuses).default('active'),
+  email: z.string().trim().email().max(254).optional().nullable(),
+  phone: z.string().trim().max(40).optional().nullable(),
+  address: z.string().trim().max(500).optional().nullable(),
+  birthdate: z.coerce.date().optional().nullable(),
+  gender: z.enum(staffGenders).optional().nullable(),
+  dateHired: z.coerce.date().optional().nullable(),
+  assignedShift: z.enum(assignedShifts).optional().nullable(),
+  permissions: z.array(z.enum(staffPermissions)).default([]),
+});
+
+export const staffUpdateSchema = z.preprocess(
+  (raw: any) => {
+    if (!raw || typeof raw !== 'object') return raw;
+    const cleaned: Record<string, any> = { ...raw };
+    const emptyAsNull = ['phone', 'address', 'branch', 'department', 'firstName', 'middleName', 'lastName'];
+    const emptyAsUndefined = ['email', 'role', 'employmentStatus', 'gender', 'assignedShift', 'birthdate', 'dateHired'];
+    for (const k of Object.keys(cleaned)) {
+      const v = cleaned[k];
+      if (typeof v === 'string' && v.trim() === '') {
+        if (emptyAsNull.includes(k)) cleaned[k] = null;
+        else if (emptyAsUndefined.includes(k)) cleaned[k] = undefined;
+        else cleaned[k] = undefined;
+      }
+    }
+    return cleaned;
+  },
+  staffCreateSchema.partial().omit({ staffId: true, passkey: true, name: true })
+);
+
+export const staffStatusSchema = z.object({ status: z.enum(employmentStatuses) });
+export const staffPermissionsSchema = z.object({ permissions: z.array(z.enum(staffPermissions)).max(staffPermissions.length) });
+
 export const insertExpenseSchema = createInsertSchema(expenses);
 export const insertPurchaseSchema = createInsertSchema(purchases);
 export const insertCreditorSchema = createInsertSchema(creditors);
 export const insertCustomerSchema = createInsertSchema(customers);
+
+export const customerSchema = z.object({
+  name: z.string().min(1),
+  phone: z.string().min(5),
+  address: z.string().optional(),
+  credit_rating: z.enum(['good','bad']),
+  photo_url: z.string().url().optional(),
+});
+
 export const insertCreditSchema = createInsertSchema(credits);
+
+export const creditSchema = z.object({
+  amount: z.number().positive(),
+  due_date: z.string().datetime().optional(),
+  remarks: z.string().optional(),
+  date: z.string().datetime().optional(),
+});
+
 export const insertPaymentSchema = createInsertSchema(payments);
+
+export const paymentSchema = z.object({
+  amount: z.number().positive(),
+  payment_method: z.enum(['cash','gcash','bank','others']),
+  remarks: z.string().optional(),
+  date: z.string().datetime().optional(),
+});
+
 export const insertRemittanceSchema = createInsertSchema(remittances);
 export const insertNotificationSchema = createInsertSchema(notifications);
 
@@ -455,38 +520,133 @@ export const insertVariantSchema = createInsertSchema(variants).pick({
   image: true,
 });
 
+// Update schemas
+export const updateTenantSchema = insertTenantSchema.partial();
+export const updateUserSchema = insertUserSchema.partial();
+export const updateProductSchema = insertProductSchema.partial();
+export const updateVariantSchema = insertVariantSchema.partial();
+export const updateSaleSchema = insertSaleSchema.partial();
+export const updateSaleItemSchema = insertSaleItemSchema.partial();
+export const updateStaffSchema = staffUpdateSchema;
+export const updateAttendanceSchema = insertAttendanceSchema.partial();
+export const updateLoginHistorySchema = insertLoginHistorySchema.partial();
+export const updateExpenseSchema = insertExpenseSchema.partial();
+export const updatePurchaseSchema = insertPurchaseSchema.partial();
+export const updateCreditorSchema = insertCreditorSchema.partial();
+export const updateCustomerSchema = customerSchema.partial();
+export const updateCreditSchema = creditSchema.partial();
+export const updatePaymentSchema = paymentSchema.partial();
+export const updateRemittanceSchema = insertRemittanceSchema.partial();
+export const updateNotificationSchema = insertNotificationSchema.partial();
+export const updateActivityLogSchema = insertActivityLogSchema.partial();
+export const updateSecurityEventSchema = insertSecurityEventSchema.partial();
+export const updateErrorLogSchema = insertErrorLogSchema.partial();
+export const updateAuditLogSchema = insertAuditLogSchema.partial();
+export const updateFeatureFlagSchema = insertFeatureFlagSchema.partial();
+export const updateSystemSettingSchema = insertSystemSettingSchema.partial();
+export const updateDeveloperSessionSchema = insertDeveloperSessionSchema.partial();
+export const updateNonInventoryProductSchema = insertNonInventoryProductSchema.partial();
+
 // Types
-export type InsertUser = z.infer<typeof insertUserSchema>;
+export type Tenant = typeof tenants.$inferSelect;
+export type InsertTenant = z.infer<typeof insertTenantSchema>;
+export type UpdateTenant = z.infer<typeof updateTenantSchema>;
+
 export type User = typeof users.$inferSelect;
-export type InsertProduct = z.infer<typeof insertProductSchema>;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type UpdateUser = z.infer<typeof updateUserSchema>;
+
 export type Product = typeof products.$inferSelect;
+export type InsertProduct = z.infer<typeof insertProductSchema>;
+export type UpdateProduct = z.infer<typeof updateProductSchema>;
+
 export type Variant = typeof variants.$inferSelect;
 export type InsertVariant = z.infer<typeof insertVariantSchema>;
-export type InsertSale = z.infer<typeof insertSaleSchema>;
+export type UpdateVariant = z.infer<typeof updateVariantSchema>;
+
 export type Sale = typeof sales.$inferSelect;
-export type InsertSaleItem = z.infer<typeof insertSaleItemSchema>;
+export type InsertSale = z.infer<typeof insertSaleSchema>;
+export type UpdateSale = z.infer<typeof updateSaleSchema>;
+
 export type SaleItem = typeof saleItems.$inferSelect;
-export type InsertStaff = z.infer<typeof insertStaffSchema>;
+export type InsertSaleItem = z.infer<typeof insertSaleItemSchema>;
+export type UpdateSaleItem = z.infer<typeof updateSaleItemSchema>;
+
 export type Staff = typeof staff.$inferSelect;
-export type InsertExpense = z.infer<typeof insertExpenseSchema>;
+export type InsertStaff = z.infer<typeof insertStaffSchema>;
+export type UpdateStaff = z.infer<typeof updateStaffSchema>;
+
+export type Attendance = typeof attendance.$inferSelect;
+export type InsertAttendance = z.infer<typeof insertAttendanceSchema>;
+export type UpdateAttendance = z.infer<typeof updateAttendanceSchema>;
+
+export type LoginHistory = typeof loginHistory.$inferSelect;
+export type InsertLoginHistory = z.infer<typeof insertLoginHistorySchema>;
+export type UpdateLoginHistory = z.infer<typeof updateLoginHistorySchema>;
+
 export type Expense = typeof expenses.$inferSelect;
-export type InsertPurchase = z.infer<typeof insertPurchaseSchema>;
+export type InsertExpense = z.infer<typeof insertExpenseSchema>;
+export type UpdateExpense = z.infer<typeof updateExpenseSchema>;
+
 export type Purchase = typeof purchases.$inferSelect;
-export type InsertCreditor = z.infer<typeof insertCreditorSchema>;
+export type InsertPurchase = z.infer<typeof insertPurchaseSchema>;
+export type UpdatePurchase = z.infer<typeof updatePurchaseSchema>;
+
 export type Creditor = typeof creditors.$inferSelect;
-export type InsertCustomer = z.infer<typeof insertCustomerSchema>;
+export type InsertCreditor = z.infer<typeof insertCreditorSchema>;
+export type UpdateCreditor = z.infer<typeof updateCreditorSchema>;
+
 export type Customer = typeof customers.$inferSelect;
-export type InsertCredit = z.infer<typeof insertCreditSchema>;
+export type InsertCustomer = z.infer<typeof insertCustomerSchema>;
+export type UpdateCustomer = z.infer<typeof updateCustomerSchema>;
+
 export type Credit = typeof credits.$inferSelect;
-export type InsertPayment = z.infer<typeof insertPaymentSchema>;
+export type InsertCredit = z.infer<typeof insertCreditSchema>;
+export type UpdateCredit = z.infer<typeof updateCreditSchema>;
+
 export type Payment = typeof payments.$inferSelect;
+export type InsertPayment = z.infer<typeof insertPaymentSchema>;
+export type UpdatePayment = z.infer<typeof updatePaymentSchema>;
+
 export type Remittance = typeof remittances.$inferSelect;
 export type InsertRemittance = z.infer<typeof insertRemittanceSchema>;
+export type UpdateRemittance = z.infer<typeof updateRemittanceSchema>;
+
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type UpdateNotification = z.infer<typeof updateNotificationSchema>;
+
+export type ActivityLog = typeof activityLogs.$inferSelect;
+export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
+export type UpdateActivityLog = z.infer<typeof updateActivityLogSchema>;
+
+export type SecurityEvent = typeof securityEvents.$inferSelect;
+export type InsertSecurityEvent = z.infer<typeof insertSecurityEventSchema>;
+export type UpdateSecurityEvent = z.infer<typeof updateSecurityEventSchema>;
+
+export type ErrorLog = typeof errorLogs.$inferSelect;
+export type InsertErrorLog = z.infer<typeof insertErrorLogSchema>;
+export type UpdateErrorLog = z.infer<typeof updateErrorLogSchema>;
+
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
+export type UpdateAuditLog = z.infer<typeof updateAuditLogSchema>;
+
+export type FeatureFlag = typeof featureFlags.$inferSelect;
+export type InsertFeatureFlag = z.infer<typeof insertFeatureFlagSchema>;
+export type UpdateFeatureFlag = z.infer<typeof updateFeatureFlagSchema>;
+
+export type SystemSetting = typeof systemSettings.$inferSelect;
+export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
+export type UpdateSystemSetting = z.infer<typeof updateSystemSettingSchema>;
+
+export type DeveloperSession = typeof developerSessions.$inferSelect;
+export type InsertDeveloperSession = z.infer<typeof insertDeveloperSessionSchema>;
+export type UpdateDeveloperSession = z.infer<typeof updateDeveloperSessionSchema>;
+
 export type NonInventoryProduct = typeof nonInventoryProducts.$inferSelect;
 export type InsertNonInventoryProduct = z.infer<typeof insertNonInventoryProductSchema>;
-
+export type UpdateNonInventoryProduct = z.infer<typeof updateNonInventoryProductSchema>;
 
 // Cart item type for sales
 export type CartItem = {
@@ -498,3 +658,4 @@ export type CartItem = {
   subtotal: number;
   isNonInventory?: boolean;
 };
+
