@@ -1046,39 +1046,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Invalid data format' });
       }
 
-      // Upsert sales
-      const mappedSales = sales.map(s => ({
-        id: s.id,
-        total: s.total,
-        payment_type: s.paymentType,
-        payment_amount: s.paymentAmount,
-        staff_id: s.staffId,
-        remitted: !!s.remitted,
-        created_at: s.createdAt
-      }));
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+      if (!tenantId) {
+        console.error('[SALE SYNC ERROR] Missing tenant_id before Supabase operation');
+        return res.status(400).json({ error: 'Tenant ID is required for sale sync' });
+      }
+
+      // Upsert sales with validated tenant_id
+      const mappedSales = sales.map(s => {
+        const effTenantId = s.tenantId || s.tenant_id || tenantId;
+        if (!effTenantId) {
+          console.error(`[SALE SYNC ERROR] Missing tenant_id before Supabase operation for sale ${s.id}`);
+          throw new Error(`SALE_SYNC_BLOCKED: Missing tenant_id for sale ${s.id}`);
+        }
+        console.log('[SALE SYNC] Preparing sale');
+        console.log('[SALE SYNC] sale_id:', s.id);
+        console.log('[SALE SYNC] tenant_id:', effTenantId);
+        console.log('[SALE SYNC] staff_id:', s.staffId || s.staff_id || 'N/A');
+        console.log('[SALE SYNC] total:', s.total);
+        return {
+          id: String(s.id),
+          tenant_id: String(effTenantId),
+          total: Number(s.total || 0),
+          payment_type: String(s.paymentType || s.payment_type || 'cash'),
+          payment_amount: Number(s.paymentAmount || s.payment_amount || 0),
+          staff_id: s.staffId || s.staff_id || null,
+          remitted: !!s.remitted,
+          created_at: s.createdAt || s.created_at || new Date().toISOString()
+        };
+      });
 
       const { error: salesError } = await supabase.from('sales').upsert(mappedSales, { onConflict: 'id' });
-      if (salesError) throw salesError;
+      if (salesError) {
+        console.error('[SALE SYNC ERROR] Failed to upsert sales:', salesError);
+        throw salesError;
+      }
 
-      // Upsert items
+      // Upsert items with tenant_id
       const mappedItems = items.map(it => ({
-        id: it.id,
-        sale_id: it.saleId,
-        product_id: it.productId,
-        quantity: it.quantity,
-        price: it.price,
-        unit: it.unit,
-        product_name: it.productName,
-        is_non_inventory: !!it.isNonInventory
+        id: String(it.id),
+        tenant_id: String(it.tenantId || it.tenant_id || tenantId),
+        sale_id: String(it.saleId || it.sale_id),
+        product_id: String(it.productId || it.product_id),
+        quantity: Number(it.quantity || 1),
+        price: Number(it.price || 0),
+        unit: String(it.unit || 'pieces'),
+        product_name: it.productName || it.product_name || null,
+        is_non_inventory: !!(it.isNonInventory || it.is_non_inventory)
       }));
 
       const { error: itemsError } = await supabase.from('sale_items').upsert(mappedItems, { onConflict: 'id' });
-      if (itemsError) throw itemsError;
+      if (itemsError) {
+        console.error('[SALE SYNC ERROR] Failed to upsert sale items:', itemsError);
+        throw itemsError;
+      }
 
       res.status(200).json({ success: true, syncedSales: sales.length, syncedItems: items.length });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Cloud sales sync error:', error);
-      res.status(500).json({ error: 'Failed to sync sales to cloud' });
+      res.status(500).json({ error: error.message || 'Failed to sync sales to cloud' });
     }
   });
 

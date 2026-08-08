@@ -925,90 +925,71 @@ export const dbService = {
       }
     })();
 
-    // Sync to Supabase Cloud if enabled - ULTRA DEFENSIVE VERSION
+    // Sync to Supabase Cloud if enabled
     if (useCloud()) {
       const supabase = getSupabase();
       if (supabase) {
         (async () => {
           try {
-            console.log('[SYNC] Starting sale sync to Supabase for sale:', sale.id);
-            // Start with ABSOLUTELY MINIMAL data only (required columns)
-            let saleData: Record<string, unknown> = {
-              id: sale.id,
-              total: sale.total,
-              created_at: sale.createdAt instanceof Date ? sale.createdAt.toISOString() : String(sale.createdAt)
-            };
-            // Try to add optional columns one by one, only if they exist
-            const optionalSaleFields = [
-              { key: 'payment_type', value: sale.paymentType },
-              { key: 'staff_id', value: sale.staffId },
-              { key: 'remitted', value: !!sale.remitted },
-              { key: 'payment_amount', value: sale.paymentAmount }
-            ];
-            for (const field of optionalSaleFields) {
-              try {
-                const testData = { ...saleData, [field.key]: field.value };
-                const { error: testError } = await supabase.from('sales').upsert(testData, { onConflict: 'id' }).select().limit(0);
-                if (!testError) {
-                  saleData[field.key] = field.value;
-                  console.log(`[SYNC] Added sale column: ${field.key}`);
-                }
-              } catch (e) {
-                console.log(`[SYNC] Sale column ${field.key} not found, skipping...`);
-              }
-            }
-            // Now perform actual sync
-            const { error: saleError } = await supabase.from('sales').upsert(saleData, { onConflict: 'id' });
-            if (saleError) {
-              console.warn('[SYNC] Sale sync failed, trying with ONLY id/total/created_at:', saleError);
-              const minimalOnly = { id: sale.id, total: sale.total, created_at: sale.createdAt instanceof Date ? sale.createdAt.toISOString() : String(sale.createdAt) };
-              const { error: minimalSaleError } = await supabase.from('sales').upsert(minimalOnly, { onConflict: 'id' });
-              if (minimalSaleError) {
-                console.error('[SYNC] Even minimal sale sync failed! Skipping sale sync...', minimalSaleError);
-                return;
-              }
+            const effectiveTenantId = tenantId || (sale as any).tenantId || (sale as any).tenant_id;
+            if (!effectiveTenantId) {
+              console.error('[SALE SYNC ERROR] Missing tenant_id before Supabase operation for sale:', sale.id);
+              throw new Error(`SALE_SYNC_BLOCKED: Missing tenant_id for sale ${sale.id}`);
             }
 
-            console.log('[SYNC] Sale synced, now syncing sale items...');
+            console.log('[SALE SYNC] Preparing sale');
+            console.log('[SALE SYNC] sale_id:', sale.id);
+            console.log('[SALE SYNC] tenant_id:', effectiveTenantId);
+            console.log('[SALE SYNC] staff_id:', sale.staffId || 'N/A');
+            console.log('[SALE SYNC] total:', sale.total);
+
+            // Construct canonical sale object satisfying not-null tenant_id constraint
+            const cloudSaleData = {
+              id: String(sale.id),
+              tenant_id: String(effectiveTenantId),
+              total: Number(sale.total || 0),
+              payment_type: String(sale.paymentType || 'cash'),
+              payment_amount: Number(sale.paymentAmount || 0),
+              staff_id: sale.staffId && sale.staffId !== 'unknown' ? String(sale.staffId) : null,
+              remitted: !!sale.remitted,
+              created_at: sale.createdAt instanceof Date ? sale.createdAt.toISOString() : String(sale.createdAt || new Date().toISOString())
+            };
+
+            const { error: saleError } = await supabase.from('sales').upsert(cloudSaleData, { onConflict: 'id' });
+            if (saleError) {
+              console.error('[SALE SYNC ERROR] Failed to upsert sale to Supabase:', saleError);
+              return; // Keep local sale safe in SQLite, do not proceed to sync items if parent sale failed
+            }
+
+            console.log('[SALE SYNC] Sale header synced successfully, now syncing sale items...');
             
-            // Sync Sale Items (also ultra defensive)
+            // Sync Sale Items with tenant_id
             for (const item of saleItems) {
               try {
-                let itemData: Record<string, unknown> = {
-                  id: item.id || randomUUID(),
-                  sale_id: item.saleId || sale.id
+                const cloudItemData = {
+                  id: String(item.id || randomUUID()),
+                  tenant_id: String(effectiveTenantId),
+                  sale_id: String(item.saleId || sale.id),
+                  product_id: String(item.productId),
+                  quantity: Number(item.quantity || 1),
+                  price: Number(item.price || 0),
+                  unit: String(item.unit || 'pieces'),
+                  product_name: item.productName ? String(item.productName) : null,
+                  is_non_inventory: !!item.isNonInventory
                 };
-                const optionalItemFields = [
-                  { key: 'product_id', value: item.productId },
-                  { key: 'quantity', value: item.quantity },
-                  { key: 'price', value: item.price },
-                  { key: 'unit', value: item.unit },
-                  { key: 'product_name', value: item.productName },
-                  { key: 'is_non_inventory', value: !!item.isNonInventory }
-                ];
-                for (const field of optionalItemFields) {
-                  try {
-                    const testData = { ...itemData, [field.key]: field.value };
-                    const { error: testError } = await supabase.from('sale_items').upsert(testData, { onConflict: 'id' }).select().limit(0);
-                    if (!testError) {
-                      itemData[field.key] = field.value;
-                    }
-                  } catch (e) {
-                    console.log(`[SYNC] Sale item column ${field.key} not found, skipping...`);
-                  }
-                }
-                const { error: itemError } = await supabase.from('sale_items').upsert(itemData, { onConflict: 'id' });
+
+                const { error: itemError } = await supabase.from('sale_items').upsert(cloudItemData, { onConflict: 'id' });
                 if (itemError) {
-                  console.warn(`[SYNC] Failed to sync sale item ${item.id}`, itemError);
+                  console.error(`[SALE SYNC ERROR] Failed to sync sale item ${item.id}:`, itemError);
                 }
               } catch (itemErr) {
-                console.error(`[SYNC] Failed to sync sale item ${item.id}`, itemErr);
+                console.error(`[SALE SYNC ERROR] Exception syncing sale item ${item.id}:`, itemErr);
               }
             }
 
-            console.log(`[SYNC] Sale ${sale.id} sync complete!`);
+            console.log(`[SALE SYNC] Sale ${sale.id} sync complete!`);
           } catch (err) {
-            console.error('[SYNC] Failed to sync sale to Supabase:', err);
+            console.error('[SALE SYNC ERROR] Failed to sync sale to Supabase:', err);
           }
         })();
       }
