@@ -39,92 +39,237 @@ export const useCloud = () => {
   return !!url && !!key && url !== "" && key !== "";
 };
 
+// ================================================================
+// CANONICAL SCHEMA DEFINITIONS  (single source of truth)
+// SQLite column names match actual usage in INSERT/UPDATE statements.
+// Note: Staff deliberately does NOT include deprecated "username".
+// ================================================================
+type CanonicalColumn = {
+  name: string;
+  def: string; // e.g. "TEXT NOT NULL DEFAULT 'cashier'"
+};
+
+const CANONICAL_SCHEMAS: Record<string, CanonicalColumn[]> = {
+  staff: [
+    { name: 'id',                def: 'TEXT PRIMARY KEY' },
+    { name: 'tenant_id',         def: 'TEXT' },
+    { name: 'user_id',           def: 'TEXT' },
+    { name: 'firstName',         def: 'TEXT' },
+    { name: 'middleName',        def: 'TEXT' },
+    { name: 'lastName',          def: 'TEXT' },
+    { name: 'name',              def: 'TEXT NOT NULL DEFAULT \'\'' },
+    { name: 'staffId',           def: 'TEXT UNIQUE' },
+    { name: 'passkey',           def: 'TEXT' },
+    { name: 'role',              def: 'TEXT DEFAULT \'cashier\'' },
+    { name: 'branch',            def: 'TEXT' },
+    { name: 'department',        def: 'TEXT' },
+    { name: 'employmentStatus',  def: 'TEXT DEFAULT \'active\'' },
+    { name: 'email',             def: 'TEXT' },
+    { name: 'phone',             def: 'TEXT' },
+    { name: 'address',           def: 'TEXT' },
+    { name: 'birthdate',         def: 'TEXT' },
+    { name: 'gender',            def: 'TEXT' },
+    { name: 'dateHired',         def: 'TEXT' },
+    { name: 'assignedShift',     def: 'TEXT' },
+    { name: 'lastLogin',         def: 'TEXT' },
+    { name: 'passwordLastChanged', def: 'TEXT' },
+    { name: 'permissions',       def: 'TEXT' },
+    { name: 'createdBy',         def: 'TEXT' },
+    { name: 'createdAt',         def: 'TEXT' },
+    { name: 'updatedAt',         def: 'TEXT' },
+  ],
+  products: [
+    { name: 'id',         def: 'TEXT PRIMARY KEY' },
+    { name: 'tenant_id',  def: 'TEXT' },
+    { name: 'name',       def: 'TEXT NOT NULL DEFAULT \'\'' },
+    { name: 'price',      def: 'REAL NOT NULL DEFAULT 0' },
+    { name: 'cost',       def: 'REAL DEFAULT 0' },
+    { name: 'category',   def: 'TEXT' },
+    { name: 'description',def: 'TEXT' },
+    { name: 'image',      def: 'TEXT' },
+    { name: 'quantity',   def: 'INTEGER DEFAULT 0' },
+    { name: 'barcode',    def: 'TEXT UNIQUE' },
+    { name: 'createdAt',  def: 'TEXT' },
+    { name: 'updatedAt',  def: 'TEXT' },
+  ],
+  variants: [
+    { name: 'id',         def: 'TEXT PRIMARY KEY' },
+    { name: 'tenant_id',  def: 'TEXT' },
+    { name: 'product_id', def: 'TEXT NOT NULL' },
+    { name: 'name',       def: 'TEXT NOT NULL DEFAULT \'\'' },
+    { name: 'barcode',    def: 'TEXT' },
+    { name: 'price',      def: 'REAL NOT NULL DEFAULT 0' },
+    { name: 'cost',       def: 'REAL NOT NULL DEFAULT 0' },
+    { name: 'image',      def: 'TEXT' },
+    { name: 'quantity',   def: 'INTEGER DEFAULT 0' },
+    { name: 'created_at', def: 'TEXT' },
+    { name: 'updated_at', def: 'TEXT' },
+  ],
+  sales: [
+    { name: 'id',            def: 'TEXT PRIMARY KEY' },
+    { name: 'tenant_id',     def: 'TEXT' },
+    { name: 'total',         def: 'REAL NOT NULL DEFAULT 0' },
+    { name: 'paymentType',   def: 'TEXT NOT NULL DEFAULT \'cash\'' },
+    { name: 'paymentAmount', def: 'REAL NOT NULL DEFAULT 0' },
+    { name: 'staffId',       def: 'TEXT' },
+    { name: 'remitted',      def: 'INTEGER DEFAULT 0' },
+    { name: 'createdAt',     def: 'TEXT' },
+  ],
+  sale_items: [
+    { name: 'id',             def: 'TEXT PRIMARY KEY' },
+    { name: 'tenant_id',      def: 'TEXT' },
+    { name: 'saleId',         def: 'TEXT NOT NULL' },
+    { name: 'productId',      def: 'TEXT NOT NULL' },
+    { name: 'quantity',       def: 'INTEGER NOT NULL DEFAULT 1' },
+    { name: 'price',          def: 'REAL NOT NULL DEFAULT 0' },
+    { name: 'unit',           def: 'TEXT DEFAULT \'pieces\'' },
+    { name: 'productName',    def: 'TEXT' },
+    { name: 'isNonInventory', def: 'INTEGER DEFAULT 0' },
+  ],
+};
+
+const STAFF_COLUMN_NAMES = CANONICAL_SCHEMAS.staff.map(c => c.name);
+const PRODUCTS_COLUMN_NAMES = CANONICAL_SCHEMAS.products.map(c => c.name);
+const VARIANTS_COLUMN_NAMES = CANONICAL_SCHEMAS.variants.map(c => c.name);
+const SALES_COLUMN_NAMES = CANONICAL_SCHEMAS.sales.map(c => c.name);
+const SALE_ITEMS_COLUMN_NAMES = CANONICAL_SCHEMAS.sale_items.map(c => c.name);
+
 // Database service
 export const dbService = {
-  // Initialize tables if they do not exist
+  // ================================================================
+  // TASK 1+2+9: initSchema — diagnostics, deterministic migrations,
+  // schema verification. All in one.
+  // ================================================================
   initSchema: async () => {
     const sqlite = initSQLite();
+
+    // ---------------- TASK 1: STARTUP DIAGNOSTICS ----------------
+    const dataDir = process.env.DATA_DIR
+      ? require('path').resolve(process.env.DATA_DIR)
+      : require('path').resolve(require('path').dirname(require('url').fileURLToPath(import.meta.url)), 'data');
+    const dbPath = require('path').join(dataDir, 'smartpos.db');
+    console.log('============================================');
+    console.log('[DB DIAG] SQLite database path:', dbPath);
+    console.log('[DB DIAG] DATA_DIR env var:', process.env.DATA_DIR || '(not set)');
+    console.log('[DB DIAG] Railway persistent volume check: DATA_DIR is', process.env.DATA_DIR ? 'custom (likely mounted volume)' : 'default (ephemeral or default volume mount)');
+    try {
+      const allFiles = require('fs').readdirSync(dataDir);
+      const dbFiles = allFiles.filter((f: string) => f.endsWith('.db') || f.endsWith('.sqlite') || f.endsWith('.sqlite3'));
+      console.log('[DB DIAG] All DB files in data dir:', dbFiles.length > 0 ? dbFiles : '(none)');
+      if (dbFiles.length > 1) {
+        console.warn('[DB DIAG] WARNING: More than one DB file detected! The app opens:', dbPath);
+      }
+    } catch (e: any) {
+      console.warn('[DB DIAG] Could not list data dir contents:', e?.message);
+    }
+    const getCols = (table: string) =>
+      sqlite.prepare(`PRAGMA table_info(${table})`).all() as { cid: number; name: string; type: string; notnull: number; dflt_value: any; pk: number }[];
+
+    const criticalTables = ['staff', 'products', 'variants', 'sales', 'sale_items'];
+    const preMigration: Record<string, string[]> = {};
+    for (const t of criticalTables) {
+      const cols = getCols(t);
+      preMigration[t] = cols.map(c => `${c.name}(${c.type})`);
+      console.log(`[DB DIAG] PRE-MIGRATION PRAGMA table_info(${t}): columns = [${cols.map(c => c.name + ':' + c.type).join(', ')}]`);
+    }
+
     runMigrations(sqlite);
-    // Check for staff table schema mismatch (INTEGER id vs TEXT id)
-    try {
-      const staffInfo = sqlite.prepare('PRAGMA table_info(staff)').all() as any[];
-      const idCol = staffInfo.find(c => c.name === 'id');
-      if (idCol && idCol.type === 'INTEGER') {
-        console.log('Migrating staff table from INTEGER id to TEXT id...');
-        db.transaction(() => {
-          // Disable foreign keys temporarily to avoid issues during migration
-          db.exec('PRAGMA foreign_keys = OFF');
-          
-          db.exec(`ALTER TABLE staff RENAME TO staff_old`);
-          
-          db.exec(`
-            CREATE TABLE staff (
-              id TEXT PRIMARY KEY,
-              name TEXT NOT NULL,
-              staffId TEXT UNIQUE NOT NULL,
-              passkey TEXT,
-              createdBy TEXT,
-              createdAt TEXT
-            )
-          `);
-          
-          // Try to copy data
-          // We cast id to TEXT. If schema matches otherwise, this should work.
-          // Note: staff_old might have staff_id vs staffId. 
-          // If staff_old has staffId, use it. If not, try staff_id.
-          const cols = staffInfo.map(c => c.name);
-          const hasStaffId = cols.includes('staffId');
-          const hasSnakeStaffId = cols.includes('staff_id');
-          
-          const sourceStaffId = hasStaffId ? 'staffId' : (hasSnakeStaffId ? 'staff_id' : "''");
-          const sourcePasskey = cols.includes('passkey') ? 'passkey' : "''";
-          
-          db.exec(`
-            INSERT INTO staff (id, name, staffId, passkey, createdBy, createdAt)
-            SELECT CAST(id AS TEXT), name, ${sourceStaffId}, ${sourcePasskey}, createdBy, createdAt 
-            FROM staff_old
-          `);
-          
-          db.exec(`DROP TABLE staff_old`);
-          
-          // Re-enable foreign keys
-          db.exec('PRAGMA foreign_keys = ON');
-        })();
-        console.log('Staff table migration completed.');
+
+    // ---------------- TASK 2: DETERMINISTIC MIGRATIONS ----------------
+    const migrateTable = (tableName: string, canonical: CanonicalColumn[]) => {
+      const existingCols = getCols(tableName);
+      const existingNames = existingCols.map(c => c.name);
+      const canonicalNames = canonical.map(c => c.name);
+      const missing = canonical.filter(c => !existingNames.includes(c.name));
+
+      // If table doesn't exist at all, create it fresh
+      if (existingCols.length === 0) {
+        const colDefs = canonical.map(c => `  ${c.name} ${c.def}`).join(',\n');
+        sqlite.exec(`CREATE TABLE ${tableName} (\n${colDefs}\n)`);
+        console.log(`[MIGRATION] Created new table ${tableName}`);
+        return;
       }
-    } catch (e) {
-      console.error('Migration failed (non-critical if table doesnt exist):', e);
+
+      // Special: rebuild staff if id column is INTEGER (old schema)
+      if (tableName === 'staff') {
+        const idCol = existingCols.find(c => c.name === 'id');
+        if (idCol && idCol.type === 'INTEGER') {
+          console.log(`[MIGRATION] Rebuilding ${tableName} table: id was INTEGER, need TEXT`);
+          rebuildTablePreservingData(tableName, canonical, existingNames);
+          return;
+        }
+      }
+
+      // Add missing columns individually (SQLite limitation: only one ADD COLUMN per ALTER)
+      if (missing.length > 0) {
+        const tx = sqlite.transaction(() => {
+          for (const col of missing) {
+            try {
+              sqlite.exec(`ALTER TABLE ${tableName} ADD COLUMN ${col.name} ${col.def}`);
+              console.log(`[MIGRATION] ${tableName}: added column ${col.name}`);
+            } catch (alterErr: any) {
+              console.warn(`[MIGRATION] ALTER TABLE ${tableName} ADD COLUMN ${col.name} failed: ${alterErr?.message}. Attempting full rebuild...`);
+              rebuildTablePreservingData(tableName, canonical, existingNames);
+              return;
+            }
+          }
+        });
+        tx();
+      }
+
+      // Drop deprecated columns: remove "username" from staff if present
+      if (tableName === 'staff' && existingNames.includes('username')) {
+        console.log('[MIGRATION] staff: deprecated "username" column present. Preserving via table rebuild (column dropped).');
+        rebuildTablePreservingData(tableName, canonical, existingNames.filter(n => n !== 'username'));
+      }
+    };
+
+    const rebuildTablePreservingData = (tableName: string, canonical: CanonicalColumn[], existingNames: string[]) => {
+      sqlite.transaction(() => {
+        sqlite.exec('PRAGMA foreign_keys = OFF');
+        const overlapCols = canonical
+          .map(c => c.name)
+          .filter(n => existingNames.includes(n));
+        sqlite.exec(`ALTER TABLE ${tableName} RENAME TO ${tableName}_old`);
+        const colDefs = canonical.map(c => `  ${c.name} ${c.def}`).join(',\n');
+        sqlite.exec(`CREATE TABLE ${tableName} (\n${colDefs}\n)`);
+        if (overlapCols.length > 0) {
+          const sel = overlapCols.join(', ');
+          try {
+            sqlite.exec(`INSERT INTO ${tableName} (${sel}) SELECT ${sel} FROM ${tableName}_old`);
+            console.log(`[MIGRATION] ${tableName}: preserved ${overlapCols.length} columns during rebuild`);
+          } catch (copyErr: any) {
+            console.error(`[MIGRATION] ${tableName}: could not copy rows during rebuild: ${copyErr?.message}. Old table kept as ${tableName}_old_backup.`);
+            sqlite.exec(`ALTER TABLE ${tableName}_old RENAME TO ${tableName}_old_backup`);
+            sqlite.exec('PRAGMA foreign_keys = ON');
+            return;
+          }
+        }
+        sqlite.exec(`DROP TABLE IF EXISTS ${tableName}_old`);
+        sqlite.exec('PRAGMA foreign_keys = ON');
+      })();
+      console.log(`[MIGRATION] Rebuilt table ${tableName} successfully`);
+    };
+
+    // Run migrations for each critical table inside a transaction
+    const migrateCritical = sqlite.transaction(() => {
+      for (const [t, cols] of Object.entries(CANONICAL_SCHEMAS)) {
+        migrateTable(t, cols);
+      }
+    });
+    try {
+      migrateCritical();
+    } catch (txErr) {
+      console.error('[MIGRATION] Critical table migration failed, retrying individually...', txErr);
+      for (const [t, cols] of Object.entries(CANONICAL_SCHEMAS)) {
+        try { migrateTable(t, cols); } catch (e) {
+          console.error(`[MIGRATION] Could not migrate ${t}:`, e);
+          throw new Error(`DATABASE_SCHEMA_MIGRATION_FAILED: table=${t} err=${String(e)}`);
+        }
+      }
     }
 
-    // Ensure sessions table has no foreign keys
-    try {
-      const sessionForeignKeys = sqlite.prepare('PRAGMA foreign_key_list(sessions)').all();
-      if (sessionForeignKeys.length > 0) {
-        console.log('Recreating sessions table without foreign keys...');
-        db.transaction(() => {
-          db.exec('PRAGMA foreign_keys = OFF');
-          db.exec('DROP TABLE IF EXISTS sessions');
-          db.exec(`
-            CREATE TABLE sessions (
-              id TEXT PRIMARY KEY,
-              user_id TEXT NOT NULL,
-              tenant_id TEXT,
-              token TEXT UNIQUE NOT NULL,
-              device_info TEXT,
-              ip_address TEXT,
-              created_at TEXT NOT NULL,
-              last_active_at TEXT NOT NULL
-            )
-          `);
-          db.exec('PRAGMA foreign_keys = ON');
-        })();
-        console.log('Sessions table recreated successfully.');
-      }
-    } catch (e) {
-      console.error('Sessions table migration failed (non-critical if table is new):', e);
-    }
-
-    // Create base and ledger tables if they don't exist
+    // Now create all other non-critical tables IF NOT EXISTS (these are lower risk)
     sqlite.exec(`
       CREATE TABLE IF NOT EXISTS tenants (
         id TEXT PRIMARY KEY,
@@ -132,72 +277,28 @@ export const dbService = {
         subdomain TEXT UNIQUE NOT NULL,
         created_at TEXT DEFAULT (datetime('now'))
       );
-
-      CREATE TABLE IF NOT EXISTS products (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT,
-        name TEXT NOT NULL,
-        price REAL NOT NULL,
-        cost REAL DEFAULT 0,
-        barcode TEXT UNIQUE NOT NULL,
-        category TEXT,
-        image TEXT,
-        quantity INTEGER DEFAULT 0,
-        createdAt TEXT,
-        updatedAt TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS variants (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT,
-        product_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        barcode TEXT,
-        price REAL NOT NULL,
-        cost REAL NOT NULL,
-        image TEXT,
-        quantity INTEGER DEFAULT 0,
-        created_at TEXT,
-        updated_at TEXT,
-        FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE
-      );
-
-      CREATE TABLE IF NOT EXISTS staff (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        user_id TEXT,
-        name TEXT NOT NULL,
-        staffId TEXT UNIQUE NOT NULL,
-        passkey TEXT,
-        role TEXT DEFAULT 'cashier',
-        branch TEXT,
-        department TEXT,
-        employmentStatus TEXT DEFAULT 'active',
-        email TEXT UNIQUE,
-        phone TEXT,
-        address TEXT,
-        dateHired TEXT,
-        assignedShift TEXT,
-        lastLogin TEXT,
-        passwordLastChanged TEXT,
-        permissions TEXT,
-        createdBy TEXT,
-        createdAt TEXT,
-        updatedAt TEXT
-      );
-
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        username TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        role TEXT NOT NULL,
+        tenant_id TEXT,
+        username TEXT UNIQUE,
+        email TEXT,
+        mobile TEXT,
+        password TEXT,
+        role TEXT,
         businessName TEXT,
         ownerName TEXT,
-        mobile TEXT,
+        location TEXT,
+        profileImage TEXT,
+        securityQuestion1 TEXT,
+        securityAnswer1 TEXT,
+        securityQuestion2 TEXT,
+        securityAnswer2 TEXT,
+        securityQuestion3 TEXT,
+        securityAnswer3 TEXT,
+        failedAttemptCount INTEGER DEFAULT 0,
+        lockoutUntil TEXT,
         createdAt TEXT
       );
-
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
@@ -208,125 +309,90 @@ export const dbService = {
         created_at TEXT NOT NULL,
         last_active_at TEXT NOT NULL
       );
-
       CREATE TABLE IF NOT EXISTS customers (
         id TEXT PRIMARY KEY,
         tenant_id TEXT,
-        name TEXT NOT NULL,
-        phone TEXT NOT NULL,
+        name TEXT NOT NULL DEFAULT '',
+        phone TEXT NOT NULL DEFAULT '',
         address TEXT,
-        credit_rating TEXT NOT NULL CHECK (credit_rating IN ('good','bad')),
+        credit_rating TEXT NOT NULL DEFAULT 'good',
         photo_url TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT
       );
-
       CREATE TABLE IF NOT EXISTS credits (
         id TEXT PRIMARY KEY,
         tenant_id TEXT,
         customer_id TEXT NOT NULL,
-        amount REAL NOT NULL CHECK (amount > 0),
+        amount REAL NOT NULL DEFAULT 0,
         due_date TEXT,
         remarks TEXT,
-        created_at TEXT NOT NULL,
-        FOREIGN KEY(customer_id) REFERENCES customers(id) ON DELETE CASCADE
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
-
       CREATE TABLE IF NOT EXISTS payments (
         id TEXT PRIMARY KEY,
         tenant_id TEXT,
         customer_id TEXT NOT NULL,
-        amount REAL NOT NULL CHECK (amount > 0),
-        payment_method TEXT NOT NULL,
+        amount REAL NOT NULL DEFAULT 0,
+        payment_method TEXT NOT NULL DEFAULT 'cash',
         remarks TEXT,
-        created_at TEXT NOT NULL,
-        FOREIGN KEY(customer_id) REFERENCES customers(id) ON DELETE CASCADE
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
-
       CREATE TABLE IF NOT EXISTS reminders (
         id TEXT PRIMARY KEY,
         tenant_id TEXT,
         customer_id TEXT NOT NULL,
-        message_type TEXT NOT NULL,
-        message TEXT NOT NULL,
-        status TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        FOREIGN KEY(customer_id) REFERENCES customers(id) ON DELETE CASCADE
+        message_type TEXT NOT NULL DEFAULT '',
+        message TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
-
       CREATE TABLE IF NOT EXISTS settings (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
+        key TEXT NOT NULL,
+        value TEXT NOT NULL,
+        tenant_id TEXT,
+        PRIMARY KEY (key, tenant_id)
       );
-
       CREATE TABLE IF NOT EXISTS non_inventory_products (
         id TEXT PRIMARY KEY,
         tenant_id TEXT,
-        name TEXT NOT NULL,
-        price REAL NOT NULL,
+        name TEXT NOT NULL DEFAULT '',
+        price REAL NOT NULL DEFAULT 0,
         category TEXT,
         description TEXT,
         image TEXT,
-        barcode TEXT UNIQUE NOT NULL,
+        barcode TEXT UNIQUE,
         barcode_data TEXT,
         created_at TEXT,
         updated_at TEXT
       );
-
       CREATE TABLE IF NOT EXISTS remittances (
         id TEXT PRIMARY KEY,
         tenant_id TEXT,
-        staff_id TEXT NOT NULL,
-        staff_name TEXT NOT NULL,
-        amount REAL NOT NULL,
-        transaction_count INTEGER NOT NULL,
+        staff_id TEXT,
+        staff_name TEXT,
+        amount REAL DEFAULT 0,
+        transaction_count INTEGER DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'pending',
         created_at TEXT,
-        confirmed_at TEXT,
-        FOREIGN KEY(staff_id) REFERENCES staff(id)
+        confirmed_at TEXT
       );
-
       CREATE TABLE IF NOT EXISTS notifications (
         id TEXT PRIMARY KEY,
         tenant_id TEXT,
         user_id TEXT,
-        type TEXT NOT NULL,
-        message TEXT NOT NULL,
+        type TEXT NOT NULL DEFAULT '',
+        message TEXT NOT NULL DEFAULT '',
         data TEXT,
         is_read INTEGER DEFAULT 0,
         created_at TEXT
       );
-
-      CREATE TABLE IF NOT EXISTS sales (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT,
-        total REAL NOT NULL,
-        paymentType TEXT NOT NULL,
-        paymentAmount REAL NOT NULL,
-        staffId TEXT,
-        remitted INTEGER DEFAULT 0,
-        createdAt TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS sale_items (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT,
-        saleId TEXT NOT NULL,
-        productId TEXT NOT NULL,
-        quantity INTEGER NOT NULL,
-        price REAL NOT NULL,
-        unit TEXT DEFAULT 'pieces',
-        productName TEXT,
-        isNonInventory INTEGER DEFAULT 0,
-        FOREIGN KEY(saleId) REFERENCES sales(id) ON DELETE CASCADE
-      );
-
       CREATE TABLE IF NOT EXISTS audit_logs (
         id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
+        tenant_id TEXT,
         admin_id TEXT,
         admin_name TEXT,
-        action TEXT NOT NULL,
+        action TEXT NOT NULL DEFAULT '',
         staff_id TEXT,
         staff_name TEXT,
         changed_fields TEXT,
@@ -335,12 +401,11 @@ export const dbService = {
         ip_address TEXT,
         created_at TEXT
       );
-      
       CREATE TABLE IF NOT EXISTS attendance (
         id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        staff_id TEXT NOT NULL,
-        date TEXT NOT NULL,
+        tenant_id TEXT,
+        staff_id TEXT,
+        date TEXT,
         clock_in TEXT,
         clock_out TEXT,
         hours_worked REAL,
@@ -348,201 +413,155 @@ export const dbService = {
         created_at TEXT,
         updated_at TEXT
       );
-      
       CREATE TABLE IF NOT EXISTS login_history (
         id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        staff_id TEXT NOT NULL,
+        tenant_id TEXT,
+        staff_id TEXT,
         device_info TEXT,
         ip_address TEXT,
-        login_time TEXT NOT NULL,
+        login_time TEXT,
         logout_time TEXT,
         created_at TEXT
       );
+      CREATE TABLE IF NOT EXISTS expenses (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT,
+        description TEXT NOT NULL DEFAULT '',
+        amount REAL NOT NULL DEFAULT 0,
+        category TEXT NOT NULL DEFAULT '',
+        date TEXT
+      );
+      CREATE TABLE IF NOT EXISTS purchases (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT,
+        productName TEXT NOT NULL DEFAULT '',
+        quantity INTEGER DEFAULT 0,
+        cost REAL DEFAULT 0,
+        supplier TEXT,
+        date TEXT,
+        description TEXT,
+        details TEXT,
+        expirationDate TEXT
+      );
+      CREATE TABLE IF NOT EXISTS creditors (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT,
+        name TEXT NOT NULL DEFAULT '',
+        amount REAL NOT NULL DEFAULT 0,
+        description TEXT,
+        dueDate TEXT,
+        reminderDate TEXT,
+        isPaid INTEGER DEFAULT 0
+      );
     `);
 
-    // Perform lightweight migrations for missing columns
-    const getColumns = (table: string) =>
-      db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
-
-    // List of all tables that should have tenant_id
-    const tablesWithTenant = [
-      'products', 'variants', 'staff', 'users', 'sessions',
-      'customers', 'credits', 'payments', 'reminders',
+    // Ensure tenant_id on all tables that should have it
+    const tablesWantTenant = [
+      'users', 'customers', 'credits', 'payments', 'reminders',
       'non_inventory_products', 'remittances', 'notifications',
-      'sales', 'sale_items', 'audit_logs', 'attendance', 'login_history'
+      'audit_logs', 'attendance', 'login_history', 'expenses',
+      'purchases', 'creditors'
     ];
-
-    const productCols = getColumns('products').map(c => c.name);
-    const staffCols = getColumns('staff').map(c => c.name);
-    const customerCols = getColumns('customers').map(c => c.name);
-    const salesCols = getColumns('sales').map(c => c.name);
-
-    const migrate = db.transaction(() => {
-      // Add tenant_id to all relevant tables if missing
-      for (const table of tablesWithTenant) {
-        const cols = getColumns(table).map(c => c.name);
-        if (!cols.includes('tenant_id')) {
-          try {
-            db.exec(`ALTER TABLE ${table} ADD COLUMN tenant_id TEXT`);
-            console.log(`Added tenant_id column to ${table} table`);
-          } catch (e) {
-            console.error(`Failed to add tenant_id to ${table}:`, e);
+    sqlite.transaction(() => {
+      for (const t of tablesWantTenant) {
+        const ex = getCols(t).map(c => c.name);
+        if (!ex.includes('tenant_id')) {
+          try { sqlite.exec(`ALTER TABLE ${t} ADD COLUMN tenant_id TEXT`); console.log(`[MIGRATION] Added tenant_id to ${t}`); }
+          catch (e) { console.warn(`[MIGRATION] Could not add tenant_id to ${t}:`, String(e).slice(0, 200)); }
+        }
+        if (t === 'users') {
+          for (const c of ['email','mobile','location','profileImage','securityQuestion1','securityAnswer1','securityQuestion2','securityAnswer2','securityQuestion3','securityAnswer3','failedAttemptCount','lockoutUntil']) {
+            if (!ex.includes(c)) {
+              try { sqlite.exec(`ALTER TABLE users ADD COLUMN ${c} TEXT`); } catch {}
+            }
           }
         }
       }
-      // Add missing columns to sales
-      if (!salesCols.includes('remitted')) {
-        try {
-          db.exec(`ALTER TABLE sales ADD COLUMN remitted INTEGER DEFAULT 0`);
-        } catch (e) {
-          console.error('Migration: sales.remitted failed (might already exist)', e);
-        }
-      }
+    })();
 
-      // Add missing columns to products
-      if (!productCols.includes('updatedAt')) {
-        db.exec(`ALTER TABLE products ADD COLUMN updatedAt TEXT`);
-      }
-      if (!productCols.includes('createdAt')) {
-        db.exec(`ALTER TABLE products ADD COLUMN createdAt TEXT`);
-      }
-      if (!productCols.includes('cost')) {
-        db.exec(`ALTER TABLE products ADD COLUMN cost REAL DEFAULT 0`);
-      }
+    // Recreate all useful indexes (these are IF NOT EXISTS so safe)
+    sqlite.exec(`
+      CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
+      CREATE INDEX IF NOT EXISTS idx_products_tenant ON products(tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_variants_product ON variants(product_id);
+      CREATE INDEX IF NOT EXISTS idx_variants_tenant ON variants(tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_staff_staffId ON staff(staffId);
+      CREATE INDEX IF NOT EXISTS idx_staff_tenant ON staff(tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_sales_tenant ON sales(tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_sales_createdAt ON sales(createdAt);
+      CREATE INDEX IF NOT EXISTS idx_sale_items_saleId ON sale_items(saleId);
+      CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
+      CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+      CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
+      CREATE INDEX IF NOT EXISTS idx_credits_customer ON credits(customer_id);
+      CREATE INDEX IF NOT EXISTS idx_payments_customer ON payments(customer_id);
+      CREATE INDEX IF NOT EXISTS idx_reminders_customer ON reminders(customer_id);
+      CREATE INDEX IF NOT EXISTS idx_remittances_tenant_status ON remittances(tenant_id, status);
+      CREATE INDEX IF NOT EXISTS idx_notifications_tenant_user ON notifications(tenant_id, user_id);
+      CREATE INDEX IF NOT EXISTS idx_users_tenant_username ON users(tenant_id, username);
+    `);
 
-      // Ensure indexes exist (only after columns are present)
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode)`);
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_products_updatedAt ON products(updatedAt)`);
+    // ---------------- TASK 9: POST-MIGRATION VERIFICATION ----------------
+    console.log('--------------------------------------------------------');
+    const verifyRequired = (tableName: string, required: string[]) => {
+      const present = new Set(getCols(tableName).map(c => c.name));
+      const missing = required.filter(r => !present.has(r));
+      if (missing.length === 0) {
+        console.log(`[DB SCHEMA] ${tableName}: OK (${present.size} columns)`);
+        return true;
+      }
+      console.error(`[DB SCHEMA] ${tableName}: FAIL — missing columns: [${missing.join(', ')}]`);
+      return false;
+    };
+    const schemaResults: Record<string, boolean> = {};
+    schemaResults.staff = verifyRequired('staff', STAFF_COLUMN_NAMES);
+    schemaResults.products = verifyRequired('products', PRODUCTS_COLUMN_NAMES);
+    schemaResults.variants = verifyRequired('variants', VARIANTS_COLUMN_NAMES);
+    schemaResults.sales = verifyRequired('sales', SALES_COLUMN_NAMES);
+    schemaResults.sale_items = verifyRequired('sale_items', SALE_ITEMS_COLUMN_NAMES);
 
-      // Add missing columns to staff
-      if (!staffCols.includes('staffId')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN staffId TEXT`);
-      }
-      if (!staffCols.includes('passkey')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN passkey TEXT`);
-      }
-      if (!staffCols.includes('createdBy')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN createdBy TEXT`);
-      }
-      if (!staffCols.includes('createdAt')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN createdAt TEXT`);
-      }
-      if (!staffCols.includes('role')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN role TEXT DEFAULT 'cashier'`);
-      }
-      if (!staffCols.includes('branch')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN branch TEXT`);
-      }
-      if (!staffCols.includes('department')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN department TEXT`);
-      }
-      if (!staffCols.includes('employmentStatus')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN employmentStatus TEXT DEFAULT 'active'`);
-      }
-      if (!staffCols.includes('email')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN email TEXT`);
-      }
-      if (!staffCols.includes('phone')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN phone TEXT`);
-      }
-      if (!staffCols.includes('address')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN address TEXT`);
-      }
-      if (!staffCols.includes('dateHired')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN dateHired TEXT`);
-      }
-      if (!staffCols.includes('assignedShift')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN assignedShift TEXT`);
-      }
-      if (!staffCols.includes('lastLogin')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN lastLogin TEXT`);
-      }
-      if (!staffCols.includes('passwordLastChanged')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN passwordLastChanged TEXT`);
-      }
-      if (!staffCols.includes('permissions')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN permissions TEXT`);
-      }
-      if (!staffCols.includes('firstName')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN firstName TEXT`);
-      }
-      if (!staffCols.includes('middleName')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN middleName TEXT`);
-      }
-      if (!staffCols.includes('lastName')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN lastName TEXT`);
-      }
-      if (!staffCols.includes('birthdate')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN birthdate TEXT`);
-      }
-      if (!staffCols.includes('gender')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN gender TEXT`);
-      }
-      if (!staffCols.includes('updatedAt')) {
-        db.exec(`ALTER TABLE staff ADD COLUMN updatedAt TEXT`);
-      }
+    const postMigration: Record<string, string[]> = {};
+    for (const t of criticalTables) {
+      const cols = getCols(t);
+      postMigration[t] = cols.map(c => `${c.name}(${c.type})`);
+      console.log(`[DB DIAG] POST-MIGRATION PRAGMA table_info(${t}): columns = [${cols.map(c => c.name + ':' + c.type).join(', ')}]`);
+    }
+    console.log('============================================');
 
-      // Staff indexes
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_staff_staffId ON staff(staffId)`);
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_staff_createdAt ON staff(createdAt)`);
+    const allOk = Object.values(schemaResults).every(Boolean);
+    if (!allOk) {
+      console.error('DATABASE_SCHEMA_MIGRATION_FAILED: one or more critical tables missing required columns');
+      console.error('Pre-migration state:', JSON.stringify(preMigration, null, 2));
+      console.error('Post-migration state:', JSON.stringify(postMigration, null, 2));
+      throw new Error('DATABASE_SCHEMA_MIGRATION_FAILED: see startup logs above for details');
+    }
+    (dbService as any)._schemaPreMigration = preMigration;
+    (dbService as any)._schemaPostMigration = postMigration;
+    (dbService as any)._dbPath = dbPath;
 
-      // Sessions indexes
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token)`);
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`);
-
-      // Customers migrations and indexes
-      if (!customerCols.includes('updated_at')) {
-        db.exec(`ALTER TABLE customers ADD COLUMN updated_at TEXT`);
-      }
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name)`);
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_customers_rating ON customers(credit_rating)`);
-
-      // Credits indexes
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_credits_customer ON credits(customer_id)`);
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_credits_created_at ON credits(created_at)`);
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_credits_due_date ON credits(due_date)`);
-
-      // Payments indexes
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_customer ON payments(customer_id)`);
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_created_at ON payments(created_at)`);
-
-      // Reminders indexes
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_reminders_customer ON reminders(customer_id)`);
-    });
-
-    migrate();
-
-    // Sync from Cloud (Supabase) if available to restore from backup
+    // Cloud restore (if available)
     if (useCloud()) {
-      console.log('Checking for Cloud Backup in Supabase...');
+      console.log('[DB INIT] Checking for Cloud Backup in Supabase...');
       const supabase = getSupabase();
       if (supabase) {
         try {
-          // Restore Products
           const { data: cloudProducts } = await supabase.from('products').select('*');
           if (cloudProducts && cloudProducts.length > 0) {
             dbService.saveProducts(cloudProducts, '');
             console.log(`Restored ${cloudProducts.length} products from Cloud.`);
           }
-          
-          // Restore Staff
           const { data: cloudStaff } = await supabase.from('staff').select('*');
           if (cloudStaff && cloudStaff.length > 0) {
             dbService.saveStaff(cloudStaff, '');
             console.log(`Restored ${cloudStaff.length} staff from Cloud.`);
           }
-
-          // Restore Admins/Users
           const { data: cloudUsers } = await supabase.from('users').select('*');
           if (cloudUsers && cloudUsers.length > 0) {
-            for (const user of cloudUsers) {
-              dbService.saveAdmin(user);
-            }
+            for (const user of cloudUsers) dbService.saveAdmin(user);
             console.log(`Restored ${cloudUsers.length} admin accounts from Cloud.`);
           }
         } catch (e) {
-          console.warn('Could not restore from Cloud backup (check table existence):', e);
+          console.warn('Could not restore from Cloud backup (non-fatal):', String(e).slice(0, 300));
         }
       }
     }
@@ -1097,10 +1116,10 @@ export const dbService = {
   saveProducts: (products: any[], tenantId: string) => {
     const insert = db.prepare(`
       INSERT OR REPLACE INTO products 
-      (id, tenant_id, name, price, cost, barcode, category, image, quantity, createdAt, updatedAt) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, tenant_id, name, price, cost, description, barcode, category, image, quantity, createdAt, updatedAt) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    
+
     const insertMany = db.transaction((products: any[]) => {
       for (const product of products) {
         try {
@@ -1108,6 +1127,7 @@ export const dbService = {
           const name = String(product.name ?? '');
           const price = Number(product.price ?? 0);
           const cost = Number(product.cost ?? 0);
+          const description = product.description != null ? String(product.description) : null;
           const barcode = String(product.barcode ?? '').trim();
           const category = product.category != null ? String(product.category) : null;
           const image = product.image != null ? String(product.image) : null;
@@ -1121,6 +1141,7 @@ export const dbService = {
             name,
             price,
             cost,
+            description,
             barcode,
             category,
             image,
@@ -1169,6 +1190,7 @@ export const dbService = {
                   name: p.name,
                   price: p.price,
                   cost: p.cost,
+                  description: p.description != null ? String(p.description) : null,
                   barcode: p.barcode,
                   category: p.category,
                   image: p.image,
@@ -1433,53 +1455,51 @@ export const dbService = {
     
     insertMany(variants);
 
-    // Mirror to Cloud (Supabase) if available - ULTRA DEFENSIVE VERSION
     if (useCloud()) {
       const supabase = getSupabase();
       if (supabase) {
         (async () => {
           try {
             console.log('[SYNC] Starting variant sync to Supabase for tenant:', tenantId);
-            // Process each variant individually for maximum safety
             for (const v of variants) {
               try {
-                let variantData: any = { id: String(v.id) };
-                const allVariantFields = [
-                  { key: 'tenant_id', value: tenantId },
-                  { key: 'product_id', value: v.productId || v.product_id },
-                  { key: 'name', value: v.name },
-                  { key: 'barcode', value: v.barcode || null },
-                  { key: 'price', value: v.price },
-                  { key: 'cost', value: v.cost },
-                  { key: 'image', value: v.image || null },
-                  { key: 'quantity', value: v.quantity || 0 },
-                  { key: 'created_at', value: v.createdAt || v.created_at || new Date().toISOString() },
-                  { key: 'updated_at', value: v.updatedAt || v.updated_at || new Date().toISOString() }
-                ];
-                for (const field of allVariantFields) {
-                  try {
-                    const testData = { ...variantData, [field.key]: field.value };
-                    const { error: testError } = await supabase.from('variants').upsert(testData, { onConflict: 'id' }).select().limit(0);
-                    if (!testError) {
-                      variantData[field.key] = field.value;
-                    } else {
-                      console.log(`[SYNC] Variant column '${field.key}' not found, skipping...`);
-                    }
-                  } catch (e) {
-                    console.log(`[SYNC] Variant column '${field.key}' not found, skipping...`);
-                  }
+                const product_id = v.productId || v.product_id;
+                if (!tenantId || !v.id || !product_id || !v.name || v.price == null) {
+                  console.error('[SYNC FAILURE] Skipping variant with missing required fields:', {
+                    variantId: v.id,
+                    tenantId,
+                    product_id,
+                    name: v.name,
+                    price: v.price
+                  });
+                  continue;
                 }
-                try {
-                  const { error: varError } = await supabase.from('variants').upsert(variantData, { onConflict: 'id' });
-                  if (varError) {
-                    console.warn(`[SYNC] Failed to sync variant ${v.id}, trying only id...`, varError);
-                    await supabase.from('variants').upsert({ id: String(v.id) }, { onConflict: 'id' });
-                  }
-                } catch (finalErr) {
-                  console.error(`[SYNC] Could not sync variant ${v.id} at all`, finalErr);
+                const variantData = {
+                  id: String(v.id),
+                  tenant_id: String(tenantId),
+                  product_id: String(product_id),
+                  name: String(v.name),
+                  barcode: v.barcode != null ? String(v.barcode) : null,
+                  price: Number(v.price),
+                  cost: v.cost != null ? Number(v.cost) : null,
+                  image: v.image != null ? String(v.image) : null,
+                  quantity: Number(v.quantity ?? 0),
+                  created_at: String(v.createdAt || v.created_at || new Date().toISOString()),
+                  updated_at: String(v.updatedAt || v.updated_at || new Date().toISOString())
+                };
+                const { error: varError } = await supabase.from('variants').upsert(variantData, { onConflict: 'id' });
+                if (varError) {
+                  console.error('[SYNC ERROR] Failed to sync variant:', {
+                    variantId: variantData.id,
+                    tenant_id: variantData.tenant_id,
+                    code: varError.code,
+                    message: varError.message,
+                    details: varError.details,
+                    hint: varError.hint
+                  });
                 }
               } catch (singleVariantErr) {
-                console.error(`[SYNC] Failed to sync variant ${v.id}`, singleVariantErr);
+                console.error(`[SYNC] Failed to sync variant ${v?.id}`, singleVariantErr);
               }
             }
             console.log(`[SYNC] Variant sync complete: ${variants.length} variants processed.`);
@@ -1537,7 +1557,6 @@ export const dbService = {
           gender: member.gender || null,
           dateHired: member.dateHired || null,
           assignedShift: member.assignedShift || null,
-          username: member.username || null,
           lastLogin: member.lastLogin || member.last_login || null,
           passwordLastChanged: member.passwordLastChanged || member.password_last_changed || null,
           permissions: member.permissions ? JSON.stringify(member.permissions) : null,
@@ -1547,13 +1566,12 @@ export const dbService = {
         };
       }));
 
-      // Now perform SQLite transaction (completely sync!)
       const insert = db.prepare(`
         INSERT OR REPLACE INTO staff 
-        (id, tenant_id, user_id, firstName, middleName, lastName, name, staffId, passkey, role, branch, department, employmentStatus, email, phone, address, birthdate, gender, dateHired, assignedShift, username, lastLogin, passwordLastChanged, permissions, createdBy, createdAt, updatedAt) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, tenant_id, user_id, firstName, middleName, lastName, name, staffId, passkey, role, branch, department, employmentStatus, email, phone, address, birthdate, gender, dateHired, assignedShift, lastLogin, passwordLastChanged, permissions, createdBy, createdAt, updatedAt) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
-      
+
       const insertMany = db.transaction((staffMembers: any[]) => {
         for (const member of staffMembers) {
           insert.run(
@@ -1577,7 +1595,6 @@ export const dbService = {
             member.gender,
             member.dateHired,
             member.assignedShift,
-            member.username,
             member.lastLogin,
             member.passwordLastChanged,
             member.permissions,
@@ -1625,7 +1642,6 @@ export const dbService = {
                   gender: item.gender || null,
                   date_hired: item.dateHired ? (item.dateHired instanceof Date ? item.dateHired.toISOString() : String(item.dateHired)) : null,
                   assigned_shift: item.assignedShift || item.assigned_shift || null,
-                  username: item.username || null,
                   last_login: item.lastLogin ? (item.lastLogin instanceof Date ? item.lastLogin.toISOString() : String(item.lastLogin)) : null,
                   password_last_changed: item.passwordLastChanged ? (item.passwordLastChanged instanceof Date ? item.passwordLastChanged.toISOString() : String(item.passwordLastChanged)) : null,
                   permissions: item.permissions ? (typeof item.permissions === 'string' ? JSON.parse(item.permissions) : item.permissions) : null,
@@ -2321,92 +2337,92 @@ export const dbService = {
 
     console.log('=== Starting full sync to Supabase ===');
 
-    // 1. Sync Products (with missing column handling)
     const products = db.prepare('SELECT * FROM products WHERE tenant_id = ?').all(tenantId) as any[];
     if (products.length > 0) {
       for (const p of products) {
-        // Start with ONLY the most basic columns that might exist
-        let productData: any = {
-          id: String(p.id)
-        };
-        // Try adding each column one by one
-        const allProductFields = [
-          { key: 'tenant_id', value: tenantId },
-          { key: 'name', value: String(p.name || '') },
-          { key: 'price', value: Number(p.price || 0) },
-          { key: 'created_at', value: p.createdAt ?? new Date().toISOString() },
-          { key: 'updated_at', value: p.updatedAt ?? new Date().toISOString() },
-          { key: 'cost', value: Number(p.cost || 0) },
-          { key: 'category', value: p.category ?? null },
-          { key: 'image', value: p.image ?? null },
-          { key: 'quantity', value: Number(p.quantity || 0) },
-          { key: 'barcode', value: String(p.barcode || '') }
-        ];
-        for (const field of allProductFields) {
-          try {
-            const testData = { ...productData, [field.key]: field.value };
-            const { error: testError } = await supabase.from('products').upsert(testData, { onConflict: 'id' }).select().limit(0);
-            if (!testError) {
-              productData[field.key] = field.value;
-            } else {
-              console.log(`[SYNC] Product column '${field.key}' not found, skipping...`);
-            }
-          } catch (e) {
-            console.log(`[SYNC] Product column '${field.key}' not found, skipping...`);
-          }
-        }
-        // Now sync with what we have
         try {
+          if (!p.id || !tenantId || !p.name || p.price == null) {
+            console.error('[SYNC FAILURE] Skipping product with missing required fields:', {
+              productId: p.id,
+              tenantId,
+              name: p.name,
+              price: p.price
+            });
+            continue;
+          }
+          const productData = {
+            id: String(p.id),
+            tenant_id: String(tenantId),
+            name: String(p.name || ''),
+            price: Number(p.price ?? 0),
+            cost: p.cost != null ? Number(p.cost) : null,
+            description: p.description != null ? String(p.description) : null,
+            category: p.category != null ? String(p.category) : null,
+            image: p.image != null ? String(p.image) : null,
+            quantity: Number(p.quantity ?? 0),
+            barcode: p.barcode != null ? String(p.barcode) : null,
+            created_at: String(p.createdAt ?? new Date().toISOString()),
+            updated_at: String(p.updatedAt ?? new Date().toISOString())
+          };
           const { error: prodError } = await supabase.from('products').upsert(productData, { onConflict: 'id' });
           if (prodError) {
-            console.warn(`[SYNC] Failed to sync product ${p.id}, trying with only id...`, prodError);
-            await supabase.from('products').upsert({ id: String(p.id) }, { onConflict: 'id' });
+            console.error('[SYNC ERROR] Failed to sync product:', {
+              productId: productData.id,
+              tenant_id: productData.tenant_id,
+              code: prodError.code,
+              message: prodError.message,
+              details: prodError.details,
+              hint: prodError.hint
+            });
           }
-        } catch (finalErr) {
-          console.error(`[SYNC] Could not sync product ${p.id} at all`, finalErr);
+        } catch (singleProdErr) {
+          console.error(`[SYNC] Failed to sync product ${p?.id}`, singleProdErr);
         }
       }
       console.log(`Synced ${products.length} products`);
     }
 
-    // 2. Sync Variants
     const variants = db.prepare('SELECT * FROM variants WHERE tenant_id = ?').all(tenantId) as any[];
     if (variants.length > 0) {
       for (const v of variants) {
-        let variantData: any = { id: String(v.id) };
-        const allVariantFields = [
-          { key: 'tenant_id', value: tenantId },
-          { key: 'product_id', value: v.product_id },
-          { key: 'name', value: v.name },
-          { key: 'barcode', value: v.barcode || null },
-          { key: 'price', value: v.price },
-          { key: 'cost', value: v.cost },
-          { key: 'image', value: v.image || null },
-          { key: 'quantity', value: v.quantity || 0 },
-          { key: 'created_at', value: v.created_at || new Date().toISOString() },
-          { key: 'updated_at', value: v.updated_at || new Date().toISOString() }
-        ];
-        for (const field of allVariantFields) {
-          try {
-            const testData = { ...variantData, [field.key]: field.value };
-            const { error: testError } = await supabase.from('variants').upsert(testData, { onConflict: 'id' }).select().limit(0);
-            if (!testError) {
-              variantData[field.key] = field.value;
-            } else {
-              console.log(`[SYNC] Variant column '${field.key}' not found, skipping...`);
-            }
-          } catch (e) {
-            console.log(`[SYNC] Variant column '${field.key}' not found, skipping...`);
-          }
-        }
         try {
+          const product_id = v.productId || v.product_id;
+          if (!v.id || !tenantId || !product_id || !v.name || v.price == null) {
+            console.error('[SYNC FAILURE] Skipping variant with missing required fields:', {
+              variantId: v.id,
+              tenantId,
+              product_id,
+              name: v.name,
+              price: v.price
+            });
+            continue;
+          }
+          const variantData = {
+            id: String(v.id),
+            tenant_id: String(tenantId),
+            product_id: String(product_id),
+            name: String(v.name || ''),
+            barcode: v.barcode != null ? String(v.barcode) : null,
+            price: Number(v.price ?? 0),
+            cost: v.cost != null ? Number(v.cost) : null,
+            image: v.image != null ? String(v.image) : null,
+            quantity: Number(v.quantity ?? 0),
+            created_at: String(v.created_at || v.createdAt || new Date().toISOString()),
+            updated_at: String(v.updated_at || v.updatedAt || new Date().toISOString())
+          };
           const { error: varError } = await supabase.from('variants').upsert(variantData, { onConflict: 'id' });
           if (varError) {
-            console.warn(`[SYNC] Failed to sync variant ${v.id}, trying only id...`, varError);
-            await supabase.from('variants').upsert({ id: String(v.id) }, { onConflict: 'id' });
+            console.error('[SYNC ERROR] Failed to sync variant:', {
+              variantId: variantData.id,
+              tenant_id: variantData.tenant_id,
+              code: varError.code,
+              message: varError.message,
+              details: varError.details,
+              hint: varError.hint
+            });
           }
-        } catch (finalErr) {
-          console.error(`[SYNC] Could not sync variant ${v.id} at all`, finalErr);
+        } catch (singleVarErr) {
+          console.error(`[SYNC] Failed to sync variant ${v?.id}`, singleVarErr);
         }
       }
       console.log(`Synced ${variants.length} variants`);
@@ -2437,7 +2453,6 @@ export const dbService = {
           gender: s.gender || null,
           date_hired: s.dateHired || s.date_hired || null,
           assigned_shift: s.assignedShift || s.assigned_shift || null,
-          username: s.username || null,
           last_login: s.lastLogin || s.last_login || null,
           password_last_changed: s.passwordLastChanged || s.password_last_changed || null,
           permissions: s.permissions ? (typeof s.permissions === 'string' ? JSON.parse(s.permissions) : s.permissions) : null,
@@ -2471,90 +2486,91 @@ export const dbService = {
       console.log(`Synced ${staff.length} staff`);
     }
 
-    // 4. Sync Users (Admins)
     const users = db.prepare('SELECT * FROM users WHERE tenant_id = ?').all(tenantId) as any[];
     if (users.length > 0) {
       for (const u of users) {
-        let userData: any = { id: String(u.id) };
-        const allUserFields = [
-          { key: 'tenant_id', value: tenantId },
-          { key: 'username', value: u.username },
-          { key: 'password', value: u.password },
-          { key: 'role', value: u.role },
-          { key: 'business_name', value: u.businessName || null },
-          { key: 'owner_name', value: u.ownerName || null },
-          { key: 'mobile', value: u.mobile || null },
-          { key: 'profile_image', value: u.profileImage || null },
-          { key: 'security_question_1', value: u.securityQuestion1 || null },
-          { key: 'security_answer_1', value: u.securityAnswer1 || null },
-          { key: 'security_question_2', value: u.securityQuestion2 || null },
-          { key: 'security_answer_2', value: u.securityAnswer2 || null },
-          { key: 'security_question_3', value: u.securityQuestion3 || null },
-          { key: 'security_answer_3', value: u.securityAnswer3 || null },
-          { key: 'created_at', value: u.createdAt || new Date().toISOString() }
-        ];
-        for (const field of allUserFields) {
-          try {
-            const testData = { ...userData, [field.key]: field.value };
-            const { error: testError } = await supabase.from('users').upsert(testData, { onConflict: 'id' }).select().limit(0);
-            if (!testError) {
-              userData[field.key] = field.value;
-            } else {
-              console.log(`[SYNC] User column '${field.key}' not found, skipping...`);
-            }
-          } catch (e) {
-            console.log(`[SYNC] User column '${field.key}' not found, skipping...`);
-          }
-        }
         try {
+          if (!u.id || !tenantId || !u.username || !u.password) {
+            console.error('[SYNC FAILURE] Skipping user with missing required fields:', {
+              userId: u.id,
+              tenantId,
+              username: u.username
+            });
+            continue;
+          }
+          const userData = {
+            id: String(u.id),
+            tenant_id: String(tenantId),
+            username: String(u.username),
+            password: String(u.password),
+            role: u.role != null ? String(u.role) : null,
+            business_name: u.businessName != null ? String(u.businessName) : null,
+            owner_name: u.ownerName != null ? String(u.ownerName) : null,
+            mobile: u.mobile != null ? String(u.mobile) : null,
+            profile_image: u.profileImage != null ? String(u.profileImage) : null,
+            security_question_1: u.securityQuestion1 != null ? String(u.securityQuestion1) : null,
+            security_answer_1: u.securityAnswer1 != null ? String(u.securityAnswer1) : null,
+            security_question_2: u.securityQuestion2 != null ? String(u.securityQuestion2) : null,
+            security_answer_2: u.securityAnswer2 != null ? String(u.securityAnswer2) : null,
+            security_question_3: u.securityQuestion3 != null ? String(u.securityQuestion3) : null,
+            security_answer_3: u.securityAnswer3 != null ? String(u.securityAnswer3) : null,
+            created_at: String(u.createdAt || new Date().toISOString())
+          };
           const { error: userError } = await supabase.from('users').upsert(userData, { onConflict: 'id' });
           if (userError) {
-            console.warn(`[SYNC] Failed to sync user ${u.id}, trying only id...`, userError);
-            await supabase.from('users').upsert({ id: String(u.id) }, { onConflict: 'id' });
+            console.error('[SYNC ERROR] Failed to sync user:', {
+              userId: userData.id,
+              tenant_id: userData.tenant_id,
+              code: userError.code,
+              message: userError.message,
+              details: userError.details,
+              hint: userError.hint
+            });
           }
-        } catch (finalErr) {
-          console.error(`[SYNC] Could not sync user ${u.id} at all`, finalErr);
+        } catch (singleUserErr) {
+          console.error(`[SYNC] Failed to sync user ${u?.id}`, singleUserErr);
         }
       }
       console.log(`Synced ${users.length} users`);
     }
 
-    // 5. Sync Customers
     const customers = db.prepare('SELECT * FROM customers WHERE tenant_id = ?').all(tenantId) as any[];
     if (customers.length > 0) {
       for (const c of customers) {
-        let customerData: any = { id: String(c.id) };
-        const allCustomerFields = [
-          { key: 'tenant_id', value: tenantId },
-          { key: 'name', value: c.name },
-          { key: 'phone', value: c.phone },
-          { key: 'address', value: c.address || null },
-          { key: 'credit_rating', value: c.credit_rating },
-          { key: 'photo_url', value: c.photo_url || null },
-          { key: 'created_at', value: c.created_at || new Date().toISOString() },
-          { key: 'updated_at', value: c.updated_at || new Date().toISOString() }
-        ];
-        for (const field of allCustomerFields) {
-          try {
-            const testData = { ...customerData, [field.key]: field.value };
-            const { error: testError } = await supabase.from('customers').upsert(testData, { onConflict: 'id' }).select().limit(0);
-            if (!testError) {
-              customerData[field.key] = field.value;
-            } else {
-              console.log(`[SYNC] Customer column '${field.key}' not found, skipping...`);
-            }
-          } catch (e) {
-            console.log(`[SYNC] Customer column '${field.key}' not found, skipping...`);
-          }
-        }
         try {
+          if (!c.id || !tenantId || !c.name || !c.phone) {
+            console.error('[SYNC FAILURE] Skipping customer with missing required fields:', {
+              customerId: c.id,
+              tenantId,
+              name: c.name,
+              phone: c.phone
+            });
+            continue;
+          }
+          const customerData = {
+            id: String(c.id),
+            tenant_id: String(tenantId),
+            name: String(c.name || ''),
+            phone: String(c.phone || ''),
+            address: c.address != null ? String(c.address) : null,
+            credit_rating: c.credit_rating != null ? Number(c.credit_rating) : null,
+            photo_url: c.photo_url != null ? String(c.photo_url) : null,
+            created_at: String(c.created_at || c.createdAt || new Date().toISOString()),
+            updated_at: String(c.updated_at || c.updatedAt || new Date().toISOString())
+          };
           const { error: custError } = await supabase.from('customers').upsert(customerData, { onConflict: 'id' });
           if (custError) {
-            console.warn(`[SYNC] Failed to sync customer ${c.id}, trying only id...`, custError);
-            await supabase.from('customers').upsert({ id: String(c.id) }, { onConflict: 'id' });
+            console.error('[SYNC ERROR] Failed to sync customer:', {
+              customerId: customerData.id,
+              tenant_id: customerData.tenant_id,
+              code: custError.code,
+              message: custError.message,
+              details: custError.details,
+              hint: custError.hint
+            });
           }
-        } catch (finalErr) {
-          console.error(`[SYNC] Could not sync customer ${c.id} at all`, finalErr);
+        } catch (singleCustErr) {
+          console.error(`[SYNC] Failed to sync customer ${c?.id}`, singleCustErr);
         }
       }
       console.log(`Synced ${customers.length} customers`);
