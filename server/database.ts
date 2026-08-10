@@ -145,15 +145,15 @@ export const dbService = {
 
     // ---------------- TASK 1: STARTUP DIAGNOSTICS ----------------
     const dataDir = process.env.DATA_DIR
-      ? require('path').resolve(process.env.DATA_DIR)
-      : require('path').resolve(require('path').dirname(require('url').fileURLToPath(import.meta.url)), 'data');
-    const dbPath = require('path').join(dataDir, 'smartpos.db');
+      ? path.resolve(process.env.DATA_DIR)
+      : path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'data');
+    const dbPath = path.join(dataDir, 'smartpos.db');
     console.log('============================================');
     console.log('[DB DIAG] SQLite database path:', dbPath);
     console.log('[DB DIAG] DATA_DIR env var:', process.env.DATA_DIR || '(not set)');
     console.log('[DB DIAG] Railway persistent volume check: DATA_DIR is', process.env.DATA_DIR ? 'custom (likely mounted volume)' : 'default (ephemeral or default volume mount)');
     try {
-      const allFiles = require('fs').readdirSync(dataDir);
+      const allFiles = fs.readdirSync(dataDir);
       const dbFiles = allFiles.filter((f: string) => f.endsWith('.db') || f.endsWith('.sqlite') || f.endsWith('.sqlite3'));
       console.log('[DB DIAG] All DB files in data dir:', dbFiles.length > 0 ? dbFiles : '(none)');
       if (dbFiles.length > 1) {
