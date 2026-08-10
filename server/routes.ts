@@ -2484,7 +2484,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           gender: m.gender || null,
           date_hired: m.dateHired || m.date_hired ? (m.dateHired || m.date_hired instanceof Date ? (m.dateHired || m.date_hired).toISOString() : String(m.dateHired || m.date_hired)) : null,
           assigned_shift: m.assignedShift || m.assigned_shift || null,
-          username: m.username || null,
           last_login: m.lastLogin || m.last_login ? (m.lastLogin || m.last_login instanceof Date ? (m.lastLogin || m.last_login).toISOString() : String(m.lastLogin || m.last_login)) : null,
           password_last_changed: m.passwordLastChanged || m.password_last_changed ? (m.passwordLastChanged || m.password_last_changed instanceof Date ? (m.passwordLastChanged || m.password_last_changed).toISOString() : String(m.passwordLastChanged || m.password_last_changed)) : null,
           permissions: m.permissions ? (typeof m.permissions === 'string' ? JSON.parse(m.permissions) : m.permissions) : null,

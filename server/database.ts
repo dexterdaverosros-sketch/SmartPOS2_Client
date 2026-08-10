@@ -1605,6 +1605,13 @@ export const dbService = {
         }
       });
       
+      for (const member of processedStaff) {
+        console.log(`[STAFF SAVE] tenant_id=${member.tenantId}`);
+        console.log(`[STAFF SAVE] staff_id=${member.staffId || member.id}`);
+        console.log(`[STAFF SAVE] sqlite columns=26`);
+        console.log(`[STAFF SAVE] username ignored=true`);
+      }
+
       insertMany(processedStaff);
 
       // Mirror to Cloud (Supabase) if available
@@ -2870,7 +2877,6 @@ export const dbService = {
         gender: s.gender || null,
         dateHired: s.date_hired || null,
         assignedShift: s.assigned_shift || null,
-        username: s.username || null,
         lastLogin: s.last_login || null,
         passwordLastChanged: s.password_last_changed || null,
         permissions: s.permissions || [],
