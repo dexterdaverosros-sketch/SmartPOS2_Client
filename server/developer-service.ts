@@ -10,7 +10,7 @@ import {
   User,
   Sale
 } from "@shared/schema";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 
 export class DeveloperService {
   private static get supabase(): SupabaseClient | null {

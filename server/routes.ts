@@ -1,5 +1,5 @@
 import express, { type Express, Request, Response, NextFunction } from "express";
-import { createServer, type Server } from "http";
+import { createServer, type Server } from "node:http";
 import { Server as SocketIOServer } from "socket.io";
 import cors from "cors";
 import {
@@ -10,10 +10,10 @@ import {
 } from "@shared/schema";
 import dbService, { useCloud, initSQLite } from "./database";
 import { scanWifiNetworks, getWifiStatus } from "./network";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import path from "path";
-import fs from "fs";
+import path from "node:path";
+import fs from "node:fs";
 import bcrypt from "bcryptjs";
 import { getSupabase } from "./supabase";
 import { DeveloperService } from "./developer-service";

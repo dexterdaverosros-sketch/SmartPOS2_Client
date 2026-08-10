@@ -1,8 +1,8 @@
 import Database from 'better-sqlite3';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
-import { randomUUID } from "crypto";
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs"; // Import bcryptjs
 import { getSupabase } from "./supabase";
 import { 
