@@ -517,13 +517,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       console.log('=== CREATING SESSION ===');
+      // Resolve verified tenant: prefer subdomain-looked-up tenant.id,
+      // fall back to admin.tenant_id (if user record carries its own verified tenant).
+      const sessionTenantId = (tenant && tenant.id !== 'default-tenant-id' ? tenant.id : null)
+        ?? (admin.tenant_id && admin.tenant_id !== 'default-tenant-id' ? admin.tenant_id : null);
+      if (!sessionTenantId) {
+        console.warn('ERROR: cannot create admin session — no verified tenant resolved');
+        return res.status(401).json({ error: 'Tenant context missing: ensure X-Tenant-ID subdomain is set' });
+      }
       // Create session
       const token = randomUUID();
       const session = {
         id: randomUUID(),
         user_id: admin.id,
         token,
-        tenant_id: tenant?.id || admin.tenant_id || 'default',
+        tenant_id: sessionTenantId,
         device_info: req.headers['user-agent'] || 'Unknown Device',
         ip_address: req.ip || req.socket.remoteAddress || 'Unknown',
         created_at: new Date().toISOString(),
@@ -629,13 +637,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: 'Invalid credentials' });
       }
 
-      // Create session
+      // Create session — staff login requires a verified tenant (from subdomain header or staff record).
+      const sessionTenantId = (tenant && tenant.id !== 'default-tenant-id' ? tenant.id : null)
+        ?? (staff.tenantId && staff.tenantId !== 'default-tenant-id' ? staff.tenantId : null);
+      if (!sessionTenantId) {
+        console.warn('ERROR: cannot create staff session — no verified tenant resolved');
+        return res.status(401).json({ error: 'Tenant context missing: ensure X-Tenant-ID subdomain is set' });
+      }
       const token = randomUUID();
       const session = {
         id: randomUUID(),
         user_id: staff.id,
         token,
-        tenant_id: tenant?.id || 'default', // Store tenant ID in session
+        tenant_id: sessionTenantId, // Store tenant ID in session
         device_info: deviceInfo || 'Unknown Device',
         ip_address: req.ip || req.socket.remoteAddress || 'Unknown',
         created_at: new Date().toISOString(),
@@ -684,8 +698,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const supabase = getSupabase();
       if (!supabase) return res.status(500).json({ error: 'Cloud not configured' });
       const { staffId, passkey, deviceInfo } = req.body;
+
+      // Resolve verified tenant (subdomain header OR trust tenant_id on the staff cloud record).
+      const headerTenant = await getTenantFromHeader(req);
+      const headerTenantId = headerTenant && headerTenant.id !== 'default-tenant-id' ? headerTenant.id : null;
+
       const { data, error } = await supabase.from('staff').select('*').eq('staff_id', staffId).single();
       if (error || !data) return res.status(401).json({ error: 'Invalid credentials' });
+
+      // Tenant validation: if header tenant provided, it must match the staff tenant on the record.
+      const staffTenantId = data.tenant_id && String(data.tenant_id) !== 'default-tenant-id' ? String(data.tenant_id) : null;
+      if (headerTenantId && staffTenantId && headerTenantId !== staffTenantId) {
+        return res.status(401).json({ error: 'Tenant mismatch: subdomain does not match staff record' });
+      }
+      const resolvedTenantId = headerTenantId ?? staffTenantId;
+      if (!resolvedTenantId) {
+        console.warn('Cloud login: staff record and header have no resolvable tenant for staff_id=', staffId);
+        return res.status(401).json({ error: 'Tenant context missing: ensure X-Tenant-ID subdomain is set' });
+      }
+
       const ok = await bcrypt.compare(passkey, String(data.passhash || ''));
       if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
       const token = randomUUID();
@@ -693,6 +724,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         id: randomUUID(),
         user_id: String(data.id),
         token,
+        tenant_id: resolvedTenantId,
         device_info: deviceInfo || 'Unknown Device',
         ip_address: req.ip || req.socket.remoteAddress || 'Unknown',
         created_at: new Date().toISOString(),
@@ -744,15 +776,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(401).json({ error: 'Authentication required: Invalid session' });
     }
 
+    if (!session.tenant_id) {
+      console.warn('Server Auth: Session missing tenant_id for token:', token);
+      return res.status(401).json({ error: 'Authentication required: Session has no tenant' });
+    }
+
     // Update activity
     dbService.updateSessionActivity(token);
     console.log('Server Auth: Session valid, user ID:', session.user_id, 'tenant ID:', session.tenant_id);
 
     // Attach session-verified user ID and tenant ID to request for downstream use (Header CANNOT override session)
     (req as any).userId = session.user_id;
-    if (session.tenant_id) {
-      (req as any).tenantId = session.tenant_id;
-    }
+    (req as any).tenantId = session.tenant_id;
     next();
   };
 
@@ -2087,31 +2122,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Sync endpoints for Push to Cloud and Pull from Cloud
-  app.post('/api/sync/push-all', async (req, res) => {
-    try {
-      const tenant = await getTenantFromHeader(req);
-      const tenantId = tenant?.id || 'default-tenant-id';
-      const result = await dbService.pushAllToCloud(tenantId);
-      res.status(200).json(result);
-    } catch (error: any) {
-      console.error('Push to cloud failed:', error);
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  app.post('/api/sync/pull-all', async (req, res) => {
-    try {
-      const tenant = await getTenantFromHeader(req);
-      const tenantId = tenant?.id || 'default-tenant-id';
-      const result = await dbService.pullAllFromCloud(tenantId);
-      res.status(200).json(result);
-    } catch (error: any) {
-      console.error('Pull from cloud failed:', error);
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
   app.post('/api/print/sale', (req, res) => {
     try {
       const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
@@ -2839,9 +2849,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Sync endpoints for Push to Cloud and Pull from Cloud
-  app.post('/api/sync/push-all', async (req, res) => {
+  // These endpoints require authentication: tenant comes from the server-side SQLite session (NOT from any client header),
+  // and authenticateUser already guarantees session.tenant_id exists (returns 401 otherwise).
+  app.post('/api/sync/push-all', authenticateUser, async (req, res) => {
     try {
       const tenantId = (req as any).tenantId;
+      if (!tenantId) {
+        return res.status(400).json({ success: false, error: 'Missing authenticated tenant context' });
+      }
+      console.log(`[SYNC ROUTE] push-all for authenticated tenant: ${tenantId}`);
       const result = await dbService.pushAllToCloud(tenantId);
       res.status(200).json(result);
     } catch (error: any) {
@@ -2850,9 +2866,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/sync/pull-all', async (req, res) => {
+  app.post('/api/sync/pull-all', authenticateUser, async (req, res) => {
     try {
       const tenantId = (req as any).tenantId;
+      if (!tenantId) {
+        return res.status(400).json({ success: false, error: 'Missing authenticated tenant context' });
+      }
+      console.log(`[SYNC ROUTE] pull-all for authenticated tenant: ${tenantId}`);
       const result = await dbService.pullAllFromCloud(tenantId);
       res.status(200).json(result);
     } catch (error: any) {
