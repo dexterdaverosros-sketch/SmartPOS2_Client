@@ -2427,20 +2427,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/cloud/staff', async (req: Request, res: Response) => {
     try {
-      console.log('[API] /api/cloud/staff called with body:', JSON.stringify(req.body, null, 2));
+      console.log('[API] /api/cloud/staff called with body count:', Array.isArray(req.body) ? req.body.length : 1);
       const supabase = getSupabase();
       if (!supabase) {
         console.error('[API] /api/cloud/staff: Supabase not configured');
         return res.status(500).json({ error: 'Cloud not configured' });
       }
       
-      const tenantId = (req as any).tenantId;
-      console.log('[API] /api/cloud/staff: tenantId =', tenantId);
+      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+      const staff = Array.isArray(req.body) ? req.body : [req.body];
       
-      const staff = Array.isArray(req.body) ? req.body : [];
       const rows = await Promise.all(staff.map(async (m: any) => {
-        const passhash = m.passkey && m.passkey.startsWith('$2') ? m.passkey : await bcrypt.hash(String(m.passkey || ''), 10);
-        const effectiveTenantId = tenantId || m.tenantId || m.tenant_id;
+        const effectiveTenantId = m.tenantId || m.tenant_id || tenantId;
+        if (!effectiveTenantId) {
+          console.error('[STAFF SYNC ERROR] Missing tenant_id before Supabase operation for staff:', m.id);
+          throw new Error(`STAFF_SYNC_BLOCKED: Missing tenant_id for staff ${m.id}`);
+        }
+
+        const passhash = m.passkey && m.passkey.startsWith('$2') ? m.passkey : (m.passkey ? await bcrypt.hash(String(m.passkey), 10) : null);
         
         let createdAt = m.createdAt || m.created_at;
         if (createdAt instanceof Date) {
@@ -2448,16 +2452,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } else if (!createdAt) {
           createdAt = new Date().toISOString();
         }
-        
-        return {
+
+        const cloudStaffData = {
           id: String(m.id),
-          tenant_id: effectiveTenantId,
+          tenant_id: String(effectiveTenantId),
           user_id: m.userId || m.user_id || null,
-          first_name: String(m.firstName || m.first_name || ''),
+          first_name: String(m.firstName || m.first_name || 'Staff'),
           middle_name: m.middleName || m.middle_name || null,
-          last_name: String(m.lastName || m.last_name || ''),
-          name: String(m.name || ''),
+          last_name: String(m.lastName || m.last_name || 'Member'),
+          name: String(m.name || `${m.firstName || m.first_name || ''} ${m.lastName || m.last_name || ''}`.trim() || 'Staff Member'),
           staff_id: String(m.staffId || m.staff_id || ''),
+          passkey: passhash,
           role: m.role || 'cashier',
           branch: m.branch || null,
           department: m.department || null,
@@ -2465,89 +2470,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
           email: m.email || null,
           phone: m.phone || null,
           address: m.address || null,
-          birthdate: m.birthdate || null,
+          birthdate: m.birthdate ? (m.birthdate instanceof Date ? m.birthdate.toISOString() : String(m.birthdate)) : null,
           gender: m.gender || null,
-          date_hired: m.dateHired || m.date_hired || null,
+          date_hired: m.dateHired || m.date_hired ? (m.dateHired || m.date_hired instanceof Date ? (m.dateHired || m.date_hired).toISOString() : String(m.dateHired || m.date_hired)) : null,
           assigned_shift: m.assignedShift || m.assigned_shift || null,
-          permissions: m.permissions || [],
-          passhash,
-          passkey: passhash,
+          username: m.username || null,
+          last_login: m.lastLogin || m.last_login ? (m.lastLogin || m.last_login instanceof Date ? (m.lastLogin || m.last_login).toISOString() : String(m.lastLogin || m.last_login)) : null,
+          password_last_changed: m.passwordLastChanged || m.password_last_changed ? (m.passwordLastChanged || m.password_last_changed instanceof Date ? (m.passwordLastChanged || m.password_last_changed).toISOString() : String(m.passwordLastChanged || m.password_last_changed)) : null,
+          permissions: m.permissions ? (typeof m.permissions === 'string' ? JSON.parse(m.permissions) : m.permissions) : null,
           created_by: m.createdBy || m.created_by || null,
           created_at: createdAt,
-          updated_at: m.updatedAt || m.updated_at || new Date().toISOString()
+          updated_at: m.updatedAt || m.updated_at ? (m.updatedAt || m.updated_at instanceof Date ? (m.updatedAt || m.updated_at).toISOString() : String(m.updatedAt || m.updated_at)) : new Date().toISOString()
         };
+
+        console.log('[STAFF SYNC] Preparing staff');
+        console.log('[STAFF SYNC] staff_id:', cloudStaffData.id);
+        console.log('[STAFF SYNC] tenant_id:', cloudStaffData.tenant_id);
+        console.log('[STAFF SYNC] user_id:', cloudStaffData.user_id);
+        console.log('[STAFF SYNC] name:', cloudStaffData.name);
+        console.log('[STAFF SYNC] role:', cloudStaffData.role);
+
+        return cloudStaffData;
       }));
-      
-      console.log('[API] /api/cloud/staff: Prepared rows for sync:', JSON.stringify(rows, null, 2));
-      
-      // Ultra defensive: try to upsert, and if it fails due to missing columns, try with minimal set
-      let upsertError = null;
-      try {
-        const { data, error } = await supabase.from('staff').upsert(rows, { onConflict: 'id' });
-        console.log('[API] /api/cloud/staff: Full upsert result data:', data, 'error:', error);
-        upsertError = error;
-      } catch (err) {
-        console.error('[API] /api/cloud/staff: Full upsert threw exception:', err);
-        upsertError = err;
+
+      const { data, error } = await supabase.from('staff').upsert(rows, { onConflict: 'id' });
+      if (error) {
+        console.error('[STAFF SYNC ERROR]');
+        console.error('code:', error.code);
+        console.error('message:', error.message);
+        console.error('details:', error.details);
+        console.error('hint:', error.hint);
+        return res.status(500).json({ error: 'Failed to sync staff', details: error });
       }
-      
-      if (upsertError) {
-        console.warn('[SYNC] Full staff upsert failed, trying column-by-column for each staff:', upsertError);
-        for (const m of staff) {
-          try {
-            const effectiveTenantId = tenantId || m.tenantId || m.tenant_id;
-            const passhash = m.passkey && m.passkey.startsWith('$2') ? m.passkey : await bcrypt.hash(String(m.passkey || ''), 10);
-            let staffData: any = { id: String(m.id) };
-            const allStaffFields = [
-              { key: 'tenant_id', value: effectiveTenantId },
-              { key: 'user_id', value: m.userId || m.user_id || null },
-              { key: 'first_name', value: String(m.firstName || m.first_name || '') },
-              { key: 'middle_name', value: m.middleName || m.middle_name || null },
-              { key: 'last_name', value: String(m.lastName || m.last_name || '') },
-              { key: 'name', value: String(m.name || '') },
-              { key: 'staff_id', value: String(m.staffId || m.staff_id || '') },
-              { key: 'role', value: m.role || 'cashier' },
-              { key: 'branch', value: m.branch || null },
-              { key: 'department', value: m.department || null },
-              { key: 'employment_status', value: m.employmentStatus || m.employment_status || 'active' },
-              { key: 'email', value: m.email || null },
-              { key: 'phone', value: m.phone || null },
-              { key: 'address', value: m.address || null },
-              { key: 'birthdate', value: m.birthdate || null },
-              { key: 'gender', value: m.gender || null },
-              { key: 'date_hired', value: m.dateHired || m.date_hired || null },
-              { key: 'assigned_shift', value: m.assignedShift || m.assigned_shift || null },
-              { key: 'permissions', value: m.permissions || [] },
-              { key: 'passhash', value: passhash },
-              { key: 'passkey', value: passhash },
-              { key: 'created_by', value: m.createdBy || m.created_by || null },
-              { key: 'created_at', value: m.createdAt || m.created_at || new Date().toISOString() },
-              { key: 'updated_at', value: m.updatedAt || m.updated_at || new Date().toISOString() }
-            ];
-            for (const field of allStaffFields) {
-              try {
-                const testData = { ...staffData, [field.key]: field.value };
-                const { error: testError } = await supabase.from('staff').upsert(testData, { onConflict: 'id' }).select().limit(0);
-                if (!testError) {
-                  staffData[field.key] = field.value;
-                } else {
-                  console.log(`[SYNC] Staff column '${field.key}' test failed, skipping:`, testError);
-                }
-              } catch (e) {
-                console.log(`[SYNC] Staff column '${field.key}' test threw exception, skipping:`, e);
-              }
-            }
-            await supabase.from('staff').upsert(staffData, { onConflict: 'id' });
-          } catch (singleErr) {
-            console.error('[SYNC] Failed to sync single staff:', m.id, singleErr);
-          }
-        }
+
+      for (const row of rows) {
+        console.log('[STAFF SYNC SUCCESS]');
+        console.log('staff_id:', row.id);
+        console.log('tenant_id:', row.tenant_id);
+        console.log('[STAFF CREATED]');
+        console.log('staff_id:', row.id);
+        console.log('tenant_id:', row.tenant_id);
+        console.log('local_persistence: SUCCESS');
+        console.log('cloud_sync: SUCCESS');
       }
-      
+
       res.status(200).json({ synced: rows.length });
-    } catch (err) {
-      console.error('[SYNC] /api/cloud/staff full error:', err);
-      res.status(500).json({ error: 'Failed to sync staff', details: String(err) });
+    } catch (err: any) {
+      console.error('[STAFF SYNC ERROR] /api/cloud/staff full error:', err);
+      res.status(500).json({ error: 'Failed to sync staff', details: err?.message || String(err) });
     }
   });
 

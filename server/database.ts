@@ -1590,76 +1590,73 @@ export const dbService = {
       
       insertMany(processedStaff);
 
-      // Mirror to Cloud (Supabase) if available - ULTRA DEFENSIVE VERSION
+      // Mirror to Cloud (Supabase) if available
       if (useCloud()) {
         const supabase = getSupabase();
         if (supabase) {
           (async () => {
             try {
-              console.log('[SYNC] Starting staff sync to Supabase for tenant:', tenantId);
-              // Process each staff individually for maximum safety
               for (const m of processedStaff) {
-                try {
-                  const effectiveTenantId = m.tenantId;
-                  // Start with ONLY the most basic columns that might exist
-                  let staffData: any = {
-                    id: String(m.id)
-                  };
-                  // Try adding each column one by one
-                  const allStaffFields = [
-                    { key: 'tenant_id', value: effectiveTenantId },
-                    { key: 'user_id', value: m.userId },
-                    { key: 'first_name', value: String(m.firstName || '') },
-                    { key: 'middle_name', value: m.middleName },
-                    { key: 'last_name', value: String(m.lastName || '') },
-                    { key: 'name', value: String(m.name || '') },
-                    { key: 'staff_id', value: String(m.staffId || '') },
-                    { key: 'passhash', value: m.passkey },
-                    { key: 'passkey', value: m.passkey },
-                    { key: 'role', value: m.role },
-                    { key: 'branch', value: m.branch },
-                    { key: 'department', value: m.department },
-                    { key: 'employment_status', value: m.employmentStatus },
-                    { key: 'email', value: m.email },
-                    { key: 'phone', value: m.phone },
-                    { key: 'address', value: m.address },
-                    { key: 'birthdate', value: m.birthdate },
-                    { key: 'gender', value: m.gender },
-                    { key: 'date_hired', value: m.dateHired },
-                    { key: 'assigned_shift', value: m.assignedShift },
-                    { key: 'permissions', value: m.permissions ? JSON.parse(m.permissions) : null },
-                    { key: 'created_by', value: m.createdBy },
-                    { key: 'created_at', value: m.createdAt },
-                    { key: 'updated_at', value: m.updatedAt }
-                  ];
-                  for (const field of allStaffFields) {
-                    try {
-                      const testData = { ...staffData, [field.key]: field.value };
-                      const { error: testError } = await supabase.from('staff').upsert(testData, { onConflict: 'id' }).select().limit(0);
-                      if (!testError) {
-                        staffData[field.key] = field.value;
-                      }
-                    } catch (e) {
-                      // Column doesn't exist, skip silently
-                    }
-                  }
-                  // Now sync with what we have
-                  try {
-                    const { error: staffError } = await supabase.from('staff').upsert(staffData, { onConflict: 'id' });
-                    if (staffError) {
-                      console.warn(`[SYNC] Failed to sync staff ${m.id}, trying with id and tenant_id...`, staffError);
-                      await supabase.from('staff').upsert({ id: String(m.id), tenant_id: effectiveTenantId }, { onConflict: 'id' });
-                    }
-                  } catch (finalErr) {
-                    console.error(`[SYNC] Could not sync staff ${m.id} at all`, finalErr);
-                  }
-                } catch (singleStaffErr) {
-                  console.error(`[SYNC] Failed to sync staff ${m.id}`, singleStaffErr);
+                const effectiveTenantId = m.tenantId || tenantId;
+                if (!effectiveTenantId) {
+                  console.error('[STAFF SYNC ERROR] Missing tenant_id before Supabase operation for staff:', m.id);
+                  continue;
+                }
+
+                const cloudStaffData = {
+                  id: String(m.id),
+                  tenant_id: String(effectiveTenantId),
+                  user_id: m.userId || m.user_id || null,
+                  first_name: String(m.firstName || m.first_name || 'Staff'),
+                  middle_name: m.middleName || m.middle_name || null,
+                  last_name: String(m.lastName || m.last_name || 'Member'),
+                  name: String(m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Staff Member'),
+                  staff_id: String(m.staffId || m.staff_id || ''),
+                  passkey: m.passkey || null,
+                  role: m.role || 'cashier',
+                  branch: m.branch || null,
+                  department: m.department || null,
+                  employment_status: m.employmentStatus || m.employment_status || 'active',
+                  email: m.email || null,
+                  phone: m.phone || null,
+                  address: m.address || null,
+                  birthdate: m.birthdate ? (m.birthdate instanceof Date ? m.birthdate.toISOString() : String(m.birthdate)) : null,
+                  gender: m.gender || null,
+                  date_hired: m.dateHired ? (m.dateHired instanceof Date ? m.dateHired.toISOString() : String(m.dateHired)) : null,
+                  assigned_shift: m.assignedShift || m.assigned_shift || null,
+                  username: m.username || null,
+                  last_login: m.lastLogin ? (m.lastLogin instanceof Date ? m.lastLogin.toISOString() : String(m.lastLogin)) : null,
+                  password_last_changed: m.passwordLastChanged ? (m.passwordLastChanged instanceof Date ? m.passwordLastChanged.toISOString() : String(m.passwordLastChanged)) : null,
+                  permissions: m.permissions ? (typeof m.permissions === 'string' ? JSON.parse(m.permissions) : m.permissions) : null,
+                  created_by: m.createdBy || m.created_by || null,
+                  created_at: m.createdAt ? (m.createdAt instanceof Date ? m.createdAt.toISOString() : String(m.createdAt)) : new Date().toISOString(),
+                  updated_at: m.updatedAt ? (m.updatedAt instanceof Date ? m.updatedAt.toISOString() : String(m.updatedAt)) : new Date().toISOString()
+                };
+
+                console.log('[STAFF SYNC] Preparing staff');
+                console.log('[STAFF SYNC] staff_id:', cloudStaffData.id);
+                console.log('[STAFF SYNC] tenant_id:', cloudStaffData.tenant_id);
+                console.log('[STAFF SYNC] user_id:', cloudStaffData.user_id);
+                console.log('[STAFF SYNC] name:', cloudStaffData.name);
+                console.log('[STAFF SYNC] role:', cloudStaffData.role);
+
+                const { error: staffError } = await supabase.from('staff').upsert(cloudStaffData, { onConflict: 'id' });
+                if (staffError) {
+                  console.error('[STAFF SYNC ERROR]');
+                  console.error('staff_id:', cloudStaffData.id);
+                  console.error('tenant_id:', cloudStaffData.tenant_id);
+                  console.error('code:', staffError.code);
+                  console.error('message:', staffError.message);
+                  console.error('details:', staffError.details);
+                  console.error('hint:', staffError.hint);
+                } else {
+                  console.log('[STAFF SYNC SUCCESS]');
+                  console.log('staff_id:', cloudStaffData.id);
+                  console.log('tenant_id:', cloudStaffData.tenant_id);
                 }
               }
-              console.log(`[SYNC] Staff sync complete: ${staff.length} staff processed.`);
             } catch (err) {
-              console.error('[SYNC] Cloud staff sync error:', err);
+              console.error('[STAFF SYNC ERROR] Unexpected cloud staff sync exception:', err);
             }
           })();
         }
@@ -2418,57 +2415,56 @@ export const dbService = {
     const staff = db.prepare('SELECT * FROM staff WHERE tenant_id = ?').all(tenantId) as any[];
     if (staff.length > 0) {
       for (const s of staff) {
-        let staffData: any = { id: String(s.id) };
-        const allStaffFields = [
-          { key: 'tenant_id', value: tenantId },
-          { key: 'user_id', value: s.userId || s.user_id || null },
-          { key: 'first_name', value: s.firstName || s.first_name || '' },
-          { key: 'middle_name', value: s.middleName || s.middle_name || null },
-          { key: 'last_name', value: s.lastName || s.last_name || '' },
-          { key: 'name', value: s.name },
-          { key: 'staff_id', value: s.staffId || s.staff_id },
-          { key: 'passkey', value: s.passkey || null },
-          { key: 'passhash', value: s.passkey || null },
-          { key: 'role', value: s.role || 'cashier' },
-          { key: 'branch', value: s.branch || null },
-          { key: 'department', value: s.department || null },
-          { key: 'employment_status', value: s.employmentStatus || s.employment_status || 'active' },
-          { key: 'email', value: s.email || null },
-          { key: 'phone', value: s.phone || null },
-          { key: 'address', value: s.address || null },
-          { key: 'birthdate', value: s.birthdate || null },
-          { key: 'gender', value: s.gender || null },
-          { key: 'date_hired', value: s.dateHired || s.date_hired || null },
-          { key: 'assigned_shift', value: s.assignedShift || s.assigned_shift || null },
-          { key: 'username', value: s.username || null },
-          { key: 'last_login', value: s.lastLogin || s.last_login || null },
-          { key: 'password_last_changed', value: s.passwordLastChanged || s.password_last_changed || null },
-          { key: 'permissions', value: s.permissions ? (typeof s.permissions === 'string' ? JSON.parse(s.permissions) : s.permissions) : null },
-          { key: 'created_by', value: s.createdBy || s.created_by || null },
-          { key: 'created_at', value: s.createdAt || s.created_at || new Date().toISOString() },
-          { key: 'updated_at', value: s.updatedAt || s.updated_at || new Date().toISOString() }
-        ];
-        for (const field of allStaffFields) {
-          try {
-            const testData = { ...staffData, [field.key]: field.value };
-            const { error: testError } = await supabase.from('staff').upsert(testData, { onConflict: 'id' }).select().limit(0);
-            if (!testError) {
-              staffData[field.key] = field.value;
-            } else {
-              console.log(`[SYNC] Staff column '${field.key}' not found, skipping...`);
-            }
-          } catch (e) {
-            console.log(`[SYNC] Staff column '${field.key}' not found, skipping...`);
-          }
-        }
-        try {
-          const { error: staffError } = await supabase.from('staff').upsert(staffData, { onConflict: 'id' });
-          if (staffError) {
-            console.warn(`[SYNC] Failed to sync staff ${s.id}, trying with id and tenant_id...`, staffError);
-            await supabase.from('staff').upsert({ id: String(s.id), tenant_id: tenantId }, { onConflict: 'id' });
-          }
-        } catch (finalErr) {
-          console.error(`[SYNC] Could not sync staff ${s.id} at all`, finalErr);
+        const cloudStaffData = {
+          id: String(s.id),
+          tenant_id: String(s.tenant_id || tenantId),
+          user_id: s.user_id || s.userId || null,
+          first_name: String(s.firstName || s.first_name || 'Staff'),
+          middle_name: s.middleName || s.middle_name || null,
+          last_name: String(s.lastName || s.last_name || 'Member'),
+          name: String(s.name || `${s.firstName || s.first_name || ''} ${s.lastName || s.last_name || ''}`.trim() || 'Staff Member'),
+          staff_id: String(s.staffId || s.staff_id || ''),
+          passkey: s.passkey || s.passhash || null,
+          role: s.role || 'cashier',
+          branch: s.branch || null,
+          department: s.department || null,
+          employment_status: s.employmentStatus || s.employment_status || 'active',
+          email: s.email || null,
+          phone: s.phone || null,
+          address: s.address || null,
+          birthdate: s.birthdate || null,
+          gender: s.gender || null,
+          date_hired: s.dateHired || s.date_hired || null,
+          assigned_shift: s.assignedShift || s.assigned_shift || null,
+          username: s.username || null,
+          last_login: s.lastLogin || s.last_login || null,
+          password_last_changed: s.passwordLastChanged || s.password_last_changed || null,
+          permissions: s.permissions ? (typeof s.permissions === 'string' ? JSON.parse(s.permissions) : s.permissions) : null,
+          created_by: s.createdBy || s.created_by || null,
+          created_at: s.createdAt || s.created_at || new Date().toISOString(),
+          updated_at: s.updatedAt || s.updated_at || new Date().toISOString()
+        };
+
+        console.log('[STAFF SYNC] Preparing staff');
+        console.log('[STAFF SYNC] staff_id:', cloudStaffData.id);
+        console.log('[STAFF SYNC] tenant_id:', cloudStaffData.tenant_id);
+        console.log('[STAFF SYNC] user_id:', cloudStaffData.user_id);
+        console.log('[STAFF SYNC] name:', cloudStaffData.name);
+        console.log('[STAFF SYNC] role:', cloudStaffData.role);
+
+        const { error: staffError } = await supabase.from('staff').upsert(cloudStaffData, { onConflict: 'id' });
+        if (staffError) {
+          console.error('[STAFF SYNC ERROR]');
+          console.error('staff_id:', cloudStaffData.id);
+          console.error('tenant_id:', cloudStaffData.tenant_id);
+          console.error('code:', staffError.code);
+          console.error('message:', staffError.message);
+          console.error('details:', staffError.details);
+          console.error('hint:', staffError.hint);
+        } else {
+          console.log('[STAFF SYNC SUCCESS]');
+          console.log('staff_id:', cloudStaffData.id);
+          console.log('tenant_id:', cloudStaffData.tenant_id);
         }
       }
       console.log(`Synced ${staff.length} staff`);
