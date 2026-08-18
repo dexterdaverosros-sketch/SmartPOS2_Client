@@ -1520,47 +1520,52 @@ export const dbService = {
 
   saveStaff: async (staff: any[], tenantId: string) => {
     try {
-      // First: Pre-process all staff data BEFORE any transactions
       const processedStaff = await Promise.all(staff.map(async member => {
-        // Normalize all fields
-        let passkey = member.passkey;
+        const safeMember: Record<string, any> = { ...member };
+        delete safeMember.username;
+
+        let passkey = safeMember.passkey;
         if (passkey && !passkey.startsWith('$2')) {
           passkey = await bcrypt.hash(passkey, 10);
         }
         
-        // Handle date conversion
-        let createdAt = member.createdAt || member.created_at;
+        let createdAt = safeMember.createdAt || safeMember.created_at;
         if (createdAt instanceof Date) {
           createdAt = createdAt.toISOString();
         } else if (!createdAt) {
           createdAt = new Date().toISOString();
         }
 
+        const resolvedTenantId = tenantId || safeMember.tenantId || safeMember.tenant_id;
+        if (!resolvedTenantId || typeof resolvedTenantId !== 'string' || resolvedTenantId.trim() === '') {
+          throw new Error(`DATABASE_SCHEMA_MIGRATION_FAILED: saveStaff() blocked — missing tenant_id for staff. id=${String(safeMember.id || 'unknown')}`);
+        }
+
         return {
-          id: String(member.id),
-          tenantId: tenantId || member.tenantId || member.tenant_id,
-          userId: member.userId || member.user_id || null,
-          firstName: String(member.firstName || ''),
-          middleName: member.middleName || null,
-          lastName: String(member.lastName || ''),
-          name: String(member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim()),
-          staffId: String(member.staffId || member.staff_id || ''),
+          id: String(safeMember.id),
+          tenantId: resolvedTenantId,
+          userId: safeMember.userId || safeMember.user_id || null,
+          firstName: String(safeMember.firstName || ''),
+          middleName: safeMember.middleName || null,
+          lastName: String(safeMember.lastName || ''),
+          name: String(safeMember.name || `${safeMember.firstName || ''} ${safeMember.lastName || ''}`.trim()),
+          staffId: String(safeMember.staffId || safeMember.staff_id || ''),
           passkey: passkey,
-          role: member.role || 'cashier',
-          branch: member.branch || null,
-          department: member.department || null,
-          employmentStatus: member.employmentStatus || 'active',
-          email: member.email || null,
-          phone: member.phone || null,
-          address: member.address || null,
-          birthdate: member.birthdate || null,
-          gender: member.gender || null,
-          dateHired: member.dateHired || null,
-          assignedShift: member.assignedShift || null,
-          lastLogin: member.lastLogin || member.last_login || null,
-          passwordLastChanged: member.passwordLastChanged || member.password_last_changed || null,
-          permissions: member.permissions ? JSON.stringify(member.permissions) : null,
-          createdBy: member.createdBy || member.created_by || null,
+          role: safeMember.role || 'cashier',
+          branch: safeMember.branch || null,
+          department: safeMember.department || null,
+          employmentStatus: safeMember.employmentStatus || 'active',
+          email: safeMember.email || null,
+          phone: safeMember.phone || null,
+          address: safeMember.address || null,
+          birthdate: safeMember.birthdate || null,
+          gender: safeMember.gender || null,
+          dateHired: safeMember.dateHired || null,
+          assignedShift: safeMember.assignedShift || null,
+          lastLogin: safeMember.lastLogin || safeMember.last_login || null,
+          passwordLastChanged: safeMember.passwordLastChanged || safeMember.password_last_changed || null,
+          permissions: safeMember.permissions ? JSON.stringify(safeMember.permissions) : null,
+          createdBy: safeMember.createdBy || safeMember.created_by || null,
           createdAt: createdAt,
           updatedAt: new Date().toISOString()
         };

@@ -115,7 +115,6 @@ export const staff = sqliteTable("staff", {
   gender: text("gender"), // male, female, other
   dateHired: integer("date_hired", { mode: 'timestamp' }),
   assignedShift: text("assigned_shift"), // morning, afternoon, evening
-  username: text("username").unique(),
   lastLogin: integer("last_login", { mode: 'timestamp' }),
   passwordLastChanged: integer("password_last_changed", { mode: 'timestamp' }),
   permissions: text("permissions", { mode: 'json' }), // JSON array of permissions

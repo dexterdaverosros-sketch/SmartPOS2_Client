@@ -2414,6 +2414,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/staff', async (req: Request, res: Response) => {
     try {
       const tenantId = (req as any).tenantId;
+      if (!tenantId || typeof tenantId !== 'string' || tenantId.trim() === '') {
+        console.error('[POST /api/staff] FATAL: Missing authenticated tenantId in request context');
+        return res.status(500).json({ error: 'Server tenant context missing. Authentication required.' });
+      }
       const payload = Array.isArray(req.body) ? req.body : [req.body];
       if (payload.length === 0 || payload.some(member => !member || typeof member !== 'object')) {
         return res.status(400).json({ error: 'Invalid staff data' });
@@ -2422,13 +2426,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (invalidMember) {
         return res.status(400).json({ error: 'Invalid staff data', details: staffCreateSchema.safeParse(invalidMember).error?.flatten() });
       }
-      const normalized = payload.map(member => ({
-        ...member,
-        tenantId,
-        tenant_id: tenantId,
-      }));
+      const normalized = payload.map(member => {
+        const cleaned: Record<string, any> = { ...member };
+        delete cleaned.username;
+        delete cleaned.tenantId;
+        delete cleaned.tenant_id;
+        return {
+          ...cleaned,
+          tenantId,
+          tenant_id: tenantId,
+        };
+      });
       await dbService.saveStaff(normalized, tenantId);
-      res.status(200).json({ message: 'Staff updated successfully', count: normalized.length });
+      res.status(201).json({ message: 'Staff created successfully', count: normalized.length });
     } catch (error) {
       console.error('Error updating staff:', error);
       res.status(500).json({ error: 'Failed to update staff' });
