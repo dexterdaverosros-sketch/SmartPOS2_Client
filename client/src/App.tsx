@@ -68,6 +68,8 @@ function Router() {
       <Route path="/store/:tenant/ledger" component={() => <ProtectedRoute component={Ledger} role="admin" />} />
       <Route path="/store/:tenant/ledger/add-customer" component={() => <ProtectedRoute component={AddCreditor} role="admin" />} />
       <Route path="/store/:tenant/creditors" component={() => <ProtectedRoute component={AdminCreditors} role="admin" />} />
+      <Route path="/store/:tenant/admin/creditors/:id" component={() => <ProtectedRoute component={AdminCreditors} role="admin" />} />
+      <Route path="/store/:tenant/admin/creditors" component={() => <ProtectedRoute component={AdminCreditors} role="admin" />} />
       <Route path="/store/:tenant/expenses" component={() => <ProtectedRoute component={Expenses} role="admin" />} />
       <Route path="/store/:tenant/expense-report" component={() => <ProtectedRoute component={ExpenseReport} role="admin" />} />
       <Route path="/store/:tenant/stock-insights" component={() => <ProtectedRoute component={StockInsights} role="admin" />} />
@@ -101,6 +103,9 @@ function Router() {
       <Route path="/inventory" component={() => <ProtectedRoute component={Inventory} role="admin" />} />
       <Route path="/ledger" component={() => <ProtectedRoute component={Ledger} role="admin" />} />
       <Route path="/ledger/add-customer" component={() => <ProtectedRoute component={AddCreditor} role="admin" />} />
+      <Route path="/admin/creditors/:id" component={() => <ProtectedRoute component={AdminCreditors} role="admin" />} />
+      <Route path="/admin/creditors" component={() => <ProtectedRoute component={AdminCreditors} role="admin" />} />
+      <Route path="/creditors/:id" component={() => <ProtectedRoute component={AdminCreditors} role="admin" />} />
       <Route path="/creditors" component={() => <ProtectedRoute component={AdminCreditors} role="admin" />} />
       <Route path="/expenses" component={() => <ProtectedRoute component={Expenses} role="admin" />} />
       <Route path="/expense-report" component={() => <ProtectedRoute component={ExpenseReport} role="admin" />} />

@@ -88,7 +88,7 @@ export default function LedgerPage() {
                 </div>
               </div>
               <Button 
-                onClick={() => setIsCredPopupOpen(true)}
+                onClick={() => setLocation('/admin/creditors')}
                 className="bg-[#BF953F] hover:bg-[#B38728] text-white rounded-2xl px-6 h-12 font-black text-[10px] uppercase tracking-widest shadow-xl shadow-[#BF953F]/20 transition-all"
               >
                 <Users className="w-4 h-4 mr-2" />

@@ -631,31 +631,37 @@ const ScannerSales: React.FC = () => {
     setEditingItem(null);
   };
 
+  const processingRef = useRef(false);
+
   const handleProcessSale = async () => {
+    if (processingRef.current || isProcessing) return;
     if (cart.length === 0) return;
-    // Load latest receipt settings before printing
-    await loadSettings();
-    
-    const total = getCartTotal();
-    const effectivePaymentAmount = paymentType === 'cash' ? (paymentAmount ?? 0) : paymentType === 'ewallet' ? total : 0;
 
-    if (paymentType === 'cash' && paymentAmount === null) {
-      setPaymentError(true);
-      toast({ title: 'Payment Required', description: 'Please input the Total Amount', variant: 'destructive' });
-      return;
-    }
-    if (paymentType === 'cash' && effectivePaymentAmount < total) {
-      toast({ title: 'Insufficient Payment', description: `Payment amount must be at least ₱${total.toFixed(2)}`, variant: 'destructive' });
-      return;
-    }
-    if (paymentType === 'credits' && !selectedCreditor) {
-      toast({ title: 'Select Creditor', description: 'Please select a creditor for credit (utang) payment', variant: 'destructive' });
-      setIsCreditorDialogOpen(true);
-      return;
-    }
-
+    processingRef.current = true;
     setIsProcessing(true);
+
     try {
+      // Load latest receipt settings before printing
+      await loadSettings();
+      
+      const total = getCartTotal();
+      const effectivePaymentAmount = paymentType === 'cash' ? (paymentAmount ?? 0) : paymentType === 'ewallet' ? total : 0;
+
+      if (paymentType === 'cash' && paymentAmount === null) {
+        setPaymentError(true);
+        toast({ title: 'Payment Required', description: 'Please input the Total Amount', variant: 'destructive' });
+        return;
+      }
+      if (paymentType === 'cash' && effectivePaymentAmount < total) {
+        toast({ title: 'Insufficient Payment', description: `Payment amount must be at least ₱${total.toFixed(2)}`, variant: 'destructive' });
+        return;
+      }
+      if (paymentType === 'credits' && !selectedCreditor) {
+        toast({ title: 'Select Creditor', description: 'Please select a creditor for credit (utang) payment', variant: 'destructive' });
+        setIsCreditorDialogOpen(true);
+        return;
+      }
+
       const sale = await SalesService.processSale({
         items: cart,
         total,
@@ -704,6 +710,7 @@ const ScannerSales: React.FC = () => {
     } catch (error) {
       toast({ title: 'Sale Failed', description: 'Failed to process sale', variant: 'destructive' });
     } finally {
+      processingRef.current = false;
       setIsProcessing(false);
     }
   };

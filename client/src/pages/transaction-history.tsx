@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Search, Calendar, Filter, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Search, Calendar, Filter, RefreshCw, Receipt, User, ShoppingBag } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { cn } from '@/lib/utils';
 import Layout from '@/components/Layout';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { SalesService, db } from '@/lib/db';
-import api from '@/lib/api'; // Import the api utility
+import api from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 
 interface Transaction {
@@ -19,6 +20,7 @@ interface Transaction {
   items: number;
   createdAt: Date;
   staffName?: string;
+  rawSale?: any;
 }
 
 const TransactionHistory: React.FC = () => {
@@ -30,6 +32,12 @@ const TransactionHistory: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Details Modal state
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [detailItems, setDetailItems] = useState<any[]>([]);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [loadingDetails, setLoadingDetails] = useState(false);
   
   const fetchTransactions = async (fromCloud = false) => {
     if (fromCloud) setSyncing(true);
@@ -46,7 +54,6 @@ const TransactionHistory: React.FC = () => {
           salesHistory = Array.isArray(response) ? response : (response.data || []);
         } catch (serverError) {
           console.warn('Failed to fetch from server, using local DB', serverError);
-          // Fallback to local Dexie DB
           salesHistory = await SalesService.getAllSales();
         }
       }
@@ -61,11 +68,12 @@ const TransactionHistory: React.FC = () => {
           id: sale.id,
           date: date.toLocaleDateString(),
           time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          items: Array.isArray(sale.items) ? sale.items.length : 0,
+          items: Array.isArray(sale.items) ? sale.items.length : (sale.itemCount || 0),
           amount: Number(sale.total || 0),
           paymentMethod: (sale.paymentType === 'ewallet' ? 'ewallet' : sale.paymentType === 'credits' ? 'credits' : 'cash') as 'cash' | 'ewallet' | 'credits', 
           createdAt: date,
-          staffName: sale.staffName || 'Owner'
+          staffName: sale.staffName || 'Owner',
+          rawSale: sale
         };
       });
 
@@ -87,12 +95,34 @@ const TransactionHistory: React.FC = () => {
     }
   };
 
-  // Fetch transactions on component mount
   useEffect(() => {
     fetchTransactions();
   }, [toast]);
   
-  // Filter transactions by month and year
+  const handleViewDetails = async (transaction: Transaction) => {
+    setSelectedTransaction(transaction);
+    setIsDetailsOpen(true);
+    setLoadingDetails(true);
+
+    try {
+      if (transaction.rawSale && Array.isArray(transaction.rawSale.items) && transaction.rawSale.items.length > 0) {
+        setDetailItems(transaction.rawSale.items);
+      } else {
+        const localItems = await db.saleItems.where('saleId').equals(transaction.id).toArray();
+        if (localItems && localItems.length > 0) {
+          setDetailItems(localItems);
+        } else {
+          setDetailItems([]);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching sale details:', err);
+      setDetailItems([]);
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+  
   const getFilteredTransactions = (paymentMethod?: 'cash' | 'ewallet' | 'credits') => {
     return transactions.filter(transaction => {
       const transactionDate = transaction.createdAt;
@@ -114,7 +144,6 @@ const TransactionHistory: React.FC = () => {
     });
   };
   
-  // Get month name
   const getMonthName = (month: number) => {
     const monthNames = [
       'January', 'February', 'March', 'April', 'May', 'June',
@@ -123,7 +152,6 @@ const TransactionHistory: React.FC = () => {
     return monthNames[month];
   };
   
-  // Handle month navigation
   const handlePrevMonth = () => {
     if (selectedMonth === 0) {
       setSelectedMonth(11);
@@ -250,14 +278,14 @@ const TransactionHistory: React.FC = () => {
                           {transaction.items} {transaction.items === 1 ? 'item' : 'items'}
                         </div>
                       </div>
-                      <div>
+                      <div className="text-right">
                         <div className="font-semibold text-green-600 dark:text-green-400">
                           ₱{transaction.amount.toFixed(2)}
                         </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 text-right">
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                           Cash Payment
                         </div>
-                        <Button size="sm" variant="outline" className="mt-1">
+                        <Button size="sm" variant="outline" className="mt-2" onClick={() => handleViewDetails(transaction)}>
                           View Details
                         </Button>
                       </div>
@@ -301,14 +329,14 @@ const TransactionHistory: React.FC = () => {
                           {transaction.items} {transaction.items === 1 ? 'item' : 'items'}
                         </div>
                       </div>
-                      <div>
+                      <div className="text-right">
                         <div className="font-semibold text-blue-600 dark:text-blue-400">
                           ₱{transaction.amount.toFixed(2)}
                         </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 text-right">
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                           E-Wallet Payment
                         </div>
-                        <Button size="sm" variant="outline" className="mt-1">
+                        <Button size="sm" variant="outline" className="mt-2" onClick={() => handleViewDetails(transaction)}>
                           View Details
                         </Button>
                       </div>
@@ -352,14 +380,14 @@ const TransactionHistory: React.FC = () => {
                         {transaction.items} {transaction.items === 1 ? 'item' : 'items'}
                       </div>
                     </div>
-                    <div>
+                    <div className="text-right">
                       <div className="font-semibold text-purple-600 dark:text-purple-400">
                         ₱{transaction.amount.toFixed(2)}
                       </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 text-right">
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                         Credits (Utang)
                       </div>
-                      <Button size="sm" variant="outline" className="mt-1">
+                      <Button size="sm" variant="outline" className="mt-2" onClick={() => handleViewDetails(transaction)}>
                         View Details
                       </Button>
                     </div>
@@ -370,6 +398,79 @@ const TransactionHistory: React.FC = () => {
           </TabsContent>
           </Tabs>
         </div>
+
+        {/* Transaction Details Dialog */}
+        <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
+          <DialogContent className="max-w-md rounded-3xl p-6 bg-white dark:bg-gray-800">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-lg font-black text-gray-900 dark:text-white uppercase tracking-tight">
+                <Receipt className="w-5 h-5 text-[#BF953F]" />
+                Transaction Receipt Details
+              </DialogTitle>
+            </DialogHeader>
+
+            {selectedTransaction && (
+              <div className="space-y-4 mt-2">
+                <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-2xl border border-gray-100 dark:border-gray-700 space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-gray-400 font-bold uppercase tracking-wider">Transaction Ref</span>
+                    <span className="font-mono font-bold text-gray-900 dark:text-white">#{selectedTransaction.id}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-gray-400 font-bold uppercase tracking-wider">Date & Time</span>
+                    <span className="font-bold text-gray-700 dark:text-gray-300">{selectedTransaction.date} {selectedTransaction.time}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-gray-400 font-bold uppercase tracking-wider">Processed By</span>
+                    <span className="font-bold text-blue-600 dark:text-blue-400">{selectedTransaction.staffName || 'Owner'}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-gray-400 font-bold uppercase tracking-wider">Payment Mode</span>
+                    <span className="font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">{selectedTransaction.paymentMethod}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
+                    <ShoppingBag className="w-3.5 h-3.5 text-[#BF953F]" />
+                    Purchased Items ({detailItems.length})
+                  </div>
+
+                  {loadingDetails ? (
+                    <div className="text-center py-6 text-sm text-gray-400">Loading order items...</div>
+                  ) : detailItems.length === 0 ? (
+                    <div className="text-center py-6 text-sm text-gray-400 italic">No individual item records found for this sale.</div>
+                  ) : (
+                    <div className="max-h-48 overflow-y-auto space-y-2 custom-scrollbar pr-1">
+                      {detailItems.map((item, idx) => (
+                        <div key={idx} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-900/30 rounded-xl border border-gray-100 dark:border-gray-800 text-xs">
+                          <div>
+                            <div className="font-bold text-gray-900 dark:text-white">{item.productName || item.name || 'Item'}</div>
+                            <div className="text-[10px] text-gray-400 font-medium">
+                              {item.quantity} {item.unit || 'pcs'} × ₱{Number(item.price || item.unitPrice || 0).toFixed(2)}
+                            </div>
+                          </div>
+                          <div className="font-black text-gray-900 dark:text-white">
+                            ₱{Number(item.subtotal || (item.quantity * (item.price || 0)) || 0).toFixed(2)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 bg-slate-900 text-white rounded-2xl flex justify-between items-center">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Grand Total</span>
+                  <span className="text-xl font-black text-[#BF953F]">₱{selectedTransaction.amount.toFixed(2)}</span>
+                </div>
+
+                <Button onClick={() => setIsDetailsOpen(false)} className="w-full h-12 bg-gray-900 text-white rounded-2xl font-black uppercase tracking-widest">
+                  Close Receipt
+                </Button>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </motion.div>
     </Layout>
   );

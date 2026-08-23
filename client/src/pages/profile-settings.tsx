@@ -576,7 +576,6 @@ const ProfileSettings: React.FC = () => {
               <SettingsCard icon={Store} title="Store Information" subtitle="Business Details" color="pink" onClick={() => setShowStoreInfoDialog(true)} />
               <SettingsCard icon={Shield} title="Security Center" subtitle="Access Control" color="purple" onClick={() => setShowAccountDetails(true)} />
               <SettingsCard icon={Cpu} title="Hardware Setup" subtitle="Printer & Scanner" color="orange" onClick={() => setShowHardwareSettings(true)} />
-              <SettingsCard icon={Wifi} title="Network Connectivity" subtitle="Router & WiFi" color="indigo" onClick={() => setShowRouterSettings(true)} />
               <SettingsCard icon={Database} title="Data Management" subtitle="Backup & Sync" color="emerald" onClick={async () => {
                 const [users, products, sales, saleItems, staff, expenses, purchases, creditors] = await Promise.all([
                   db.users.count(), db.products.count(), db.sales.count(), db.saleItems.count(), db.staff.count(), db.expenses.count(), db.purchases.count(), db.creditors.count()
