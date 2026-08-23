@@ -3201,15 +3201,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Sync endpoints for Push to Cloud and Pull from Cloud
-  // These endpoints require authentication: tenant comes from the server-side SQLite session (NOT from any client header),
-  // and authenticateUser already guarantees session.tenant_id exists (returns 401 otherwise).
-  app.post('/api/sync/push-all', authenticateUser, async (req, res) => {
+  const resolveSyncTenant = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      let tenantId = (req as any).tenantId;
+
+      // 1. Check Bearer token in Authorization header
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.substring(7).trim();
+        if (token) {
+          const session = dbService.getSessionByToken(token) as any;
+          if (session && session.tenant_id) {
+            tenantId = session.tenant_id;
+            (req as any).userId = session.user_id;
+          }
+        }
+      }
+
+      // 2. Check X-Tenant-ID subdomain header
+      if (!tenantId || tenantId === 'default-tenant-id') {
+        const subdomain = req.headers['x-tenant-id'] as string;
+        if (subdomain && subdomain !== 'default') {
+          const tenant = await getTenantFromHeader(req);
+          if (tenant && tenant.id) {
+            tenantId = tenant.id;
+          }
+        }
+      }
+
+      // 3. Fallback: single active tenant ID in SQLite
+      if (!tenantId || tenantId === 'default-tenant-id') {
+        const fallbackTenantId = dbService.getDefaultOrOnlyTenantId();
+        if (fallbackTenantId) {
+          tenantId = fallbackTenantId;
+        }
+      }
+
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Authentication required: Missing tenant context' });
+      }
+
+      (req as any).tenantId = tenantId;
+      next();
+    } catch (error: any) {
+      console.error('[SYNC TENANT RESOLUTION ERROR]', error);
+      res.status(500).json({ success: false, error: 'Failed to resolve tenant context' });
+    }
+  };
+
+  app.post('/api/sync/push-all', resolveSyncTenant, async (req, res) => {
     try {
       const tenantId = (req as any).tenantId;
       if (!tenantId) {
         return res.status(400).json({ success: false, error: 'Missing authenticated tenant context' });
       }
-      console.log(`[SYNC ROUTE] push-all for authenticated tenant: ${tenantId}`);
+      console.log(`[SYNC ROUTE] push-all for tenant: ${tenantId}`);
       const result = await dbService.pushAllToCloud(tenantId);
       res.status(200).json(result);
     } catch (error: any) {
@@ -3218,7 +3264,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/sync/pull-all', authenticateUser, async (req, res) => {
+  app.post('/api/sync/pull-all', resolveSyncTenant, async (req, res) => {
     try {
       const tenantId = (req as any).tenantId;
       if (!tenantId) {

@@ -1195,34 +1195,38 @@ export class SalesService {
 
       // 4. Hydrate Staff (preserving passkey for staff pin code login!)
       if (Array.isArray(staff) && staff.length > 0) {
-        const sanitizedStaff: any[] = staff.map((s: any) => ({
-          id: String(s.id),
-          tenantId: s.tenantId || s.tenant_id || '',
-          userId: s.userId || s.user_id || null,
-          firstName: s.firstName || s.first_name || '',
-          middleName: s.middleName || s.middle_name || null,
-          lastName: s.lastName || s.last_name || '',
-          name: s.name || [s.firstName, s.lastName].filter(Boolean).join(' ') || 'Staff Member',
-          staffId: String(s.staffId || s.staff_id || s.id),
-          passkey: s.passkey || s.passHash || s.pass_key || s.passhash || null,
-          role: s.role || 'cashier',
-          branch: s.branch || null,
-          department: s.department || null,
-          employmentStatus: s.employmentStatus || s.employment_status || 'active',
-          email: s.email || null,
-          phone: s.phone || null,
-          address: s.address || null,
-          birthdate: s.birthdate || null,
-          gender: s.gender || null,
-          dateHired: s.dateHired || s.date_hired || null,
-          assignedShift: s.assignedShift || s.assigned_shift || null,
-          lastLogin: s.lastLogin ? new Date(s.lastLogin) : null,
-          passwordLastChanged: s.passwordLastChanged ? new Date(s.passwordLastChanged) : null,
-          permissions: s.permissions || [],
-          createdBy: s.createdBy || s.created_by || null,
-          createdAt: s.createdAt || s.created_at ? new Date(s.createdAt || s.created_at) : new Date(),
-          updatedAt: s.updatedAt || s.updated_at ? new Date(s.updatedAt || s.updated_at) : new Date()
-        }));
+        const sanitizedStaff: any[] = staff.map((s: any, index: number) => {
+          const sIdRaw = String(s.staffId || s.staff_id || s.id || '').trim();
+          const finalStaffId = sIdRaw !== '' ? sIdRaw : `staff-${index}-${String(s.id)}`;
+          return {
+            id: String(s.id),
+            tenantId: s.tenantId || s.tenant_id || '',
+            userId: s.userId || s.user_id || null,
+            firstName: s.firstName || s.first_name || '',
+            middleName: s.middleName || s.middle_name || null,
+            lastName: s.lastName || s.last_name || '',
+            name: s.name || [s.firstName, s.lastName].filter(Boolean).join(' ') || 'Staff Member',
+            staffId: finalStaffId,
+            passkey: s.passkey || s.passHash || s.pass_key || s.passhash || null,
+            role: s.role || 'cashier',
+            branch: s.branch || null,
+            department: s.department || null,
+            employmentStatus: s.employmentStatus || s.employment_status || 'active',
+            email: s.email || null,
+            phone: s.phone || null,
+            address: s.address || null,
+            birthdate: s.birthdate || null,
+            gender: s.gender || null,
+            dateHired: s.dateHired || s.date_hired || null,
+            assignedShift: s.assignedShift || s.assigned_shift || null,
+            lastLogin: s.lastLogin ? new Date(s.lastLogin) : null,
+            passwordLastChanged: s.passwordLastChanged ? new Date(s.passwordLastChanged) : null,
+            permissions: s.permissions || [],
+            createdBy: s.createdBy || s.created_by || null,
+            createdAt: s.createdAt || s.created_at ? new Date(s.createdAt || s.created_at) : new Date(),
+            updatedAt: s.updatedAt || s.updated_at ? new Date(s.updatedAt || s.updated_at) : new Date()
+          };
+        });
         await db.staff.clear();
         await (db.staff as any).bulkPut(sanitizedStaff);
       }

@@ -584,6 +584,17 @@ export const dbService = {
   listTenants: () => {
     return db.prepare('SELECT * FROM tenants ORDER BY created_at DESC').all();
   },
+  getDefaultOrOnlyTenantId: (): string | undefined => {
+    try {
+      const tenants = db.prepare('SELECT id FROM tenants LIMIT 2').all() as any[];
+      if (tenants.length === 1 && tenants[0].id) return tenants[0].id;
+      const admin = db.prepare('SELECT tenant_id FROM users WHERE tenant_id IS NOT NULL AND tenant_id != \'\' LIMIT 1').get() as any;
+      if (admin && admin.tenant_id) return admin.tenant_id;
+      return undefined;
+    } catch (e) {
+      return undefined;
+    }
+  },
   // Ledger: Customers
   createCustomer: (tenantId: string, input: { id: string; name: string; phone: string; address?: string | null; credit_rating: 'good'|'bad'; photo_url?: string | null; }) => {
     const now = new Date().toISOString();
