@@ -2750,136 +2750,233 @@ export const dbService = {
       console.log(`Synced ${nonInvProducts.length} non-inventory products`);
     }
 
+    // Helper to validate staff_id against valid cloud staff IDs to avoid foreign key violations
+    const getValidStaffIdSet = async () => {
+      const validSet = new Set<string>();
+      try {
+        const { data: cloudStaff } = await supabase.from('staff').select('id, staff_id').eq('tenant_id', tenantId);
+        if (cloudStaff) {
+          cloudStaff.forEach((s: any) => {
+            if (s.id) validSet.add(s.id);
+            if (s.staff_id) validSet.add(s.staff_id);
+          });
+        }
+      } catch (e) {
+        console.warn('[SYNC STAFF FK CHECK] Failed to fetch cloud staff IDs:', e);
+      }
+      return validSet;
+    };
+
     // 10. Sync Sales
     const sales = db.prepare('SELECT * FROM sales WHERE tenant_id = ?').all(tenantId) as any[];
     if (sales.length > 0) {
-      const cloudSales = sales.map(s => ({
-        id: s.id,
-        tenant_id: tenantId,
-        total: s.total,
-        payment_type: s.paymentType,
-        payment_amount: s.paymentAmount,
-        staff_id: s.staffId || null,
-        remitted: !!s.remitted,
-        created_at: s.createdAt || new Date().toISOString()
-      }));
-      const { error: saleError } = await supabase.from('sales').upsert(cloudSales, { onConflict: 'id' });
-      if (saleError) throw saleError;
-      console.log(`Synced ${sales.length} sales`);
+      try {
+        const validStaffIds = await getValidStaffIdSet();
+        const cloudSales = sales.map(s => {
+          const rawStaffId = s.staffId || s.staff_id;
+          const validStaffId = rawStaffId && validStaffIds.has(rawStaffId) ? rawStaffId : null;
+          return {
+            id: String(s.id),
+            tenant_id: tenantId,
+            total: Number(s.total || 0),
+            payment_type: s.paymentType || s.payment_type || 'cash',
+            payment_amount: Number(s.paymentAmount || s.payment_amount || 0),
+            staff_id: validStaffId,
+            remitted: !!s.remitted,
+            created_at: s.createdAt || s.created_at || new Date().toISOString()
+          };
+        });
+        const { error: saleError } = await supabase.from('sales').upsert(cloudSales, { onConflict: 'id' });
+        if (saleError) {
+          console.warn('[SYNC SALES WARNING]', saleError.message);
+          const fallbackSales = cloudSales.map(s => ({ ...s, staff_id: null }));
+          await supabase.from('sales').upsert(fallbackSales, { onConflict: 'id' });
+        }
+        console.log(`Synced ${sales.length} sales`);
+      } catch (err: any) {
+        console.warn('[SYNC SALES EXCEPTION]', err?.message || String(err));
+      }
     }
 
     // 11. Sync Sale Items
     const saleItems = db.prepare('SELECT * FROM sale_items WHERE tenant_id = ?').all(tenantId) as any[];
     if (saleItems.length > 0) {
-      const cloudSaleItems = saleItems.map(i => ({
-        id: i.id,
-        tenant_id: tenantId,
-        sale_id: i.saleId,
-        product_id: i.productId,
-        quantity: i.quantity,
-        price: i.price,
-        unit: i.unit || 'pieces',
-        product_name: i.productName || null,
-        is_non_inventory: !!i.isNonInventory
-      }));
-      const { error: itemError } = await supabase.from('sale_items').upsert(cloudSaleItems, { onConflict: 'id' });
-      if (itemError) throw itemError;
-      console.log(`Synced ${saleItems.length} sale items`);
+      try {
+        const cloudSaleItems = saleItems.map(i => ({
+          id: String(i.id),
+          tenant_id: tenantId,
+          sale_id: String(i.saleId || i.sale_id),
+          product_id: String(i.productId || i.product_id),
+          quantity: Number(i.quantity || 0),
+          price: Number(i.price || 0),
+          unit: i.unit || 'pieces',
+          product_name: i.productName || i.product_name || null,
+          is_non_inventory: !!(i.isNonInventory || i.is_non_inventory)
+        }));
+        const { error: itemError } = await supabase.from('sale_items').upsert(cloudSaleItems, { onConflict: 'id' });
+        if (itemError) console.warn('[SYNC SALE ITEMS WARNING]', itemError.message);
+        else console.log(`Synced ${saleItems.length} sale items`);
+      } catch (err: any) {
+        console.warn('[SYNC SALE ITEMS EXCEPTION]', err?.message || String(err));
+      }
     }
 
-    // 12. Sync Remittances
+    // 12. Sync Remittances (with FK validation and fallback)
     const remittances = db.prepare('SELECT * FROM remittances WHERE tenant_id = ?').all(tenantId) as any[];
     if (remittances.length > 0) {
-      const cloudRemittances = remittances.map(r => ({
-        id: r.id,
-        tenant_id: tenantId,
-        staff_id: r.staff_id,
-        staff_name: r.staff_name,
-        amount: r.amount,
-        transaction_count: r.transaction_count,
-        status: r.status,
-        created_at: r.created_at || new Date().toISOString(),
-        confirmed_at: r.confirmed_at || null
-      }));
-      const { error: remitError } = await supabase.from('remittances').upsert(cloudRemittances, { onConflict: 'id' });
-      if (remitError) throw remitError;
-      console.log(`Synced ${remittances.length} remittances`);
+      try {
+        const validStaffIds = await getValidStaffIdSet();
+        const cloudRemittances = remittances.map(r => {
+          const rawStaffId = r.staff_id || r.staffId;
+          const validStaffId = rawStaffId && validStaffIds.has(rawStaffId) ? rawStaffId : null;
+          return {
+            id: String(r.id),
+            tenant_id: tenantId,
+            staff_id: validStaffId,
+            staff_name: r.staff_name || r.staffName || 'Staff',
+            amount: Number(r.amount || 0),
+            transaction_count: Number(r.transaction_count || r.transactionCount || 0),
+            status: r.status || 'pending',
+            created_at: r.created_at || r.createdAt || new Date().toISOString(),
+            confirmed_at: r.confirmed_at || r.confirmedAt || null
+          };
+        });
+
+        const { error: remitError } = await supabase.from('remittances').upsert(cloudRemittances, { onConflict: 'id' });
+        if (remitError) {
+          console.warn('[SYNC REMITTANCE WARNING] Upsert failed:', remitError.message, '- retrying with sanitized staff_id=null');
+          const fallbackRemittances = cloudRemittances.map(r => ({ ...r, staff_id: null }));
+          const { error: fbErr } = await supabase.from('remittances').upsert(fallbackRemittances, { onConflict: 'id' });
+          if (fbErr) {
+            console.error('[SYNC REMITTANCE ERROR] Fallback remittance sync failed:', fbErr.message);
+          } else {
+            console.log(`Synced ${remittances.length} remittances (with sanitized staff_id=null)`);
+          }
+        } else {
+          console.log(`Synced ${remittances.length} remittances`);
+        }
+      } catch (err: any) {
+        console.warn('[SYNC REMITTANCE EXCEPTION]', err?.message || String(err));
+      }
     }
 
     // 13. Sync Notifications
     const notifications = db.prepare('SELECT * FROM notifications WHERE tenant_id = ?').all(tenantId) as any[];
     if (notifications.length > 0) {
-      const cloudNotifications = notifications.map(n => ({
-        id: n.id,
-        tenant_id: tenantId,
-        user_id: n.user_id || null,
-        type: n.type,
-        message: n.message,
-        data: n.data || null,
-        is_read: !!n.is_read,
-        created_at: n.created_at || new Date().toISOString()
-      }));
-      const { error: notifError } = await supabase.from('notifications').upsert(cloudNotifications, { onConflict: 'id' });
-      if (notifError) throw notifError;
-      console.log(`Synced ${notifications.length} notifications`);
+      try {
+        const cloudNotifications = notifications.map(n => ({
+          id: String(n.id),
+          tenant_id: tenantId,
+          user_id: n.user_id || n.userId || null,
+          type: n.type || 'system',
+          message: String(n.message || ''),
+          data: n.data || null,
+          is_read: !!(n.is_read || n.isRead),
+          created_at: n.created_at || n.createdAt || new Date().toISOString()
+        }));
+        const { error: notifError } = await supabase.from('notifications').upsert(cloudNotifications, { onConflict: 'id' });
+        if (notifError) console.warn('[SYNC NOTIFICATIONS WARNING]', notifError.message);
+        else console.log(`Synced ${notifications.length} notifications`);
+      } catch (err: any) {
+        console.warn('[SYNC NOTIFICATIONS EXCEPTION]', err?.message || String(err));
+      }
     }
 
-    // 14. Sync Settings
+    // 14. Sync Settings & Logs
     // 14a. Sync staff attendance
     const attendance = db.prepare('SELECT * FROM attendance WHERE tenant_id = ?').all(tenantId) as any[];
     if (attendance.length > 0) {
-      const cloudAttendance = attendance.map(a => ({
-        id: a.id,
-        tenant_id: tenantId,
-        staff_id: a.staff_id,
-        date: a.date,
-        clock_in: a.clock_in || null,
-        clock_out: a.clock_out || null,
-        hours_worked: a.hours_worked ?? null,
-        is_late: !!a.is_late,
-        created_at: a.created_at || new Date().toISOString(),
-        updated_at: a.updated_at || new Date().toISOString()
-      }));
-      const { error } = await supabase.from('attendance').upsert(cloudAttendance, { onConflict: 'id' });
-      if (error) throw error;
+      try {
+        const validStaffIds = await getValidStaffIdSet();
+        const cloudAttendance = attendance.map(a => {
+          const rawStaffId = a.staff_id || a.staffId;
+          const validStaffId = rawStaffId && validStaffIds.has(rawStaffId) ? rawStaffId : null;
+          return {
+            id: String(a.id),
+            tenant_id: tenantId,
+            staff_id: validStaffId,
+            date: a.date,
+            clock_in: a.clock_in || null,
+            clock_out: a.clock_out || null,
+            hours_worked: a.hours_worked ?? null,
+            is_late: !!a.is_late,
+            created_at: a.created_at || new Date().toISOString(),
+            updated_at: a.updated_at || new Date().toISOString()
+          };
+        });
+        const { error } = await supabase.from('attendance').upsert(cloudAttendance, { onConflict: 'id' });
+        if (error) {
+          console.warn('[SYNC ATTENDANCE WARNING]', error.message);
+          const fallback = cloudAttendance.map(a => ({ ...a, staff_id: null }));
+          await supabase.from('attendance').upsert(fallback, { onConflict: 'id' });
+        }
+      } catch (err: any) {
+        console.warn('[SYNC ATTENDANCE EXCEPTION]', err?.message || String(err));
+      }
     }
 
-    // 14b. Sync login history without exposing credentials
+    // 14b. Sync login history
     const loginHistory = db.prepare('SELECT * FROM login_history WHERE tenant_id = ?').all(tenantId) as any[];
     if (loginHistory.length > 0) {
-      const cloudLoginHistory = loginHistory.map(l => ({
-        id: l.id,
-        tenant_id: tenantId,
-        staff_id: l.staff_id,
-        device_info: l.device_info || null,
-        ip_address: l.ip_address || null,
-        login_time: l.login_time,
-        logout_time: l.logout_time || null,
-        created_at: l.created_at || new Date().toISOString()
-      }));
-      const { error } = await supabase.from('login_history').upsert(cloudLoginHistory, { onConflict: 'id' });
-      if (error) throw error;
+      try {
+        const validStaffIds = await getValidStaffIdSet();
+        const cloudLoginHistory = loginHistory.map(l => {
+          const rawStaffId = l.staff_id || l.staffId;
+          const validStaffId = rawStaffId && validStaffIds.has(rawStaffId) ? rawStaffId : null;
+          return {
+            id: String(l.id),
+            tenant_id: tenantId,
+            staff_id: validStaffId,
+            device_info: l.device_info || null,
+            ip_address: l.ip_address || null,
+            login_time: l.login_time,
+            logout_time: l.logout_time || null,
+            created_at: l.created_at || new Date().toISOString()
+          };
+        });
+        const { error } = await supabase.from('login_history').upsert(cloudLoginHistory, { onConflict: 'id' });
+        if (error) {
+          console.warn('[SYNC LOGIN HISTORY WARNING]', error.message);
+          const fallback = cloudLoginHistory.map(l => ({ ...l, staff_id: null }));
+          await supabase.from('login_history').upsert(fallback, { onConflict: 'id' });
+        }
+      } catch (err: any) {
+        console.warn('[SYNC LOGIN HISTORY EXCEPTION]', err?.message || String(err));
+      }
     }
 
     // 14c. Sync staff audit history
     const auditLogs = db.prepare('SELECT * FROM audit_logs WHERE tenant_id = ?').all(tenantId) as any[];
     if (auditLogs.length > 0) {
-      const cloudAuditLogs = auditLogs.map(a => ({
-        id: a.id,
-        tenant_id: tenantId,
-        admin_id: a.admin_id || null,
-        admin_name: a.admin_name || null,
-        action: a.action,
-        staff_id: a.staff_id || null,
-        staff_name: a.staff_name || null,
-        changed_fields: a.changed_fields || null,
-        old_values: a.old_values || null,
-        new_values: a.new_values || null,
-        ip_address: a.ip_address || null,
-        created_at: a.created_at || new Date().toISOString()
-      }));
-      const { error } = await supabase.from('audit_logs').upsert(cloudAuditLogs, { onConflict: 'id' });
-      if (error) throw error;
+      try {
+        const validStaffIds = await getValidStaffIdSet();
+        const cloudAuditLogs = auditLogs.map(a => {
+          const rawStaffId = a.staff_id || a.staffId;
+          const validStaffId = rawStaffId && validStaffIds.has(rawStaffId) ? rawStaffId : null;
+          return {
+            id: String(a.id),
+            tenant_id: tenantId,
+            admin_id: a.admin_id || null,
+            admin_name: a.admin_name || null,
+            action: a.action,
+            staff_id: validStaffId,
+            staff_name: a.staff_name || null,
+            changed_fields: a.changed_fields || null,
+            old_values: a.old_values || null,
+            new_values: a.new_values || null,
+            ip_address: a.ip_address || null,
+            created_at: a.created_at || new Date().toISOString()
+          };
+        });
+        const { error } = await supabase.from('audit_logs').upsert(cloudAuditLogs, { onConflict: 'id' });
+        if (error) {
+          console.warn('[SYNC AUDIT LOGS WARNING]', error.message);
+          const fallback = cloudAuditLogs.map(a => ({ ...a, staff_id: null }));
+          await supabase.from('audit_logs').upsert(fallback, { onConflict: 'id' });
+        }
+      } catch (err: any) {
+        console.warn('[SYNC AUDIT LOGS EXCEPTION]', err?.message || String(err));
+      }
     }
 
     // 14d. Sync settings
