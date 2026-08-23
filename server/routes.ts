@@ -542,7 +542,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('Session created successfully');
 
       // Auto-pull all data from cloud on login for multi-device sync ONLY IF we have a real tenant in Supabase
-      if (useCloud() && tenant && tenant.id !== 'default-tenant-id') {
+      if (useCloud() && sessionTenantId && sessionTenantId !== 'default-tenant-id') {
         const pullStart = Date.now();
         try {
           const tenantId = session.tenant_id;
@@ -750,7 +750,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       dbService.createSession(session);
 
-      if (useCloud() && headerTenant && headerTenant.id !== 'default-tenant-id' && resolvedTenantId !== 'default-tenant-id') {
+      if (useCloud() && resolvedTenantId && resolvedTenantId !== 'default-tenant-id') {
         try {
           const tenantId = session.tenant_id;
           await dbService.pullAllFromCloud(tenantId);
@@ -1468,6 +1468,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const tenantId = (req as any).tenantId;
       if (!tenantId || tenantId === 'default-tenant-id' || tenantId === '') {
         return res.status(400).json({ error: 'DEXIE_SYNC_BLOCKED: Missing tenant_id' });
+      }
+
+      if (useCloud()) {
+        try {
+          console.log('[SYNC pull-all-from-sqlite] Pulling latest Supabase cloud data for tenant_id=' + tenantId);
+          await dbService.pullAllFromCloud(tenantId);
+        } catch (cloudErr: any) {
+          console.warn('[SYNC pull-all-from-sqlite] Cloud pull warning (using cached SQLite data):', cloudErr?.message || String(cloudErr));
+        }
       }
 
       const timestamp = new Date().toISOString();
