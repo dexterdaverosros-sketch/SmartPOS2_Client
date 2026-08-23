@@ -543,13 +543,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Auto-pull all data from cloud on login for multi-device sync ONLY IF we have a real tenant in Supabase
       if (useCloud() && tenant && tenant.id !== 'default-tenant-id') {
+        const pullStart = Date.now();
         try {
           const tenantId = session.tenant_id;
+          console.log('[PULL START] tenant_id=' + tenantId + ' trigger=admin-login');
           console.log('=== AUTO-PULLING DATA FROM CLOUD ===');
           await dbService.pullAllFromCloud(tenantId);
+          const pullDur = Date.now() - pullStart;
+          console.log('[PULL COMPLETE] tenant_id=' + tenantId + ' duration_ms=' + pullDur);
           console.log('=== AUTO-PULL COMPLETED ===');
-        } catch (pullError) {
-          console.warn('=== AUTO-PULL FAILED (continuing login anyway) ===', pullError);
+        } catch (pullError: any) {
+          console.error('ADMIN LOGIN CLOUD PULL FAILED:', pullError?.message || String(pullError));
+          return res.status(500).json({
+            error: 'SYNC_REQUIRED',
+            message: 'Authentication succeeded but device data synchronization failed. Please retry when server connection is available.',
+            details: pullError?.message || String(pullError)
+          });
         }
       }
 
@@ -667,13 +676,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Auto-pull all data from cloud on login for multi-device sync ONLY IF we have a real tenant in Supabase
       if (useCloud() && tenant && tenant.id !== 'default-tenant-id') {
+        const pullStart = Date.now();
         try {
           const tenantId = session.tenant_id;
+          console.log('[PULL START] tenant_id=' + tenantId + ' trigger=staff-login');
           console.log('=== AUTO-PULLING DATA FROM CLOUD (STAFF LOGIN) ===');
           await dbService.pullAllFromCloud(tenantId);
+          const pullDur = Date.now() - pullStart;
+          console.log('[PULL COMPLETE] tenant_id=' + tenantId + ' duration_ms=' + pullDur);
           console.log('=== AUTO-PULL COMPLETED (STAFF LOGIN) ===');
-        } catch (pullError) {
-          console.warn('=== AUTO-PULL FAILED (STAFF LOGIN - continuing anyway) ===', pullError);
+        } catch (pullError: any) {
+          console.error('STAFF LOGIN CLOUD PULL FAILED:', pullError?.message || String(pullError));
+          return res.status(500).json({
+            error: 'SYNC_REQUIRED',
+            message: 'Authentication succeeded but device data synchronization failed. Please retry when server connection is available.',
+            details: pullError?.message || String(pullError)
+          });
         }
       }
 
@@ -731,6 +749,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         last_active_at: new Date().toISOString()
       };
       dbService.createSession(session);
+
+      if (useCloud() && headerTenant && headerTenant.id !== 'default-tenant-id' && resolvedTenantId !== 'default-tenant-id') {
+        try {
+          const tenantId = session.tenant_id;
+          await dbService.pullAllFromCloud(tenantId);
+        } catch (pullError: any) {
+          console.error('CLOUD LOGIN PULL FAILED:', pullError?.message || String(pullError));
+          return res.status(500).json({
+            error: 'SYNC_REQUIRED',
+            message: 'Authentication succeeded but cloud data synchronization failed. Please retry when server connection is available.',
+            details: pullError?.message || String(pullError)
+          });
+        }
+      }
+
       res.status(200).json({
         token,
         user: {
@@ -904,7 +937,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/auth/session', (req: Request, res: Response) => {
+  app.get('/api/auth/session', async (req: Request, res: Response) => {
     try {
       const authHeader = req.headers.authorization;
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -928,6 +961,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!user) {
         return res.status(401).json({ error: 'User not found' });
+      }
+
+      const sessionTenantId = session.tenant_id;
+      const forcePull = req.query.force_sync === '1' || req.query.force_sync === 'true';
+      const STALE_THRESHOLD_MS = 5 * 60 * 1000;
+      const lastActivity = session.last_activity ? new Date(session.last_activity).getTime() : 0;
+      const isStale = Date.now() - lastActivity > STALE_THRESHOLD_MS;
+
+      if (useCloud() && sessionTenantId && sessionTenantId !== 'default-tenant-id' && (forcePull || isStale)) {
+        try {
+          console.log(`[SESSION RESTORE] Pulling from cloud (stale=${isStale}, force=${forcePull}) tenant=${sessionTenantId}`);
+          await dbService.pullAllFromCloud(sessionTenantId);
+        } catch (pullError: any) {
+          console.warn('[SESSION RESTORE] Cloud pull failed, returning cached SQLite data:', pullError?.message);
+        }
       }
 
       res.status(200).json({
@@ -1402,6 +1450,128 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error during sync:', error);
       res.status(500).json({ error: 'Sync failed' });
+    }
+  });
+
+  app.post('/api/sync/pull-all-from-sqlite', authenticateUser, async (req: Request, res: Response) => {
+    const normalizeTenantId = (row: any, sessionTenantId: string): any => {
+      if (!row) return row;
+      const out: any = { ...row };
+      const raw = out.tenantId || out.tenant_id;
+      if (!raw) { out.tenantId = sessionTenantId; }
+      else if (!out.tenantId) { out.tenantId = out.tenant_id; }
+      delete out.tenant_id;
+      return out;
+    };
+
+    try {
+      const tenantId = (req as any).tenantId;
+      if (!tenantId || tenantId === 'default-tenant-id' || tenantId === '') {
+        return res.status(400).json({ error: 'DEXIE_SYNC_BLOCKED: Missing tenant_id' });
+      }
+
+      const timestamp = new Date().toISOString();
+
+      const products = dbService.getProducts(tenantId) || [];
+      const variants = dbService.getAllVariantsByTenant(tenantId) || [];
+
+      const rawStaff: any[] = dbService.getStaff(tenantId) || [];
+      const staff = rawStaff.map((s: any) => {
+        const { passkey, passHash, password, ...safeFields } = s;
+        const withTenantId: any = { ...safeFields };
+        if (!withTenantId.tenantId) {
+          withTenantId.tenantId = withTenantId.tenant_id || tenantId;
+        }
+        delete withTenantId.tenant_id;
+        return withTenantId;
+      });
+
+      const rawUsers: any[] = dbService.getAdmins(tenantId) || [];
+      const users = rawUsers.map((u: any) => {
+        const { password, securityAnswer1, securityAnswer2, securityAnswer3, passHash, ...safeFields } = u;
+        const withTenantId: any = { ...safeFields };
+        if (!withTenantId.tenantId) {
+          withTenantId.tenantId = withTenantId.tenant_id || tenantId;
+        }
+        delete withTenantId.tenant_id;
+        return withTenantId;
+      });
+
+      const customers = (dbService.getCustomers(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
+      const credits = (dbService.getCredits(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
+      const payments = (dbService.getPayments(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
+      const reminders = (dbService.getReminders(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
+      const sales = (dbService.getSales(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
+      const saleItems = (dbService.getSaleItems(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
+      const expenses = (dbService.getExpenses(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
+      const purchases = (dbService.getPurchases(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
+      const creditors = (dbService.getCreditors(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
+      const nonInventoryProducts = (dbService.getNonInventoryProducts(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
+      const remittances = (dbService.getRemittances(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
+      const notifications = (dbService.getNotifications(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
+      const settings = (dbService.getSettings(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
+      const attendance = (dbService.getAttendance(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
+      const loginHistory = (dbService.getLoginHistory(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
+      const auditLogs = (dbService.getAuditLogs(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
+
+      const counts = {
+        products: products.length,
+        variants: variants.length,
+        staff: staff.length,
+        users: users.length,
+        customers: customers.length,
+        credits: credits.length,
+        payments: payments.length,
+        reminders: reminders.length,
+        sales: sales.length,
+        saleItems: saleItems.length,
+        expenses: expenses.length,
+        purchases: purchases.length,
+        creditors: creditors.length,
+        nonInventoryProducts: nonInventoryProducts.length,
+        remittances: remittances.length,
+        notifications: notifications.length,
+        settings: settings.length,
+        attendance: attendance.length,
+        loginHistory: loginHistory.length,
+        auditLogs: auditLogs.length,
+      };
+
+      res.status(200).json({
+        success: true,
+        tenantId,
+        timestamp,
+        counts,
+        data: {
+          products,
+          variants,
+          staff,
+          users,
+          customers,
+          credits,
+          payments,
+          reminders,
+          sales,
+          saleItems,
+          expenses,
+          purchases,
+          creditors,
+          nonInventoryProducts,
+          remittances,
+          notifications,
+          settings,
+          attendance,
+          loginHistory,
+          auditLogs,
+        }
+      });
+    } catch (error: any) {
+      console.error('[SYNC pull-all-from-sqlite] FAILED tenant_id=' + (req as any).tenantId + ' error=' + (error?.message || String(error)));
+      res.status(500).json({
+        error: 'DEXIE_SYNC_FAILED',
+        message: 'Failed to build synchronization payload.',
+        details: error?.message || String(error),
+      });
     }
   });
 

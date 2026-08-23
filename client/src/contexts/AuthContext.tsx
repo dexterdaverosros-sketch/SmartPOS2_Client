@@ -4,12 +4,13 @@ import { io, Socket } from 'socket.io-client';
 import { toast } from '@/hooks/use-toast';
 import api from '@/lib/api';
 import { AuthService } from '@/lib/db';
+import { databaseSyncService } from '@/lib/sync';
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
   socket: Socket | null;
-  login: (user: User, token?: string) => void;
+  login: (user: User, token?: string) => Promise<void>;
   loginStaff: (staffId: string, passkey: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
@@ -132,8 +133,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.log('AuthContext: Found stored token:', storedToken);
       // Verify token with server
       api.get('/api/auth/session')
-      .then(data => {
+      .then(async data => {
         setUser(data.user);
+        const tenantId = (data.user as any)?.tenantId || (data.user as any)?.tenant_id;
+        if (tenantId && tenantId !== 'default-tenant-id') {
+          try {
+            console.log('[SESSION HYDRATION] Hydrating Client Dexie for tenant:', tenantId);
+            await databaseSyncService.pullAllFromServerIntoDexie(tenantId);
+          } catch (err: any) {
+            console.warn('[SESSION HYDRATION WARNING] Hydration failed:', err?.message || String(err));
+          }
+        }
       })
       .catch((error) => {
         // Token invalid - don't log scary error for 401
@@ -191,13 +201,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, [socket, user]);
 
-  const login = (userData: User, authToken?: string) => {
+  const login = async (userData: User, authToken?: string) => {
     setUser(userData);
     localStorage.setItem('smartpos_user', JSON.stringify(userData));
     if (authToken) {
       setToken(authToken);
       localStorage.setItem('smartpos_token', authToken);
       console.log('AuthContext: Token set in localStorage:', authToken);
+    }
+
+    // Trigger Client Dexie Hydration from Server SQLite
+    const tenantId = (userData as any)?.tenantId || (userData as any)?.tenant_id;
+    if (tenantId && tenantId !== 'default-tenant-id') {
+      try {
+        console.log('[AUTH HYDRATION] Hydrating Client Dexie for tenant:', tenantId);
+        await databaseSyncService.pullAllFromServerIntoDexie(tenantId);
+      } catch (err: any) {
+        console.warn('[AUTH HYDRATION WARNING] Hydration failed, using existing local Dexie cache:', err?.message || String(err));
+      }
     }
   };
 
@@ -209,12 +230,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         deviceInfo: navigator.userAgent 
       });
       
-      login(data.user, data.token);
+      await login(data.user, data.token);
     } catch (error) {
       console.warn('Server login failed, trying local:', error);
       const user = await AuthService.loginStaff(staffId, passkey);
       if (user) {
-        login(user);
+        await login(user);
       } else {
         throw new Error('Invalid credentials');
       }

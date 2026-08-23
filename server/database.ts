@@ -742,6 +742,37 @@ export const dbService = {
     tx();
     return dbService.getSettings(effTenantId || undefined);
   },
+  // Bulk sync entity getters
+  getExpenses: (tenantId: string) => db.prepare('SELECT * FROM expenses WHERE tenant_id = ?').all(tenantId),
+  getPurchases: (tenantId: string) => db.prepare('SELECT * FROM purchases WHERE tenant_id = ?').all(tenantId),
+  getCreditors: (tenantId: string) => db.prepare('SELECT * FROM creditors WHERE tenant_id = ?').all(tenantId),
+  getCustomers: (tenantId: string) => db.prepare('SELECT * FROM customers WHERE tenant_id = ?').all(tenantId),
+  getCredits: (tenantId: string) => db.prepare('SELECT * FROM credits WHERE tenant_id = ?').all(tenantId),
+  getPayments: (tenantId: string) => db.prepare('SELECT * FROM payments WHERE tenant_id = ?').all(tenantId),
+  getReminders: (tenantId: string) => db.prepare('SELECT * FROM reminders WHERE tenant_id = ?').all(tenantId),
+  getRemittances: (tenantId: string) => db.prepare('SELECT * FROM remittances WHERE tenant_id = ?').all(tenantId),
+  getNotifications: (tenantId: string) => db.prepare('SELECT * FROM notifications WHERE tenant_id = ?').all(tenantId),
+  getAttendance: (tenantId: string) => db.prepare('SELECT * FROM attendance WHERE tenant_id = ?').all(tenantId),
+  getLoginHistory: (tenantId: string) => db.prepare('SELECT * FROM login_history WHERE tenant_id = ?').all(tenantId),
+  getAuditLogs: (tenantId: string) => db.prepare('SELECT * FROM audit_logs WHERE tenant_id = ?').all(tenantId),
+  getAllVariantsByTenant: (tenantId: string) => {
+    const rows = db.prepare('SELECT * FROM variants WHERE tenant_id = ?').all(tenantId) as any[];
+    return rows.map(r => ({
+      id: r.id,
+      productId: r.product_id,
+      name: r.name,
+      barcode: r.barcode,
+      price: r.price,
+      cost: r.cost,
+      image: r.image,
+      quantity: r.quantity,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      tenantId: r.tenant_id
+    }));
+  },
+  getSales: (tenantId: string) => db.prepare('SELECT * FROM sales WHERE tenant_id = ?').all(tenantId),
+  getSaleItems: (tenantId: string) => db.prepare('SELECT * FROM sale_items WHERE saleId IN (SELECT id FROM sales WHERE tenant_id = ?)').all(tenantId),
   // Admin/User methods
   getAdmins: (tenantId?: string) => {
     return tenantId 
@@ -2819,316 +2850,456 @@ export const dbService = {
     const supabase = getSupabase();
     if (!supabase) throw new Error('Supabase not configured');
 
+    const _pullStart = Date.now();
+    console.log('[PULL START] tenant_id=' + tenantId + ' trigger=pullAllFromCloud');
     console.log('=== Starting full sync from Supabase ===');
 
     // 1. Pull Products
-    const { data: cloudProducts, error: prodError } = await supabase.from('products').select('*').eq('tenant_id', tenantId);
-    if (prodError) throw prodError;
-    if (cloudProducts && cloudProducts.length > 0) {
-      dbService.saveProducts(cloudProducts.map(p => ({
-        id: p.id,
-        name: p.name,
-        price: p.price,
-        cost: p.cost,
-        barcode: p.barcode,
-        category: p.category,
-        image: p.image,
-        quantity: p.quantity,
-        createdAt: p.created_at,
-        updatedAt: p.updated_at
-      })), tenantId);
-      console.log(`Pulled ${cloudProducts.length} products`);
+    try {
+      const { data: cloudProducts, error: prodError } = await supabase.from('products').select('*').eq('tenant_id', tenantId);
+      if (prodError) throw prodError;
+      const _n = cloudProducts?.length ?? 0;
+      console.log('[PULL PRODUCTS] rows=' + _n);
+      if (_n > 0) {
+        dbService.saveProducts(cloudProducts.map(p => ({
+          id: p.id,
+          name: p.name,
+          price: p.price,
+          cost: p.cost,
+          barcode: p.barcode,
+          category: p.category,
+          image: p.image,
+          quantity: p.quantity,
+          createdAt: p.created_at,
+          updatedAt: p.updated_at
+        })), tenantId);
+        console.log('[LOCAL SYNC] entity=products rows_received=' + _n + ' rows_saved=' + _n);
+        console.log(`Pulled ${_n} products`);
+      }
+    } catch (e: any) {
+      console.error('[PULL ERROR] entity=products tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+      throw e;
     }
 
     // 2. Pull Variants
-    const { data: cloudVariants, error: varError } = await supabase.from('variants').select('*').eq('tenant_id', tenantId);
-    if (varError) throw varError;
-    if (cloudVariants && cloudVariants.length > 0) {
-      const insert = db.prepare(`
-        INSERT OR REPLACE INTO variants 
-        (id, tenant_id, product_id, name, barcode, price, cost, image, quantity, created_at, updated_at) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      db.transaction((variants: any[]) => {
-        for (const v of variants) {
-          insert.run(v.id, tenantId, v.product_id, v.name, v.barcode, v.price, v.cost, v.image, v.quantity, v.created_at, v.updated_at);
-        }
-      })(cloudVariants);
-      console.log(`Pulled ${cloudVariants.length} variants`);
+    try {
+      const { data: cloudVariants, error: varError } = await supabase.from('variants').select('*').eq('tenant_id', tenantId);
+      if (varError) throw varError;
+      const _n = cloudVariants?.length ?? 0;
+      console.log('[PULL VARIANTS] rows=' + _n);
+      if (_n > 0) {
+        const insert = db.prepare(`
+          INSERT OR REPLACE INTO variants 
+          (id, tenant_id, product_id, name, barcode, price, cost, image, quantity, created_at, updated_at) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        db.transaction((variants: any[]) => {
+          for (const v of variants) {
+            insert.run(v.id, tenantId, v.product_id, v.name, v.barcode, v.price, v.cost, v.image, v.quantity, v.created_at, v.updated_at);
+          }
+        })(cloudVariants);
+        console.log('[LOCAL SYNC] entity=variants rows_received=' + _n + ' rows_saved=' + _n);
+        console.log(`Pulled ${_n} variants`);
+      }
+    } catch (e: any) {
+      console.error('[PULL ERROR] entity=variants tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+      throw e;
     }
 
     // 3. Pull Staff
-    const { data: cloudStaff, error: staffError } = await supabase.from('staff').select('*').eq('tenant_id', tenantId);
-    if (staffError) throw staffError;
-    if (cloudStaff && cloudStaff.length > 0) {
-      dbService.saveStaff(cloudStaff.map(s => ({
-        id: s.id,
-        tenantId: s.tenant_id,
-        userId: s.user_id,
-        firstName: s.first_name || '',
-        middleName: s.middle_name || null,
-        lastName: s.last_name || '',
-        name: s.name,
-        staffId: s.staff_id,
-        passkey: s.passkey || s.passhash,
-        role: s.role || 'cashier',
-        branch: s.branch || null,
-        department: s.department || null,
-        employmentStatus: s.employment_status || 'active',
-        email: s.email || null,
-        phone: s.phone || null,
-        address: s.address || null,
-        birthdate: s.birthdate || null,
-        gender: s.gender || null,
-        dateHired: s.date_hired || null,
-        assignedShift: s.assigned_shift || null,
-        lastLogin: s.last_login || null,
-        passwordLastChanged: s.password_last_changed || null,
-        permissions: s.permissions || [],
-        createdBy: s.created_by,
-        createdAt: s.created_at,
-        updatedAt: s.updated_at
-      })), tenantId);
-      console.log(`Pulled ${cloudStaff.length} staff`);
+    try {
+      const { data: cloudStaff, error: staffError } = await supabase.from('staff').select('*').eq('tenant_id', tenantId);
+      if (staffError) throw staffError;
+      const _n = cloudStaff?.length ?? 0;
+      console.log('[PULL STAFF] rows=' + _n);
+      if (_n > 0) {
+        await dbService.saveStaff(cloudStaff.map(s => ({
+          id: s.id,
+          tenantId: s.tenant_id,
+          userId: s.user_id,
+          firstName: s.first_name || '',
+          middleName: s.middle_name || null,
+          lastName: s.last_name || '',
+          name: s.name,
+          staffId: s.staff_id,
+          passkey: s.passkey || s.passhash,
+          role: s.role || 'cashier',
+          branch: s.branch || null,
+          department: s.department || null,
+          employmentStatus: s.employment_status || 'active',
+          email: s.email || null,
+          phone: s.phone || null,
+          address: s.address || null,
+          birthdate: s.birthdate || null,
+          gender: s.gender || null,
+          dateHired: s.date_hired || null,
+          assignedShift: s.assigned_shift || null,
+          lastLogin: s.last_login || null,
+          passwordLastChanged: s.password_last_changed || null,
+          permissions: s.permissions || [],
+          createdBy: s.created_by,
+          createdAt: s.created_at,
+          updatedAt: s.updated_at
+        })), tenantId);
+        console.log('[LOCAL SYNC] entity=staff rows_received=' + _n + ' rows_saved=' + _n);
+        console.log(`Pulled ${_n} staff`);
+      }
+    } catch (e: any) {
+      console.error('[PULL ERROR] entity=staff tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+      throw e;
     }
 
     // 4. Pull Users (Admins)
-    const { data: cloudUsers, error: userError } = await supabase.from('users').select('*').eq('tenant_id', tenantId);
-    if (userError) throw userError;
-    if (cloudUsers && cloudUsers.length > 0) {
-      for (const u of cloudUsers) {
-        dbService.saveAdmin({
-          id: u.id,
-          tenantId: u.tenant_id,
-          username: u.username,
-          password: u.password,
-          role: u.role,
-          businessName: u.business_name,
-          ownerName: u.owner_name,
-          mobile: u.mobile,
-          profileImage: u.profile_image,
-          securityQuestion1: u.security_question_1,
-          securityAnswer1: u.security_answer_1,
-          securityQuestion2: u.security_question_2,
-          securityAnswer2: u.security_answer_2,
-          securityQuestion3: u.security_question_3,
-          securityAnswer3: u.security_answer_3,
-          createdAt: u.created_at
-        });
+    try {
+      const { data: cloudUsers, error: userError } = await supabase.from('users').select('*').eq('tenant_id', tenantId);
+      if (userError) throw userError;
+      const _n = cloudUsers?.length ?? 0;
+      console.log('[PULL USERS] rows=' + _n);
+      if (_n > 0) {
+        for (const u of cloudUsers) {
+          dbService.saveAdmin({
+            id: u.id,
+            tenantId: u.tenant_id,
+            username: u.username,
+            password: u.password,
+            role: u.role,
+            businessName: u.business_name,
+            ownerName: u.owner_name,
+            mobile: u.mobile,
+            profileImage: u.profile_image,
+            securityQuestion1: u.security_question_1,
+            securityAnswer1: u.security_answer_1,
+            securityQuestion2: u.security_question_2,
+            securityAnswer2: u.security_answer_2,
+            securityQuestion3: u.security_question_3,
+            securityAnswer3: u.security_answer_3,
+            createdAt: u.created_at
+          });
+        }
+        console.log('[LOCAL SYNC] entity=users rows_received=' + _n + ' rows_saved=' + _n);
+        console.log(`Pulled ${_n} users`);
       }
-      console.log(`Pulled ${cloudUsers.length} users`);
+    } catch (e: any) {
+      console.error('[PULL ERROR] entity=users tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+      throw e;
     }
 
     // 5. Pull Customers
-    const { data: cloudCustomers, error: custError } = await supabase.from('customers').select('*').eq('tenant_id', tenantId);
-    if (custError) throw custError;
-    if (cloudCustomers && cloudCustomers.length > 0) {
-      const insert = db.prepare(`
-        INSERT OR REPLACE INTO customers 
-        (id, tenant_id, name, phone, address, credit_rating, photo_url, created_at, updated_at) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      db.transaction((customers: any[]) => {
-        for (const c of customers) {
-          insert.run(c.id, tenantId, c.name, c.phone, c.address, c.credit_rating, c.photo_url, c.created_at, c.updated_at);
-        }
-      })(cloudCustomers);
-      console.log(`Pulled ${cloudCustomers.length} customers`);
+    try {
+      const { data: cloudCustomers, error: custError } = await supabase.from('customers').select('*').eq('tenant_id', tenantId);
+      if (custError) throw custError;
+      const _n = cloudCustomers?.length ?? 0;
+      console.log('[PULL CUSTOMERS] rows=' + _n);
+      if (_n > 0) {
+        const insert = db.prepare(`
+          INSERT OR REPLACE INTO customers 
+          (id, tenant_id, name, phone, address, credit_rating, photo_url, created_at, updated_at) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        db.transaction((customers: any[]) => {
+          for (const c of customers) {
+            insert.run(c.id, tenantId, c.name, c.phone, c.address, c.credit_rating, c.photo_url, c.created_at, c.updated_at);
+          }
+        })(cloudCustomers);
+        console.log('[LOCAL SYNC] entity=customers rows_received=' + _n + ' rows_saved=' + _n);
+        console.log(`Pulled ${_n} customers`);
+      }
+    } catch (e: any) {
+      console.error('[PULL ERROR] entity=customers tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+      throw e;
     }
 
     // 6. Pull Credits
-    const { data: cloudCredits, error: creditError } = await supabase.from('credits').select('*').eq('tenant_id', tenantId);
-    if (creditError) throw creditError;
-    if (cloudCredits && cloudCredits.length > 0) {
-      const insert = db.prepare(`
-        INSERT OR REPLACE INTO credits 
-        (id, tenant_id, customer_id, amount, due_date, remarks, created_at) 
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `);
-      db.transaction((credits: any[]) => {
-        for (const c of credits) {
-          insert.run(c.id, tenantId, c.customer_id, c.amount, c.due_date, c.remarks, c.created_at);
-        }
-      })(cloudCredits);
-      console.log(`Pulled ${cloudCredits.length} credits`);
+    try {
+      const { data: cloudCredits, error: creditError } = await supabase.from('credits').select('*').eq('tenant_id', tenantId);
+      if (creditError) throw creditError;
+      const _n = cloudCredits?.length ?? 0;
+      console.log('[PULL CREDITS] rows=' + _n);
+      if (_n > 0) {
+        const insert = db.prepare(`
+          INSERT OR REPLACE INTO credits 
+          (id, tenant_id, customer_id, amount, due_date, remarks, created_at) 
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+        db.transaction((credits: any[]) => {
+          for (const c of credits) {
+            insert.run(c.id, tenantId, c.customer_id, c.amount, c.due_date, c.remarks, c.created_at);
+          }
+        })(cloudCredits);
+        console.log('[LOCAL SYNC] entity=credits rows_received=' + _n + ' rows_saved=' + _n);
+        console.log(`Pulled ${_n} credits`);
+      }
+    } catch (e: any) {
+      console.error('[PULL ERROR] entity=credits tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+      throw e;
     }
 
     // 7. Pull Payments
-    const { data: cloudPayments, error: payError } = await supabase.from('payments').select('*').eq('tenant_id', tenantId);
-    if (payError) throw payError;
-    if (cloudPayments && cloudPayments.length > 0) {
-      const insert = db.prepare(`
-        INSERT OR REPLACE INTO payments 
-        (id, tenant_id, customer_id, amount, payment_method, remarks, created_at) 
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `);
-      db.transaction((payments: any[]) => {
-        for (const p of payments) {
-          insert.run(p.id, tenantId, p.customer_id, p.amount, p.payment_method, p.remarks, p.created_at);
-        }
-      })(cloudPayments);
-      console.log(`Pulled ${cloudPayments.length} payments`);
+    try {
+      const { data: cloudPayments, error: payError } = await supabase.from('payments').select('*').eq('tenant_id', tenantId);
+      if (payError) throw payError;
+      const _n = cloudPayments?.length ?? 0;
+      console.log('[PULL PAYMENTS] rows=' + _n);
+      if (_n > 0) {
+        const insert = db.prepare(`
+          INSERT OR REPLACE INTO payments 
+          (id, tenant_id, customer_id, amount, payment_method, remarks, created_at) 
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+        db.transaction((payments: any[]) => {
+          for (const p of payments) {
+            insert.run(p.id, tenantId, p.customer_id, p.amount, p.payment_method, p.remarks, p.created_at);
+          }
+        })(cloudPayments);
+        console.log('[LOCAL SYNC] entity=payments rows_received=' + _n + ' rows_saved=' + _n);
+        console.log(`Pulled ${_n} payments`);
+      }
+    } catch (e: any) {
+      console.error('[PULL ERROR] entity=payments tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+      throw e;
     }
 
     // 8. Pull Reminders
-    const { data: cloudReminders, error: remError } = await supabase.from('reminders').select('*').eq('tenant_id', tenantId);
-    if (remError) throw remError;
-    if (cloudReminders && cloudReminders.length > 0) {
-      const insert = db.prepare(`
-        INSERT OR REPLACE INTO reminders 
-        (id, tenant_id, customer_id, message_type, message, status, created_at) 
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `);
-      db.transaction((reminders: any[]) => {
-        for (const r of reminders) {
-          insert.run(r.id, tenantId, r.customer_id, r.message_type, r.message, r.status, r.created_at);
-        }
-      })(cloudReminders);
-      console.log(`Pulled ${cloudReminders.length} reminders`);
+    try {
+      const { data: cloudReminders, error: remError } = await supabase.from('reminders').select('*').eq('tenant_id', tenantId);
+      if (remError) throw remError;
+      const _n = cloudReminders?.length ?? 0;
+      console.log('[PULL REMINDERS] rows=' + _n);
+      if (_n > 0) {
+        const insert = db.prepare(`
+          INSERT OR REPLACE INTO reminders 
+          (id, tenant_id, customer_id, message_type, message, status, created_at) 
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+        db.transaction((reminders: any[]) => {
+          for (const r of reminders) {
+            insert.run(r.id, tenantId, r.customer_id, r.message_type, r.message, r.status, r.created_at);
+          }
+        })(cloudReminders);
+        console.log('[LOCAL SYNC] entity=reminders rows_received=' + _n + ' rows_saved=' + _n);
+        console.log(`Pulled ${_n} reminders`);
+      }
+    } catch (e: any) {
+      console.error('[PULL ERROR] entity=reminders tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+      throw e;
     }
 
     // 9. Pull Non-inventory Products
-    const { data: cloudNonInv, error: nonInvError } = await supabase.from('non_inventory_products').select('*').eq('tenant_id', tenantId);
-    if (nonInvError) throw nonInvError;
-    if (cloudNonInv && cloudNonInv.length > 0) {
-      dbService.saveNonInventoryProducts(cloudNonInv.map(p => ({
-        id: p.id,
-        name: p.name,
-        price: p.price,
-        category: p.category,
-        description: p.description,
-        image: p.image,
-        barcode: p.barcode,
-        barcodeData: p.barcode_data,
-        createdAt: p.created_at,
-        updatedAt: p.updated_at
-      })), tenantId);
-      console.log(`Pulled ${cloudNonInv.length} non-inventory products`);
+    try {
+      const { data: cloudNonInv, error: nonInvError } = await supabase.from('non_inventory_products').select('*').eq('tenant_id', tenantId);
+      if (nonInvError) throw nonInvError;
+      const _n = cloudNonInv?.length ?? 0;
+      console.log('[PULL NON_INVENTORY] rows=' + _n);
+      if (_n > 0) {
+        dbService.saveNonInventoryProducts(cloudNonInv.map(p => ({
+          id: p.id,
+          name: p.name,
+          price: p.price,
+          category: p.category,
+          description: p.description,
+          image: p.image,
+          barcode: p.barcode,
+          barcodeData: p.barcode_data,
+          createdAt: p.created_at,
+          updatedAt: p.updated_at
+        })), tenantId);
+        console.log('[LOCAL SYNC] entity=non_inventory_products rows_received=' + _n + ' rows_saved=' + _n);
+        console.log(`Pulled ${_n} non-inventory products`);
+      }
+    } catch (e: any) {
+      console.error('[PULL ERROR] entity=non_inventory_products tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+      throw e;
     }
 
     // 10. Pull Sales
-    const { data: cloudSales, error: saleError } = await supabase.from('sales').select('*').eq('tenant_id', tenantId);
-    if (saleError) throw saleError;
-    if (cloudSales && cloudSales.length > 0) {
-      const insert = db.prepare(`
-        INSERT OR REPLACE INTO sales 
-        (id, tenant_id, total, paymentType, paymentAmount, staffId, remitted, createdAt) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      db.transaction((sales: any[]) => {
-        for (const s of sales) {
-          insert.run(s.id, tenantId, s.total, s.payment_type, s.payment_amount, s.staff_id, s.remitted ? 1 : 0, s.created_at);
-        }
-      })(cloudSales);
-      console.log(`Pulled ${cloudSales.length} sales`);
+    try {
+      const { data: cloudSales, error: saleError } = await supabase.from('sales').select('*').eq('tenant_id', tenantId);
+      if (saleError) throw saleError;
+      const _n = cloudSales?.length ?? 0;
+      console.log('[PULL SALES] rows=' + _n);
+      if (_n > 0) {
+        const insert = db.prepare(`
+          INSERT OR REPLACE INTO sales 
+          (id, tenant_id, total, paymentType, paymentAmount, staffId, remitted, createdAt) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        db.transaction((sales: any[]) => {
+          for (const s of sales) {
+            insert.run(s.id, tenantId, s.total, s.payment_type, s.payment_amount, s.staff_id, s.remitted ? 1 : 0, s.created_at);
+          }
+        })(cloudSales);
+        console.log('[LOCAL SYNC] entity=sales rows_received=' + _n + ' rows_saved=' + _n);
+        console.log(`Pulled ${_n} sales`);
+      }
+    } catch (e: any) {
+      console.error('[PULL ERROR] entity=sales tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+      throw e;
     }
 
     // 11. Pull Sale Items
-    const { data: cloudSaleItems, error: itemError } = await supabase.from('sale_items').select('*').eq('tenant_id', tenantId);
-    if (itemError) throw itemError;
-    if (cloudSaleItems && cloudSaleItems.length > 0) {
-      const insert = db.prepare(`
-        INSERT OR REPLACE INTO sale_items 
-        (id, tenant_id, saleId, productId, quantity, price, unit, productName, isNonInventory) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      db.transaction((items: any[]) => {
-        for (const i of items) {
-          insert.run(i.id, tenantId, i.sale_id, i.product_id, i.quantity, i.price, i.unit, i.product_name, i.is_non_inventory ? 1 : 0);
-        }
-      })(cloudSaleItems);
-      console.log(`Pulled ${cloudSaleItems.length} sale items`);
+    try {
+      const { data: cloudSaleItems, error: itemError } = await supabase.from('sale_items').select('*').eq('tenant_id', tenantId);
+      if (itemError) throw itemError;
+      const _n = cloudSaleItems?.length ?? 0;
+      console.log('[PULL SALE_ITEMS] rows=' + _n);
+      if (_n > 0) {
+        const insert = db.prepare(`
+          INSERT OR REPLACE INTO sale_items 
+          (id, tenant_id, saleId, productId, quantity, price, unit, productName, isNonInventory) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        db.transaction((items: any[]) => {
+          for (const i of items) {
+            insert.run(i.id, tenantId, i.sale_id, i.product_id, i.quantity, i.price, i.unit, i.product_name, i.is_non_inventory ? 1 : 0);
+          }
+        })(cloudSaleItems);
+        console.log('[LOCAL SYNC] entity=sale_items rows_received=' + _n + ' rows_saved=' + _n);
+        console.log(`Pulled ${_n} sale items`);
+      }
+    } catch (e: any) {
+      console.error('[PULL ERROR] entity=sale_items tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+      throw e;
     }
 
     // 12. Pull Remittances
-    const { data: cloudRemittances, error: remitError } = await supabase.from('remittances').select('*').eq('tenant_id', tenantId);
-    if (remitError) throw remitError;
-    if (cloudRemittances && cloudRemittances.length > 0) {
-      const insert = db.prepare(`
-        INSERT OR REPLACE INTO remittances 
-        (id, tenant_id, staff_id, staff_name, amount, transaction_count, status, created_at, confirmed_at) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      db.transaction((remittances: any[]) => {
-        for (const r of remittances) {
-          insert.run(r.id, tenantId, r.staff_id, r.staff_name, r.amount, r.transaction_count, r.status, r.created_at, r.confirmed_at);
-        }
-      })(cloudRemittances);
-      console.log(`Pulled ${cloudRemittances.length} remittances`);
+    try {
+      const { data: cloudRemittances, error: remitError } = await supabase.from('remittances').select('*').eq('tenant_id', tenantId);
+      if (remitError) throw remitError;
+      const _n = cloudRemittances?.length ?? 0;
+      console.log('[PULL REMITTANCES] rows=' + _n);
+      if (_n > 0) {
+        const insert = db.prepare(`
+          INSERT OR REPLACE INTO remittances 
+          (id, tenant_id, staff_id, staff_name, amount, transaction_count, status, created_at, confirmed_at) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        db.transaction((remittances: any[]) => {
+          for (const r of remittances) {
+            insert.run(r.id, tenantId, r.staff_id, r.staff_name, r.amount, r.transaction_count, r.status, r.created_at, r.confirmed_at);
+          }
+        })(cloudRemittances);
+        console.log('[LOCAL SYNC] entity=remittances rows_received=' + _n + ' rows_saved=' + _n);
+        console.log(`Pulled ${_n} remittances`);
+      }
+    } catch (e: any) {
+      console.error('[PULL ERROR] entity=remittances tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+      throw e;
     }
 
     // 13. Pull Notifications
-    const { data: cloudNotifications, error: notifError } = await supabase.from('notifications').select('*').eq('tenant_id', tenantId);
-    if (notifError) throw notifError;
-    if (cloudNotifications && cloudNotifications.length > 0) {
-      const insert = db.prepare(`
-        INSERT OR REPLACE INTO notifications 
-        (id, tenant_id, user_id, type, message, data, is_read, created_at) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      db.transaction((notifs: any[]) => {
-        for (const n of notifs) {
-          insert.run(n.id, tenantId, n.user_id, n.type, n.message, n.data, n.is_read ? 1 : 0, n.created_at);
-        }
-      })(cloudNotifications);
-      console.log(`Pulled ${cloudNotifications.length} notifications`);
+    try {
+      const { data: cloudNotifications, error: notifError } = await supabase.from('notifications').select('*').eq('tenant_id', tenantId);
+      if (notifError) throw notifError;
+      const _n = cloudNotifications?.length ?? 0;
+      console.log('[PULL NOTIFICATIONS] rows=' + _n);
+      if (_n > 0) {
+        const insert = db.prepare(`
+          INSERT OR REPLACE INTO notifications 
+          (id, tenant_id, user_id, type, message, data, is_read, created_at) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        db.transaction((notifs: any[]) => {
+          for (const n of notifs) {
+            insert.run(n.id, tenantId, n.user_id, n.type, n.message, n.data, n.is_read ? 1 : 0, n.created_at);
+          }
+        })(cloudNotifications);
+        console.log('[LOCAL SYNC] entity=notifications rows_received=' + _n + ' rows_saved=' + _n);
+        console.log(`Pulled ${_n} notifications`);
+      }
+    } catch (e: any) {
+      console.error('[PULL ERROR] entity=notifications tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+      throw e;
     }
 
     // 14. Pull Settings
     // 14a. Pull staff attendance
-    const { data: cloudAttendance, error: attendanceError } = await supabase.from('attendance').select('*').eq('tenant_id', tenantId);
-    if (attendanceError) throw attendanceError;
-    if (cloudAttendance && cloudAttendance.length > 0) {
-      const insert = db.prepare(`
-        INSERT OR REPLACE INTO attendance
-        (id, tenant_id, staff_id, date, clock_in, clock_out, hours_worked, is_late, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      db.transaction((rows: any[]) => rows.forEach(a => insert.run(a.id, tenantId, a.staff_id, a.date, a.clock_in, a.clock_out, a.hours_worked, a.is_late ? 1 : 0, a.created_at, a.updated_at)))(cloudAttendance);
+    try {
+      const { data: cloudAttendance, error: attendanceError } = await supabase.from('attendance').select('*').eq('tenant_id', tenantId);
+      if (attendanceError) throw attendanceError;
+      const _n = cloudAttendance?.length ?? 0;
+      console.log('[PULL ATTENDANCE] rows=' + _n);
+      if (_n > 0) {
+        const insert = db.prepare(`
+          INSERT OR REPLACE INTO attendance
+          (id, tenant_id, staff_id, date, clock_in, clock_out, hours_worked, is_late, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        db.transaction((rows: any[]) => rows.forEach(a => insert.run(a.id, tenantId, a.staff_id, a.date, a.clock_in, a.clock_out, a.hours_worked, a.is_late ? 1 : 0, a.created_at, a.updated_at)))(cloudAttendance);
+        console.log('[LOCAL SYNC] entity=attendance rows_received=' + _n + ' rows_saved=' + _n);
+      }
+    } catch (e: any) {
+      console.error('[PULL ERROR] entity=attendance tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+      throw e;
     }
 
     // 14b. Pull login history
-    const { data: cloudLoginHistory, error: loginHistoryError } = await supabase.from('login_history').select('*').eq('tenant_id', tenantId);
-    if (loginHistoryError) throw loginHistoryError;
-    if (cloudLoginHistory && cloudLoginHistory.length > 0) {
-      const insert = db.prepare(`
-        INSERT OR REPLACE INTO login_history
-        (id, tenant_id, staff_id, device_info, ip_address, login_time, logout_time, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      db.transaction((rows: any[]) => rows.forEach(l => insert.run(l.id, tenantId, l.staff_id, l.device_info, l.ip_address, l.login_time, l.logout_time, l.created_at)))(cloudLoginHistory);
+    try {
+      const { data: cloudLoginHistory, error: loginHistoryError } = await supabase.from('login_history').select('*').eq('tenant_id', tenantId);
+      if (loginHistoryError) throw loginHistoryError;
+      const _n = cloudLoginHistory?.length ?? 0;
+      console.log('[PULL LOGIN_HISTORY] rows=' + _n);
+      if (_n > 0) {
+        const insert = db.prepare(`
+          INSERT OR REPLACE INTO login_history
+          (id, tenant_id, staff_id, device_info, ip_address, login_time, logout_time, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        db.transaction((rows: any[]) => rows.forEach(l => insert.run(l.id, tenantId, l.staff_id, l.device_info, l.ip_address, l.login_time, l.logout_time, l.created_at)))(cloudLoginHistory);
+        console.log('[LOCAL SYNC] entity=login_history rows_received=' + _n + ' rows_saved=' + _n);
+      }
+    } catch (e: any) {
+      console.error('[PULL ERROR] entity=login_history tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+      throw e;
     }
 
     // 14c. Pull staff audit history
-    const { data: cloudAuditLogs, error: auditError } = await supabase.from('audit_logs').select('*').eq('tenant_id', tenantId);
-    if (auditError) throw auditError;
-    if (cloudAuditLogs && cloudAuditLogs.length > 0) {
-      const insert = db.prepare(`
-        INSERT OR REPLACE INTO audit_logs
-        (id, tenant_id, admin_id, admin_name, action, staff_id, staff_name, changed_fields, old_values, new_values, ip_address, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      db.transaction((rows: any[]) => rows.forEach(a => insert.run(a.id, tenantId, a.admin_id, a.admin_name, a.action, a.staff_id, a.staff_name, a.changed_fields, a.old_values, a.new_values, a.ip_address, a.created_at)))(cloudAuditLogs);
+    try {
+      const { data: cloudAuditLogs, error: auditError } = await supabase.from('audit_logs').select('*').eq('tenant_id', tenantId);
+      if (auditError) throw auditError;
+      const _n = cloudAuditLogs?.length ?? 0;
+      console.log('[PULL AUDIT_LOGS] rows=' + _n);
+      if (_n > 0) {
+        const insert = db.prepare(`
+          INSERT OR REPLACE INTO audit_logs
+          (id, tenant_id, admin_id, admin_name, action, staff_id, staff_name, changed_fields, old_values, new_values, ip_address, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        db.transaction((rows: any[]) => rows.forEach(a => insert.run(a.id, tenantId, a.admin_id, a.admin_name, a.action, a.staff_id, a.staff_name, a.changed_fields, a.old_values, a.new_values, a.ip_address, a.created_at)))(cloudAuditLogs);
+        console.log('[LOCAL SYNC] entity=audit_logs rows_received=' + _n + ' rows_saved=' + _n);
+      }
+    } catch (e: any) {
+      console.error('[PULL ERROR] entity=audit_logs tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+      throw e;
     }
 
     // 14d. Pull settings
-    const { data: cloudSettings, error: setError } = await supabase.from('settings').select('*').eq('tenant_id', tenantId);
-    if (setError) throw setError;
-    if (cloudSettings && cloudSettings.length > 0) {
-      const settingsObj: Record<string, any> = {};
-      for (const s of cloudSettings) {
-        try {
-          settingsObj[s.key] = JSON.parse(s.value);
-        } catch {
-          settingsObj[s.key] = s.value;
+    try {
+      const { data: cloudSettings, error: setError } = await supabase.from('settings').select('*').eq('tenant_id', tenantId);
+      if (setError) throw setError;
+      const _n = cloudSettings?.length ?? 0;
+      console.log('[PULL SETTINGS] rows=' + _n);
+      if (_n > 0) {
+        const settingsObj: Record<string, any> = {};
+        for (const s of cloudSettings) {
+          try {
+            settingsObj[s.key] = JSON.parse(s.value);
+          } catch {
+            settingsObj[s.key] = s.value;
+          }
         }
+        dbService.upsertSettings(tenantId, settingsObj);
+        console.log('[LOCAL SYNC] entity=settings rows_received=' + _n + ' rows_saved=' + _n);
+        console.log(`Pulled ${_n} settings`);
       }
-      dbService.upsertSettings(tenantId, settingsObj);
-      console.log(`Pulled ${cloudSettings.length} settings`);
+    } catch (e: any) {
+      console.error('[PULL ERROR] entity=settings tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+      throw e;
     }
 
+    const _pullDur = Date.now() - _pullStart;
+    console.log('[PULL COMPLETE] tenant_id=' + tenantId + ' duration_ms=' + _pullDur);
     console.log('=== Full sync from Supabase complete ===');
-    return { success: true, message: 'All data pulled from Supabase' };
+    return { success: true, message: 'All data pulled from Supabase', duration_ms: _pullDur };
   }
 };
 

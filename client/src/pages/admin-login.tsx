@@ -65,7 +65,7 @@ const AdminLogin: React.FC = () => {
           localStorage.removeItem('admin_remember_me');
         }
         
-        login(response.user, response.token);
+        await login(response.user, response.token);
         toast({
           title: 'Welcome back!',
           description: `Logged in as ${response.user.businessName || 'Admin'}`,

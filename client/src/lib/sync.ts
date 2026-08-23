@@ -328,6 +328,121 @@ export class DatabaseSyncService {
       }
     });
   }
+
+  /**
+   * Pull all server SQLite data for the authenticated tenant into local Client Dexie IndexedDB.
+   * Safe, non-destructive bulkPut operation:
+   * 1. Fetches complete payload from POST /api/sync/pull-all-from-sqlite
+   * 2. Validates response
+   * 3. Uses Dexie bulkPut to insert/update all entities safely without clearing Dexie first
+   */
+  async pullAllFromServerIntoDexie(
+    tenantId: string,
+    onProgress?: (step: number, message: string) => void
+  ): Promise<{ success: boolean; counts: Record<string, number> }> {
+    if (this.isSyncing) {
+      console.log('[SYNC HYDRATION] Sync already in progress, skipping concurrent call');
+      return { success: true, counts: {} };
+    }
+
+    const tag = tenantId || 'unknown';
+    if (!tenantId || tenantId === 'default-tenant-id') {
+      console.warn('[SYNC HYDRATION] Invalid or default tenantId provided:', tenantId);
+      return { success: false, counts: {} };
+    }
+
+    this.isSyncing = true;
+    const syncStart = Date.now();
+    console.log('[SYNC HYDRATION] Starting Dexie hydration for tenant_id=' + tag);
+    onProgress?.(10, 'Connecting to server...');
+
+    try {
+      onProgress?.(30, 'Fetching store data from server...');
+      const response: any = await api.post('/api/sync/pull-all-from-sqlite', {}).catch(err => {
+        console.error('[SYNC HYDRATION ERROR] Request failed for tenant_id=' + tag + ':', err?.message || String(err));
+        throw err;
+      });
+
+      if (!response || !response.data) {
+        throw new Error('Invalid response structure from /api/sync/pull-all-from-sqlite');
+      }
+
+      const data = response.data;
+      const counts = response.counts || {};
+
+      onProgress?.(60, 'Writing data to local database...');
+
+      // Safe, atomic bulkPut into Dexie IndexedDB without clearing existing local data
+      await db.transaction(
+        'rw',
+        [
+          db.products,
+          db.variants,
+          db.staff,
+          db.users,
+          db.sales,
+          db.saleItems,
+          db.expenses,
+          db.purchases,
+          db.creditors,
+          db.nonInventoryProducts,
+          db.remittances,
+          db.notifications
+        ],
+        async () => {
+          if (Array.isArray(data.products) && data.products.length > 0) {
+            await db.products.bulkPut(data.products);
+          }
+          if (Array.isArray(data.variants) && data.variants.length > 0) {
+            await db.variants.bulkPut(data.variants);
+          }
+          if (Array.isArray(data.staff) && data.staff.length > 0) {
+            await db.staff.bulkPut(data.staff);
+          }
+          if (Array.isArray(data.users) && data.users.length > 0) {
+            await db.users.bulkPut(data.users);
+          }
+          if (Array.isArray(data.sales) && data.sales.length > 0) {
+            await db.sales.bulkPut(data.sales);
+          }
+          if (Array.isArray(data.saleItems) && data.saleItems.length > 0) {
+            await db.saleItems.bulkPut(data.saleItems);
+          }
+          if (Array.isArray(data.expenses) && data.expenses.length > 0) {
+            await db.expenses.bulkPut(data.expenses);
+          }
+          if (Array.isArray(data.purchases) && data.purchases.length > 0) {
+            await db.purchases.bulkPut(data.purchases);
+          }
+          if (Array.isArray(data.creditors) && data.creditors.length > 0) {
+            await db.creditors.bulkPut(data.creditors);
+          }
+          if (Array.isArray(data.nonInventoryProducts) && data.nonInventoryProducts.length > 0) {
+            await db.nonInventoryProducts.bulkPut(data.nonInventoryProducts);
+          }
+          if (Array.isArray(data.remittances) && data.remittances.length > 0) {
+            await db.remittances.bulkPut(data.remittances);
+          }
+          if (Array.isArray(data.notifications) && data.notifications.length > 0) {
+            await db.notifications.bulkPut(data.notifications);
+          }
+        }
+      );
+
+      const dur = Date.now() - syncStart;
+      console.log(`[SYNC HYDRATION] Completed for tenant_id=${tag} in ${dur}ms`);
+      console.log(`[SYNC HYDRATION] counts:`, counts);
+      onProgress?.(100, 'Synchronization complete.');
+
+      return { success: true, counts };
+    } catch (error: any) {
+      const dur = Date.now() - syncStart;
+      console.error(`[SYNC HYDRATION ERROR] tenant_id=${tag} duration_ms=${dur} message=${error?.message || String(error)}`);
+      throw error;
+    } finally {
+      this.isSyncing = false;
+    }
+  }
 }
 
 // Create a singleton instance
