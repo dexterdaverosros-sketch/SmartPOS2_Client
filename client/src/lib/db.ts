@@ -1132,66 +1132,256 @@ export class SalesService {
 
   static async fetchFromCloud(): Promise<{ success: boolean; message?: string; counts?: any }> {
     try {
-      // 1. Tell backend to pull all tenant data from Supabase to server SQLite
+      // 1. Tell backend to pull all tenant data from Supabase to server SQLite and return full payload
       const pullRes = await api.post('/api/sync/pull-all', {});
       if (!pullRes || pullRes.success === false) {
         throw new Error(pullRes?.error || 'Failed to pull cloud data from Supabase');
       }
 
-      // 2. Fetch all entity datasets from server API endpoints
-      const [
-        productsRes,
-        variantsRes,
-        staffRes,
-        salesRes,
-        nonInventoryRes,
-        expensesRes,
-        creditorsRes
-      ] = await Promise.all([
-        api.get('/api/products').catch(() => []),
-        api.get('/api/variants').catch(() => []),
-        api.get('/api/staff').catch(() => []),
-        api.get('/api/sales-history').catch(() => []),
-        api.get('/api/non-inventory-products').catch(() => []),
-        api.get('/api/expenses').catch(() => []),
-        api.get('/api/creditors').catch(() => [])
-      ]);
+      const payloadData = pullRes.data || {};
+      const {
+        products = [],
+        variants = [],
+        staff = [],
+        users = [],
+        sales = [],
+        saleItems = [],
+        nonInventoryProducts = [],
+        expenses = [],
+        purchases = [],
+        creditors = [],
+        remittances = [],
+        notifications = []
+      } = payloadData;
 
-      // 3. Populate client Dexie (IndexedDB) tables
-      if (Array.isArray(productsRes) && productsRes.length > 0) {
-        await db.products.bulkPut(productsRes);
+      // 2. Hydrate Products
+      if (Array.isArray(products) && products.length > 0) {
+        const sanitizedProducts: any[] = products.map((p: any) => ({
+          id: String(p.id),
+          tenantId: p.tenantId || p.tenant_id || '',
+          name: p.name || 'Unnamed Product',
+          price: Number(p.price || 0),
+          cost: Number(p.cost || 0),
+          barcode: p.barcode && String(p.barcode).trim() !== '' ? String(p.barcode) : null,
+          category: p.category || null,
+          description: p.description || null,
+          image: p.image || null,
+          quantity: Number(p.quantity || 0),
+          createdAt: p.createdAt || p.created_at ? new Date(p.createdAt || p.created_at) : new Date(),
+          updatedAt: p.updatedAt || p.updated_at ? new Date(p.updatedAt || p.updated_at) : new Date()
+        }));
+        await db.products.clear();
+        await (db.products as any).bulkPut(sanitizedProducts);
       }
-      if (Array.isArray(variantsRes) && variantsRes.length > 0) {
-        await db.variants.bulkPut(variantsRes);
+
+      // 3. Hydrate Variants
+      if (Array.isArray(variants) && variants.length > 0) {
+        const sanitizedVariants: any[] = variants.map((v: any) => ({
+          id: String(v.id),
+          tenantId: v.tenantId || v.tenant_id || '',
+          productId: String(v.productId || v.product_id || ''),
+          name: v.name || 'Variant',
+          barcode: v.barcode && String(v.barcode).trim() !== '' ? String(v.barcode) : null,
+          price: Number(v.price || 0),
+          cost: Number(v.cost || 0),
+          quantity: Number(v.quantity || 0),
+          image: v.image || null,
+          createdAt: v.createdAt || v.created_at ? new Date(v.createdAt || v.created_at) : new Date(),
+          updatedAt: v.updatedAt || v.updated_at ? new Date(v.updatedAt || v.updated_at) : new Date()
+        }));
+        await db.variants.clear();
+        await (db.variants as any).bulkPut(sanitizedVariants);
       }
-      if (Array.isArray(staffRes) && staffRes.length > 0) {
-        await db.staff.bulkPut(staffRes);
+
+      // 4. Hydrate Staff (preserving passkey for staff pin code login!)
+      if (Array.isArray(staff) && staff.length > 0) {
+        const sanitizedStaff: any[] = staff.map((s: any) => ({
+          id: String(s.id),
+          tenantId: s.tenantId || s.tenant_id || '',
+          userId: s.userId || s.user_id || null,
+          firstName: s.firstName || s.first_name || '',
+          middleName: s.middleName || s.middle_name || null,
+          lastName: s.lastName || s.last_name || '',
+          name: s.name || [s.firstName, s.lastName].filter(Boolean).join(' ') || 'Staff Member',
+          staffId: String(s.staffId || s.staff_id || s.id),
+          passkey: s.passkey || s.passHash || s.pass_key || s.passhash || null,
+          role: s.role || 'cashier',
+          branch: s.branch || null,
+          department: s.department || null,
+          employmentStatus: s.employmentStatus || s.employment_status || 'active',
+          email: s.email || null,
+          phone: s.phone || null,
+          address: s.address || null,
+          birthdate: s.birthdate || null,
+          gender: s.gender || null,
+          dateHired: s.dateHired || s.date_hired || null,
+          assignedShift: s.assignedShift || s.assigned_shift || null,
+          lastLogin: s.lastLogin ? new Date(s.lastLogin) : null,
+          passwordLastChanged: s.passwordLastChanged ? new Date(s.passwordLastChanged) : null,
+          permissions: s.permissions || [],
+          createdBy: s.createdBy || s.created_by || null,
+          createdAt: s.createdAt || s.created_at ? new Date(s.createdAt || s.created_at) : new Date(),
+          updatedAt: s.updatedAt || s.updated_at ? new Date(s.updatedAt || s.updated_at) : new Date()
+        }));
+        await db.staff.clear();
+        await (db.staff as any).bulkPut(sanitizedStaff);
       }
-      if (Array.isArray(salesRes) && salesRes.length > 0) {
-        const dexieSales = salesRes.map((s: any) => ({
-          id: s.id,
+
+      // 5. Hydrate Admin Users
+      if (Array.isArray(users) && users.length > 0) {
+        const sanitizedUsers: any[] = users.map((u: any) => ({
+          id: String(u.id),
+          tenantId: u.tenantId || u.tenant_id || '',
+          username: String(u.username),
+          password: u.password || '',
+          role: u.role || 'admin',
+          businessName: u.businessName || u.business_name || null,
+          ownerName: u.ownerName || u.owner_name || null,
+          mobile: u.mobile || null,
+          email: u.email || null,
+          profileImage: u.profileImage || u.profile_image || null,
+          staffId: u.staffId || u.staff_id || null,
+          createdAt: u.createdAt || u.created_at ? new Date(u.createdAt || u.created_at) : new Date()
+        }));
+        await db.users.clear();
+        await (db.users as any).bulkPut(sanitizedUsers);
+      }
+
+      // 6. Hydrate Sales
+      if (Array.isArray(sales) && sales.length > 0) {
+        const dexieSales: any[] = sales.map((s: any) => ({
+          id: String(s.id),
           tenantId: s.tenantId || s.tenant_id || '',
           total: Number(s.total || 0),
-          paymentType: s.payment_type || s.paymentType || 'cash',
-          paymentAmount: Number(s.payment_amount || s.paymentAmount || 0),
-          staffId: s.staff_id || s.staffId || null,
+          paymentType: s.paymentType || s.payment_type || 'cash',
+          paymentAmount: Number(s.paymentAmount || s.payment_amount || 0),
+          staffId: s.staffId || s.staff_id || null,
           remitted: Boolean(s.remitted),
-          createdAt: s.created_at ? new Date(s.created_at) : new Date(s.createdAt || Date.now()),
+          createdAt: s.createdAt || s.created_at ? new Date(s.createdAt || s.created_at) : new Date(),
         }));
-        await db.sales.bulkPut(dexieSales);
-      }
-      if (Array.isArray(nonInventoryRes) && nonInventoryRes.length > 0) {
-        await db.nonInventoryProducts.bulkPut(nonInventoryRes);
-      }
-      if (Array.isArray(expensesRes) && expensesRes.length > 0) {
-        await db.expenses.bulkPut(expensesRes);
-      }
-      if (Array.isArray(creditorsRes) && creditorsRes.length > 0) {
-        await db.creditors.bulkPut(creditorsRes);
+        await db.sales.clear();
+        await (db.sales as any).bulkPut(dexieSales);
       }
 
-      console.log('[CLIENT SYNC] Successfully fetched and hydrated cloud data to Dexie IndexedDB');
-      return { success: true, message: 'All cloud data fetched successfully' };
+      // 7. Hydrate Sale Items
+      if (Array.isArray(saleItems) && saleItems.length > 0) {
+        const dexieSaleItems: any[] = saleItems.map((si: any) => ({
+          id: String(si.id),
+          tenantId: si.tenantId || si.tenant_id || '',
+          saleId: String(si.saleId || si.sale_id || ''),
+          productId: String(si.productId || si.product_id || ''),
+          quantity: Number(si.quantity || 1),
+          price: Number(si.price || 0),
+          unit: si.unit || 'pieces',
+          productName: si.productName || si.product_name || '',
+          isNonInventory: Boolean(si.isNonInventory || si.is_non_inventory)
+        }));
+        await db.saleItems.clear();
+        await (db.saleItems as any).bulkPut(dexieSaleItems);
+      }
+
+      // 8. Hydrate Non-Inventory Products
+      if (Array.isArray(nonInventoryProducts) && nonInventoryProducts.length > 0) {
+        const sanitizedNonInv: any[] = nonInventoryProducts.map((ni: any) => ({
+          id: String(ni.id),
+          tenantId: ni.tenantId || ni.tenant_id || '',
+          name: ni.name,
+          price: Number(ni.price || 0),
+          category: ni.category || null,
+          description: ni.description || null,
+          image: ni.image || null,
+          barcode: ni.barcode && String(ni.barcode).trim() !== '' ? String(ni.barcode) : null,
+          barcodeData: ni.barcodeData || ni.barcode_data || null,
+          createdAt: ni.createdAt || ni.created_at ? new Date(ni.createdAt || ni.created_at) : new Date(),
+          updatedAt: ni.updatedAt || ni.updated_at ? new Date(ni.updatedAt || ni.updated_at) : new Date()
+        }));
+        await db.nonInventoryProducts.clear();
+        await (db.nonInventoryProducts as any).bulkPut(sanitizedNonInv);
+      }
+
+      // 9. Hydrate Expenses
+      if (Array.isArray(expenses) && expenses.length > 0) {
+        const sanitizedExpenses: any[] = expenses.map((e: any) => ({
+          id: String(e.id),
+          tenantId: e.tenantId || e.tenant_id || '',
+          description: e.description,
+          amount: Number(e.amount || 0),
+          category: e.category,
+          date: e.date ? new Date(e.date) : new Date()
+        }));
+        await db.expenses.clear();
+        await (db.expenses as any).bulkPut(sanitizedExpenses);
+      }
+
+      // 10. Hydrate Purchases
+      if (Array.isArray(purchases) && purchases.length > 0) {
+        const sanitizedPurchases: any[] = purchases.map((p: any) => ({
+          id: String(p.id),
+          tenantId: p.tenantId || p.tenant_id || '',
+          productName: p.productName || p.product_name || '',
+          quantity: Number(p.quantity || 0),
+          cost: Number(p.cost || 0),
+          supplier: p.supplier || null,
+          description: p.description || null,
+          details: p.details || null,
+          expirationDate: p.expirationDate || p.expiration_date ? new Date(p.expirationDate || p.expiration_date) : null,
+          date: p.date ? new Date(p.date) : new Date()
+        }));
+        await db.purchases.clear();
+        await (db.purchases as any).bulkPut(sanitizedPurchases);
+      }
+
+      // 11. Hydrate Creditors
+      if (Array.isArray(creditors) && creditors.length > 0) {
+        const sanitizedCreditors: any[] = creditors.map((c: any) => ({
+          id: String(c.id),
+          tenantId: c.tenantId || c.tenant_id || '',
+          name: c.name,
+          amount: Number(c.amount || 0),
+          description: c.description || null,
+          dueDate: c.dueDate || c.due_date ? new Date(c.dueDate || c.due_date) : new Date(),
+          reminderDate: c.reminderDate || c.reminder_date ? new Date(c.reminderDate || c.reminder_date) : null,
+          isPaid: Boolean(c.isPaid || c.is_paid)
+        }));
+        await db.creditors.clear();
+        await (db.creditors as any).bulkPut(sanitizedCreditors);
+      }
+
+      // 12. Hydrate Remittances
+      if (Array.isArray(remittances) && remittances.length > 0) {
+        const sanitizedRemittances: any[] = remittances.map((r: any) => ({
+          id: String(r.id),
+          tenantId: r.tenantId || r.tenant_id || '',
+          staffId: r.staffId || r.staff_id || '',
+          staffName: r.staffName || r.staff_name || 'Staff',
+          amount: Number(r.amount || 0),
+          transactionCount: Number(r.transactionCount || r.transaction_count || 0),
+          status: r.status || 'pending',
+          createdAt: r.createdAt || r.created_at ? new Date(r.createdAt || r.created_at) : new Date(),
+          confirmedAt: r.confirmedAt || r.confirmed_at ? new Date(r.confirmedAt || r.confirmed_at) : null
+        }));
+        await db.remittances.clear();
+        await (db.remittances as any).bulkPut(sanitizedRemittances);
+      }
+
+      // 13. Hydrate Notifications
+      if (Array.isArray(notifications) && notifications.length > 0) {
+        const sanitizedNotifications: any[] = notifications.map((n: any) => ({
+          id: String(n.id),
+          tenantId: n.tenantId || n.tenant_id || '',
+          userId: n.userId || n.user_id || null,
+          type: n.type || 'system',
+          message: n.message,
+          data: n.data || null,
+          isRead: Boolean(n.isRead || n.is_read),
+          createdAt: n.createdAt || n.created_at ? new Date(n.createdAt || n.created_at) : new Date()
+        }));
+        await db.notifications.clear();
+        await (db.notifications as any).bulkPut(sanitizedNotifications);
+      }
+
+      console.log('[CLIENT SYNC] Fully fetched and hydrated all cloud entities into Dexie IndexedDB', pullRes.counts);
+      return { success: true, message: 'All cloud data fetched successfully', counts: pullRes.counts };
     } catch (error: any) {
       console.error('[CLIENT SYNC ERROR] Fetch from cloud failed:', error);
       throw error;

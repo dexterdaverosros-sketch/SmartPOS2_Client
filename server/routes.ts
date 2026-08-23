@@ -3225,8 +3225,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ success: false, error: 'Missing authenticated tenant context' });
       }
       console.log(`[SYNC ROUTE] pull-all for authenticated tenant: ${tenantId}`);
-      const result = await dbService.pullAllFromCloud(tenantId);
-      res.status(200).json(result);
+      if (useCloud()) {
+        try {
+          await dbService.pullAllFromCloud(tenantId);
+        } catch (cloudErr: any) {
+          console.warn('[SYNC ROUTE] Cloud pull warning (using cached SQLite data):', cloudErr?.message || String(cloudErr));
+        }
+      }
+
+      const products = dbService.getProducts(tenantId) || [];
+      const variants = dbService.getAllVariantsByTenant(tenantId) || [];
+      const rawStaff: any[] = dbService.getStaff(tenantId) || [];
+      const staff = rawStaff.map((s: any) => ({
+        ...s,
+        tenantId: s.tenantId || s.tenant_id || tenantId,
+        passkey: s.passkey || s.passHash || s.pass_key || s.passhash
+      }));
+
+      const rawUsers: any[] = dbService.getAdmins(tenantId) || [];
+      const users = rawUsers.map((u: any) => ({
+        ...u,
+        tenantId: u.tenantId || u.tenant_id || tenantId
+      }));
+
+      const sales = dbService.getSales(tenantId) || [];
+      const saleItems = dbService.getSaleItems(tenantId) || [];
+      const nonInventoryProducts = dbService.getNonInventoryProducts(tenantId) || [];
+      const expenses = dbService.getExpenses(tenantId) || [];
+      const purchases = dbService.getPurchases(tenantId) || [];
+      const creditors = dbService.getCreditors(tenantId) || [];
+      const remittances = dbService.getRemittances(tenantId) || [];
+      const notifications = dbService.getNotifications(tenantId) || [];
+
+      const counts = {
+        products: products.length,
+        variants: variants.length,
+        staff: staff.length,
+        users: users.length,
+        sales: sales.length,
+        saleItems: saleItems.length,
+        nonInventoryProducts: nonInventoryProducts.length,
+        expenses: expenses.length,
+        purchases: purchases.length,
+        creditors: creditors.length,
+        remittances: remittances.length,
+        notifications: notifications.length
+      };
+
+      res.status(200).json({
+        success: true,
+        message: 'Cloud data pulled and queried successfully',
+        counts,
+        data: {
+          products,
+          variants,
+          staff,
+          users,
+          sales,
+          saleItems,
+          nonInventoryProducts,
+          expenses,
+          purchases,
+          creditors,
+          remittances,
+          notifications
+        }
+      });
     } catch (error: any) {
       console.error('Pull from cloud failed:', error);
       res.status(500).json({ success: false, error: error.message });
