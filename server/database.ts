@@ -714,6 +714,88 @@ export const dbService = {
     return row?.total ?? 0;
   },
 
+  getCreditors: (tenantId: string) => {
+    let tid = tenantId;
+    if (!tid || tid === 'default-tenant-id' || tid === 'default') {
+      tid = dbService.getDefaultOrOnlyTenantId() || tid;
+    }
+
+    // 1. Query creditors table if present
+    let rawCreditors: any[] = [];
+    try {
+      rawCreditors = (tid && tid !== 'default-tenant-id' && tid !== 'default'
+        ? db.prepare('SELECT * FROM creditors WHERE tenant_id = ? OR tenant_id IS NULL OR tenant_id = \'\'').all(tid)
+        : db.prepare('SELECT * FROM creditors').all()) as any[];
+    } catch {
+      rawCreditors = [];
+    }
+
+    // 2. Query customers & credit ledger table
+    let customers: any[] = [];
+    try {
+      customers = (tid && tid !== 'default-tenant-id' && tid !== 'default'
+        ? db.prepare('SELECT * FROM customers WHERE tenant_id = ? OR tenant_id IS NULL OR tenant_id = \'\'').all(tid)
+        : db.prepare('SELECT * FROM customers').all()) as any[];
+    } catch {
+      customers = [];
+    }
+
+    const customerCreditors = customers.map(c => {
+      let totalCredit = 0;
+      let totalPayment = 0;
+      try {
+        const credRow = db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM credits WHERE customer_id = ?').get(c.id) as any;
+        totalCredit = credRow?.total ?? 0;
+      } catch {}
+      try {
+        const payRow = db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE customer_id = ?').get(c.id) as any;
+        totalPayment = payRow?.total ?? 0;
+      } catch {}
+
+      const totalDebt = Math.max(0, totalCredit - totalPayment);
+      return {
+        id: String(c.id),
+        tenantId: c.tenant_id || tid,
+        name: c.name,
+        amount: totalDebt > 0 ? totalDebt : (totalCredit || 0),
+        totalDebt,
+        totalCredit,
+        totalPayment,
+        phone: c.phone || '',
+        address: c.address || '',
+        description: c.address || c.phone || 'Customer Credit Account',
+        creditRating: c.credit_rating || 'good',
+        photoUrl: c.photo_url || null,
+        isPaid: totalDebt === 0,
+        createdAt: c.created_at || new Date().toISOString(),
+        updatedAt: c.updated_at || new Date().toISOString()
+      };
+    });
+
+    // Combine standalone creditors with customer ledger records without duplicating IDs
+    const creditorMap = new Map<string, any>();
+    for (const c of rawCreditors) {
+      creditorMap.set(String(c.id), {
+        id: String(c.id),
+        tenantId: c.tenant_id || tid,
+        name: c.name,
+        amount: Number(c.amount || c.totalDebt || 0),
+        description: c.description || null,
+        dueDate: c.dueDate || c.due_date || null,
+        reminderDate: c.reminderDate || c.reminder_date || null,
+        isPaid: Boolean(c.isPaid || c.is_paid)
+      });
+    }
+
+    for (const cc of customerCreditors) {
+      if (!creditorMap.has(cc.id)) {
+        creditorMap.set(cc.id, cc);
+      }
+    }
+
+    return Array.from(creditorMap.values());
+  },
+
   // Reminders
   addReminder: (tenantId: string, input: { id: string; customer_id: string; message_type: string; message: string; status: string; created_at?: string }) => {
     const created = input.created_at ?? new Date().toISOString();
@@ -756,7 +838,6 @@ export const dbService = {
   // Bulk sync entity getters
   getExpenses: (tenantId: string) => db.prepare('SELECT * FROM expenses WHERE tenant_id = ?').all(tenantId),
   getPurchases: (tenantId: string) => db.prepare('SELECT * FROM purchases WHERE tenant_id = ?').all(tenantId),
-  getCreditors: (tenantId: string) => db.prepare('SELECT * FROM creditors WHERE tenant_id = ?').all(tenantId),
   getCustomers: (tenantId: string) => db.prepare('SELECT * FROM customers WHERE tenant_id = ?').all(tenantId),
   getCredits: (tenantId: string) => db.prepare('SELECT * FROM credits WHERE tenant_id = ?').all(tenantId),
   getPayments: (tenantId: string) => db.prepare('SELECT * FROM payments WHERE tenant_id = ?').all(tenantId),

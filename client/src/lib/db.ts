@@ -1340,12 +1340,12 @@ export class SalesService {
         const sanitizedCreditors: any[] = creditors.map((c: any) => ({
           id: String(c.id),
           tenantId: c.tenantId || c.tenant_id || '',
-          name: c.name,
-          amount: Number(c.amount || 0),
-          description: c.description || null,
+          name: c.name || 'Creditor',
+          amount: Number(c.amount || c.totalDebt || c.total_debt || 0),
+          description: c.description || c.address || null,
           dueDate: c.dueDate || c.due_date ? new Date(c.dueDate || c.due_date) : new Date(),
           reminderDate: c.reminderDate || c.reminder_date ? new Date(c.reminderDate || c.reminder_date) : null,
-          isPaid: Boolean(c.isPaid || c.is_paid)
+          isPaid: Boolean(c.isPaid || c.is_paid || (c.totalDebt === 0))
         }));
         await db.creditors.clear();
         await (db.creditors as any).bulkPut(sanitizedCreditors);
