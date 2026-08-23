@@ -26,7 +26,8 @@ import {
   MapPin,
   User,
   Briefcase,
-  Building
+  Building,
+  Download
 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import Layout from '@/components/Layout';
@@ -64,7 +65,7 @@ import { Separator } from '@/components/ui/separator';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { AuthService, StaffService, db } from '@/lib/db';
+import { AuthService, StaffService, SalesService, db } from '@/lib/db';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import type { Staff } from '@shared/schema';
@@ -158,6 +159,7 @@ const StaffManagement: React.FC = () => {
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isPushingToCloud, setIsPushingToCloud] = useState(false);
+  const [isFetchingFromCloud, setIsFetchingFromCloud] = useState(false);
 
   // Permission options
   const permissionOptions = [
@@ -477,6 +479,23 @@ const StaffManagement: React.FC = () => {
     }
   };
 
+  const handleFetchFromCloud = async () => {
+    if (isFetchingFromCloud) return;
+    setIsFetchingFromCloud(true);
+    try {
+      toast({ title: 'Fetching from Cloud...', description: 'Downloading all staff and products from Supabase.' });
+      const result = await SalesService.fetchFromCloud();
+      if (result.success) {
+        toast({ title: 'Fetch Complete', description: 'Local database has been updated with data from Supabase.' });
+        await loadStaff();
+      }
+    } catch (error) {
+      toast({ title: 'Fetch Failed', description: error instanceof Error ? error.message : 'Unable to fetch data from Supabase.', variant: 'destructive' });
+    } finally {
+      setIsFetchingFromCloud(false);
+    }
+  };
+
   const formatLastActive = (date?: Date) => {
     if (!date) return 'Never';
     try {
@@ -563,6 +582,10 @@ const StaffManagement: React.FC = () => {
               <Button variant="outline" onClick={handlePushToCloud} disabled={isPushingToCloud} className="border-blue-200 text-blue-700 bg-white text-xs">
                 <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isPushingToCloud ? 'animate-spin' : ''}`} />
                 {isPushingToCloud ? 'Pushing...' : 'Push Cloud'}
+              </Button>
+              <Button variant="outline" onClick={handleFetchFromCloud} disabled={isFetchingFromCloud} className="border-emerald-200 text-emerald-700 bg-white text-xs">
+                <Download className={`w-3.5 h-3.5 mr-1.5 ${isFetchingFromCloud ? 'animate-spin' : ''}`} />
+                {isFetchingFromCloud ? 'Fetching...' : 'Fetch Cloud'}
               </Button>
             </div>
           </div>
@@ -780,35 +803,6 @@ const StaffManagement: React.FC = () => {
                     <div className="space-y-1">
                       <p className="text-sm text-gray-500">Assigned Shift</p>
                       <p className="font-medium">{selectedStaff.assignedShift || '-'}</p>
-                    </div>
-                  </div>
-
-                  <Separator />
-
-                  {/* Permissions */}
-                  <div>
-                    <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                      <Shield className="w-5 h-5" />
-                      Permissions
-                    </h3>
-                    <div className="grid grid-cols-2 gap-2">
-                      {permissionOptions.map(permission => (
-                        <div
-                          key={permission.id}
-                          className={`flex items-center gap-2 p-3 rounded-lg border ${
-                            (selectedStaff.permissions as string[] | null | undefined)?.includes(permission.id)
-                              ? 'bg-green-50 border-green-200'
-                              : 'bg-gray-50 border-gray-200'
-                          }`}
-                        >
-                          {(selectedStaff.permissions as string[] | null | undefined)?.includes(permission.id) ? (
-                            <Check className="w-4 h-4 text-green-600" />
-                          ) : (
-                            <X className="w-4 h-4 text-gray-400" />
-                          )}
-                          <span className="text-sm">{permission.label}</span>
-                        </div>
-                      ))}
                     </div>
                   </div>
 
@@ -1041,20 +1035,6 @@ const StaffManagement: React.FC = () => {
                 </div>
                 <FormField control={form.control} name="address" render={({ field }) => (
                   <FormItem><FormLabel>Address</FormLabel><FormControl><Input placeholder="Address" {...field} /></FormControl><FormMessage /></FormItem>
-                )} />
-                <FormField control={form.control} name="permissions" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Permissions</FormLabel>
-                    <div className="grid grid-cols-2 gap-2">
-                      {permissionOptions.map(permission => (
-                        <label key={permission.id} className="flex items-center gap-2 rounded-lg border border-gray-200 p-3 text-sm">
-                          <Checkbox checked={field.value.includes(permission.id)} onCheckedChange={(checked) => field.onChange(checked ? [...field.value, permission.id] : field.value.filter(value => value !== permission.id))} />
-                          {permission.label}
-                        </label>
-                      ))}
-                    </div>
-                    <FormMessage />
-                  </FormItem>
                 )} />
                 <div className="flex gap-3 pt-4">
                   <Button
@@ -1340,51 +1320,6 @@ const EditStaffForm = ({
         </div>
         <div className="space-y-1"><label className="text-sm font-medium">Birthdate</label><Input type="date" value={formData.birthdate} onChange={(e) => setFormData({ ...formData, birthdate: e.target.value })} /></div>
         <div className="space-y-1"><label className="text-sm font-medium">Date Hired</label><Input type="date" value={formData.dateHired} onChange={(e) => setFormData({ ...formData, dateHired: e.target.value })} /></div>
-        <div className="space-y-1"><label className="text-sm font-medium">Gender</label><Select value={formData.gender} onValueChange={(val) => setFormData({ ...formData, gender: val })}><SelectTrigger><SelectValue placeholder="Select gender" /></SelectTrigger><SelectContent><SelectItem value="male">Male</SelectItem><SelectItem value="female">Female</SelectItem><SelectItem value="other">Other</SelectItem></SelectContent></Select></div>
-      </div>
-
-      {/* Permissions */}
-      <div>
-        <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-          <Shield className="w-5 h-5" />
-          Permissions
-        </h3>
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            { id: 'sales.create', label: 'Create Sales' },
-            { id: 'sales.view', label: 'View Sales' },
-            { id: 'products.manage', label: 'Manage Products' },
-            { id: 'customers.manage', label: 'Manage Customers' },
-            { id: 'staff.view', label: 'View Staff' },
-            { id: 'reports.view', label: 'View Reports' },
-          ].map(permission => (
-            <div
-              key={permission.id}
-              className="flex items-center gap-2 p-3 rounded-lg border border-gray-200"
-            >
-              <Checkbox
-                id={permission.id}
-                checked={formData.permissions.includes(permission.id)}
-                onCheckedChange={(checked) => {
-                  if (checked) {
-                    setFormData({
-                      ...formData,
-                      permissions: [...formData.permissions, permission.id],
-                    });
-                  } else {
-                    setFormData({
-                      ...formData,
-                      permissions: formData.permissions.filter((p: string) => p !== permission.id),
-                    });
-                  }
-                }}
-              />
-              <label htmlFor={permission.id} className="text-sm cursor-pointer">
-                {permission.label}
-              </label>
-            </div>
-          ))}
-        </div>
       </div>
 
       {/* Password Reset Section */}

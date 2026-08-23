@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLocation } from 'wouter';
-import { LogOut, DollarSign, Package, Plus, Eye, Calendar, CreditCard, Receipt, User, FileText, Lock, FileSpreadsheet, BarChart3, Bell, CheckCircle, Clock, ArrowRight, Monitor, Tablet, Smartphone, Trash2, Edit, RefreshCw, History, Cloud, Settings, X } from 'lucide-react';
+import { LogOut, DollarSign, Package, Plus, Eye, Calendar, CreditCard, Receipt, User, FileText, Lock, FileSpreadsheet, BarChart3, Bell, CheckCircle, Clock, ArrowRight, Monitor, Tablet, Smartphone, Trash2, Edit, RefreshCw, History, Cloud, Download, Settings, X } from 'lucide-react';
 import Layout from '@/components/Layout';
 import FloatingActionButton from '@/components/FloatingActionButton';
 import { useAuth } from '@/contexts/AuthContext';
@@ -666,10 +666,8 @@ const AdminMain: React.FC = () => {
                 <DropdownMenuContent side="bottom" align="end" className="w-56 bg-white border border-gray-100 shadow-2xl rounded-2xl p-2 z-[60]">
                   <DropdownMenuItem
                     onClick={async () => { 
-                      // We'll implement pushToCloud function
                       try {
                         toast({ title: t('syncingToCloud'), description: t('pushingAllData') });
-                        // Call server endpoint to sync
                         const result = await api.post('/api/sync/push-all', {});
                         if (result.success) {
                           toast({ title: t('success'), description: t('allDataBackedUp') });
@@ -684,6 +682,24 @@ const AdminMain: React.FC = () => {
                   >
                     <Cloud className="w-4 h-4 mr-3 text-gray-400 group-hover:text-blue-500" />
                     <span>{t('pushToCloud')}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={async () => {
+                      try {
+                        toast({ title: "Fetching from Cloud...", description: "Downloading all products, staff, and tenant data from Supabase." });
+                        const result = await SalesService.fetchFromCloud();
+                        if (result.success) {
+                          toast({ title: "Data Fetched Successfully", description: "Your local database has been updated with all data from Supabase." });
+                          await Promise.all([loadStats(), loadFinancialData(), loadChartData(), loadNotifications()]);
+                        }
+                      } catch (error: any) {
+                        toast({ title: "Fetch Failed", description: error?.message || "Unable to download data from Supabase.", variant: "destructive" });
+                      }
+                    }}
+                    className="h-12 px-4 rounded-xl text-sm font-semibold text-gray-700 hover:bg-emerald-50 hover:text-emerald-600 cursor-pointer flex items-center group"
+                  >
+                    <Download className="w-4 h-4 mr-3 text-gray-400 group-hover:text-emerald-500" />
+                    <span>Fetch Data from Cloud</span>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuSub>

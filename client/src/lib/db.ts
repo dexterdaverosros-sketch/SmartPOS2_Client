@@ -1129,6 +1129,74 @@ export class SalesService {
       console.error('Failed to sync sales with server:', err);
     }
   }
+
+  static async fetchFromCloud(): Promise<{ success: boolean; message?: string; counts?: any }> {
+    try {
+      // 1. Tell backend to pull all tenant data from Supabase to server SQLite
+      const pullRes = await api.post('/api/sync/pull-all', {});
+      if (!pullRes || pullRes.success === false) {
+        throw new Error(pullRes?.error || 'Failed to pull cloud data from Supabase');
+      }
+
+      // 2. Fetch all entity datasets from server API endpoints
+      const [
+        productsRes,
+        variantsRes,
+        staffRes,
+        salesRes,
+        nonInventoryRes,
+        expensesRes,
+        creditorsRes
+      ] = await Promise.all([
+        api.get('/api/products').catch(() => []),
+        api.get('/api/variants').catch(() => []),
+        api.get('/api/staff').catch(() => []),
+        api.get('/api/sales-history').catch(() => []),
+        api.get('/api/non-inventory-products').catch(() => []),
+        api.get('/api/expenses').catch(() => []),
+        api.get('/api/creditors').catch(() => [])
+      ]);
+
+      // 3. Populate client Dexie (IndexedDB) tables
+      if (Array.isArray(productsRes) && productsRes.length > 0) {
+        await db.products.bulkPut(productsRes);
+      }
+      if (Array.isArray(variantsRes) && variantsRes.length > 0) {
+        await db.variants.bulkPut(variantsRes);
+      }
+      if (Array.isArray(staffRes) && staffRes.length > 0) {
+        await db.staff.bulkPut(staffRes);
+      }
+      if (Array.isArray(salesRes) && salesRes.length > 0) {
+        const dexieSales = salesRes.map((s: any) => ({
+          id: s.id,
+          tenantId: s.tenantId || s.tenant_id || '',
+          total: Number(s.total || 0),
+          paymentType: s.payment_type || s.paymentType || 'cash',
+          paymentAmount: Number(s.payment_amount || s.paymentAmount || 0),
+          staffId: s.staff_id || s.staffId || null,
+          remitted: Boolean(s.remitted),
+          createdAt: s.created_at ? new Date(s.created_at) : new Date(s.createdAt || Date.now()),
+        }));
+        await db.sales.bulkPut(dexieSales);
+      }
+      if (Array.isArray(nonInventoryRes) && nonInventoryRes.length > 0) {
+        await db.nonInventoryProducts.bulkPut(nonInventoryRes);
+      }
+      if (Array.isArray(expensesRes) && expensesRes.length > 0) {
+        await db.expenses.bulkPut(expensesRes);
+      }
+      if (Array.isArray(creditorsRes) && creditorsRes.length > 0) {
+        await db.creditors.bulkPut(creditorsRes);
+      }
+
+      console.log('[CLIENT SYNC] Successfully fetched and hydrated cloud data to Dexie IndexedDB');
+      return { success: true, message: 'All cloud data fetched successfully' };
+    } catch (error: any) {
+      console.error('[CLIENT SYNC ERROR] Fetch from cloud failed:', error);
+      throw error;
+    }
+  }
 }
 
 // Staff service
