@@ -50,6 +50,7 @@ const ScannerSales: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [deleteItemId, setDeleteItemId] = useState<string | null>(null);
   const [adminPassword, setAdminPassword] = useState('');
+  const [isValidatingAdmin, setIsValidatingAdmin] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [isCartCollapsed, setIsCartCollapsed] = useState(false);
   
@@ -58,6 +59,72 @@ const ScannerSales: React.FC = () => {
   const [nonInvName, setNonInvName] = useState("");
   const [nonInvPrice, setNonInvPrice] = useState("");
   const [nonInvQty, setNonInvQty] = useState("1");
+  
+  const handleCancelQuantity = () => {
+    setShowQuantityDialog(false);
+    setScannedProduct(null);
+  };
+
+  const handleDeleteItem = async (productId: string) => {
+    if (isStaff) {
+      setDeleteItemId(productId);
+      return;
+    }
+    removeFromCart(productId);
+  };
+
+  const handleConfirmDeleteWithAdmin = async () => {
+    if (!deleteItemId) return;
+    if (!adminPassword.trim()) {
+      toast({ title: 'Password Required', description: 'Please enter admin password to authorize item deletion', variant: 'destructive' });
+      return;
+    }
+
+    setIsValidatingAdmin(true);
+    try {
+      const admins = await db.users.where('role').equals('admin').toArray();
+      let isValid = false;
+
+      for (const adminUser of admins) {
+        if (adminUser.username) {
+          try {
+            const response = await AuthService.loginAdmin(adminUser.username, adminPassword.trim());
+            if (response && response.user) {
+              isValid = true;
+              break;
+            }
+          } catch (e) {
+            // Ignore single attempt failure
+          }
+        }
+      }
+
+      if (!isValid && user && user.role === 'admin' && user.username) {
+        try {
+          const response = await AuthService.loginAdmin(user.username, adminPassword.trim());
+          if (response && response.user) {
+            isValid = true;
+          }
+        } catch (e) {
+          // Ignore
+        }
+      }
+
+      if (isValid) {
+        removeFromCart(deleteItemId);
+        toast({ title: 'Item Removed', description: 'Product removed from cart with admin authorization.' });
+        setDeleteItemId(null);
+        setAdminPassword('');
+      } else {
+        toast({ title: 'Authorization Failed', description: 'Invalid admin password.', variant: 'destructive' });
+      }
+    } catch (error) {
+      console.error('Admin validation error:', error);
+      toast({ title: 'Error', description: 'Failed to validate admin credentials.', variant: 'destructive' });
+    } finally {
+      setIsValidatingAdmin(false);
+    }
+  };  
   
   // Manual Mode State
   const [searchTerm, setSearchTerm] = useState('');
@@ -530,19 +597,6 @@ const ScannerSales: React.FC = () => {
     toast({ title: 'Product Added', description: `${scannedProduct.name} (${currentTempQuantity} ${tempUnit}) added to cart` });
     setShowQuantityDialog(false);
     setScannedProduct(null);
-  };
-
-  const handleCancelQuantity = () => {
-    setShowQuantityDialog(false);
-    setScannedProduct(null);
-  };
-
-  const handleDeleteItem = async (productId: string) => {
-    if (isStaff) {
-      setDeleteItemId(productId);
-      return;
-    }
-    removeFromCart(productId);
   };
 
   const handlePayClick = () => {
@@ -1393,6 +1447,66 @@ const ScannerSales: React.FC = () => {
               <DialogDescription className="text-[10px] font-black uppercase tracking-widest text-gray-400">Printer & Scanner Configuration</DialogDescription>
             </DialogHeader>
             <ExternalDeviceManager />
+          </DialogContent>
+        </Dialog>
+
+        {/* Admin Authorization Modal for Staff Product Deletion */}
+        <Dialog open={!!deleteItemId} onOpenChange={(open) => {
+          if (!open) {
+            setDeleteItemId(null);
+            setAdminPassword('');
+          }
+        }}>
+          <DialogContent className="rounded-[2.5rem] p-8 sm:max-w-[420px] border-none shadow-2xl">
+            <DialogHeader className="mb-4">
+              <div className="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center mb-4 mx-auto">
+                <AlertTriangle className="w-7 h-7 text-red-500" />
+              </div>
+              <DialogTitle className="text-2xl font-black tracking-tighter uppercase text-center">Admin Verification Required</DialogTitle>
+              <DialogDescription className="text-center text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                Staff requires admin authorization to delete a product from cart.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Admin Password</Label>
+                <Input
+                  type="password"
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleConfirmDeleteWithAdmin();
+                    }
+                  }}
+                  placeholder="Enter admin password"
+                  className="h-14 bg-gray-50 border-gray-100 rounded-2xl font-black text-sm px-6 focus:ring-2 focus:ring-red-500/20"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="mt-6 flex gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDeleteItemId(null);
+                  setAdminPassword('');
+                }}
+                className="flex-1 h-14 rounded-2xl font-black uppercase tracking-widest border-gray-100"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleConfirmDeleteWithAdmin}
+                disabled={isValidatingAdmin || !adminPassword.trim()}
+                className="flex-1 h-14 bg-red-500 hover:bg-red-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-red-500/20"
+              >
+                {isValidatingAdmin ? 'Verifying...' : 'Authorize Delete'}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </motion.div>
