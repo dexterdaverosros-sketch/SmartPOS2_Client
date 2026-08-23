@@ -272,7 +272,12 @@ const StaffManagement: React.FC = () => {
       let staffData: any[] = [];
       try {
         staffData = await api.get('/api/staff');
-      } catch {
+      } catch (err) {
+        console.warn('Server fetch /api/staff failed, checking local Dexie:', err);
+        staffData = [];
+      }
+
+      if (!Array.isArray(staffData) || staffData.length === 0) {
         staffData = await StaffService.getAllStaff();
       }
 

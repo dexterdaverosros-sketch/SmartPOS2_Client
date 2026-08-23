@@ -824,6 +824,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   };
 
+  const resolveSyncTenant = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      let tenantId = (req as any).tenantId;
+
+      // 1. Check Bearer token in Authorization header
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.substring(7).trim();
+        if (token) {
+          const session = dbService.getSessionByToken(token) as any;
+          if (session && session.tenant_id) {
+            tenantId = session.tenant_id;
+            (req as any).userId = session.user_id;
+          }
+        }
+      }
+
+      // 2. Check X-Tenant-ID subdomain header
+      if (!tenantId || tenantId === 'default-tenant-id') {
+        const subdomain = req.headers['x-tenant-id'] as string;
+        if (subdomain && subdomain !== 'default') {
+          const tenant = await getTenantFromHeader(req);
+          if (tenant && tenant.id) {
+            tenantId = tenant.id;
+          }
+        }
+      }
+
+      // 3. Fallback: single active tenant ID in SQLite
+      if (!tenantId || tenantId === 'default-tenant-id') {
+        const fallbackTenantId = dbService.getDefaultOrOnlyTenantId();
+        if (fallbackTenantId) {
+          tenantId = fallbackTenantId;
+        }
+      }
+
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Authentication required: Missing tenant context' });
+      }
+
+      (req as any).tenantId = tenantId;
+      next();
+    } catch (error: any) {
+      console.error('[SYNC TENANT RESOLUTION ERROR]', error);
+      res.status(500).json({ success: false, error: 'Failed to resolve tenant context' });
+    }
+  };
+
   app.post('/api/auth/set-security-questions', authenticateUser, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId;
@@ -999,7 +1047,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Products API - Sync products with connected devices
-  app.get('/api/products', (req: Request, res: Response) => {
+  app.get('/api/products', resolveSyncTenant, (req: Request, res: Response) => {
     try {
       const tenantId = (req as any).tenantId;
       const products = dbService.getProducts(tenantId);
@@ -1591,7 +1639,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Staff API - Share staff accounts with connected devices
-  app.get('/api/staff', (req: Request, res: Response) => {
+  app.get('/api/staff', resolveSyncTenant, (req: Request, res: Response) => {
     try {
       const tenantId = (req as any).tenantId;
       const staff = dbService.getStaff(tenantId);
@@ -3201,54 +3249,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Sync endpoints for Push to Cloud and Pull from Cloud
-  const resolveSyncTenant = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      let tenantId = (req as any).tenantId;
-
-      // 1. Check Bearer token in Authorization header
-      const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.substring(7).trim();
-        if (token) {
-          const session = dbService.getSessionByToken(token) as any;
-          if (session && session.tenant_id) {
-            tenantId = session.tenant_id;
-            (req as any).userId = session.user_id;
-          }
-        }
-      }
-
-      // 2. Check X-Tenant-ID subdomain header
-      if (!tenantId || tenantId === 'default-tenant-id') {
-        const subdomain = req.headers['x-tenant-id'] as string;
-        if (subdomain && subdomain !== 'default') {
-          const tenant = await getTenantFromHeader(req);
-          if (tenant && tenant.id) {
-            tenantId = tenant.id;
-          }
-        }
-      }
-
-      // 3. Fallback: single active tenant ID in SQLite
-      if (!tenantId || tenantId === 'default-tenant-id') {
-        const fallbackTenantId = dbService.getDefaultOrOnlyTenantId();
-        if (fallbackTenantId) {
-          tenantId = fallbackTenantId;
-        }
-      }
-
-      if (!tenantId) {
-        return res.status(401).json({ success: false, error: 'Authentication required: Missing tenant context' });
-      }
-
-      (req as any).tenantId = tenantId;
-      next();
-    } catch (error: any) {
-      console.error('[SYNC TENANT RESOLUTION ERROR]', error);
-      res.status(500).json({ success: false, error: 'Failed to resolve tenant context' });
-    }
-  };
-
   app.post('/api/sync/push-all', resolveSyncTenant, async (req, res) => {
     try {
       const tenantId = (req as any).tenantId;

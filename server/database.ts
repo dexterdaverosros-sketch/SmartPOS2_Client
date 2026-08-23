@@ -1140,7 +1140,14 @@ export const dbService = {
   },
   // Product methods
   getProducts: (tenantId: string) => {
-    return db.prepare('SELECT * FROM products WHERE tenant_id = ?').all(tenantId);
+    let tid = tenantId;
+    if (!tid || tid === 'default-tenant-id' || tid === 'default') {
+      tid = dbService.getDefaultOrOnlyTenantId() || tid;
+    }
+    if (!tid || tid === 'default-tenant-id' || tid === 'default') {
+      return db.prepare('SELECT * FROM products').all();
+    }
+    return db.prepare('SELECT * FROM products WHERE tenant_id = ? OR tenant_id IS NULL OR tenant_id = \'\'').all(tid);
   },
 
   getProductByBarcode: (barcode: string, tenantId: string) => {
@@ -1557,7 +1564,14 @@ export const dbService = {
 
   // Staff methods
   getStaff: (tenantId: string) => {
-    return db.prepare('SELECT * FROM staff WHERE tenant_id = ?').all(tenantId);
+    let tid = tenantId;
+    if (!tid || tid === 'default-tenant-id' || tid === 'default') {
+      tid = dbService.getDefaultOrOnlyTenantId() || tid;
+    }
+    if (!tid || tid === 'default-tenant-id' || tid === 'default') {
+      return db.prepare('SELECT * FROM staff').all();
+    }
+    return db.prepare('SELECT * FROM staff WHERE tenant_id = ? OR tenant_id IS NULL OR tenant_id = \'\'').all(tid);
   },
 
   saveStaff: async (staff: any[], tenantId: string) => {
