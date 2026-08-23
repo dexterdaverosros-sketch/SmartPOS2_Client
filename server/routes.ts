@@ -1010,30 +1010,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/sales', async (req: Request, res: Response) => {
+  app.post('/api/sales', authenticateUser, async (req: Request, res: Response) => {
     try {
-      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
-      const { sale, items } = req.body; // Expecting sale and items separately
+      const tenantId = (req as any).tenantId;
+      if (!tenantId || tenantId === 'default-tenant-id') {
+        return res.status(400).json({ error: 'Missing or invalid tenant ID' });
+      }
+      const { sale, items } = req.body;
       
       if (!sale || !items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'Invalid sale data provided.' });
       }
 
-      // Ensure staffId is present, if not, default to 'unknown' or handle as appropriate
       if (!sale.staffId) {
-        sale.staffId = 'unknown'; // Or fetch from session if admin is making the sale
+        sale.staffId = 'unknown';
       }
 
-      // Use the atomic addSale method with tenantId
       dbService.addSale(tenantId, sale, items);
       
-      // Emit specific inventory updates and a new sale event
       for (const item of items) {
         if (!item.isNonInventory) {
           io.emit('inventory-update', { productId: item.productId, quantityChange: -item.quantity });
         }
       }
-      io.emit('sale-added', { sale, items }); // Emit the full sale for admin dashboard
+      io.emit('sale-added', { sale, items });
 
       res.status(201).json({ success: true, message: 'Sale processed successfully.' });
     } catch (error: any) {
@@ -1042,9 +1042,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/sales-history', async (req: Request, res: Response) => {
+  app.get('/api/sales-history', authenticateUser, async (req: Request, res: Response) => {
     try {
-      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
+      const tenantId = (req as any).tenantId;
+      if (!tenantId || tenantId === 'default-tenant-id') {
+        return res.status(400).json({ error: 'Missing or invalid tenant ID' });
+      }
       const salesHistory = await dbService.getAllSalesWithStaff(tenantId);
       res.status(200).json(salesHistory);
     } catch (error) {
@@ -1246,7 +1249,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Non-inventory products API
-  app.get('/api/non-inventory-products', (req: Request, res: Response) => {
+  app.get('/api/non-inventory-products', authenticateUser, async (req: Request, res: Response) => {
     try {
       const tenantId = (req as any).tenantId;
       const products = dbService.getNonInventoryProducts(tenantId);
@@ -1257,7 +1260,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/non-inventory-products', (req: Request, res: Response) => {
+  app.post('/api/non-inventory-products', authenticateUser, async (req: Request, res: Response) => {
     try {
       const tenantId = (req as any).tenantId;
       const products = Array.isArray(req.body) ? req.body : [req.body];
@@ -1269,7 +1272,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/non-inventory-products/:id', (req: Request, res: Response) => {
+  app.delete('/api/non-inventory-products/:id', authenticateUser, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const tenantId = (req as any).tenantId;
@@ -1331,11 +1334,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/cloud/products', async (req: Request, res: Response) => {
+  app.post('/api/cloud/products', authenticateUser, async (req: Request, res: Response) => {
     try {
       const supabase = getSupabase();
       if (!supabase) return res.status(500).json({ error: 'Cloud not configured' });
       const tenantId = (req as any).tenantId;
+      if (!tenantId || tenantId === 'default-tenant-id') {
+        return res.status(400).json({ error: 'Missing or invalid tenant ID' });
+      }
       const products = Array.isArray(req.body) ? req.body : [];
       const rows = products.map((p: any) => ({
         id: String(p.id),
@@ -1396,7 +1402,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/variants', (req: Request, res: Response) => {
+  app.post('/api/variants', authenticateUser, async (req: Request, res: Response) => {
     try {
       const tenantId = (req as any).tenantId;
       const variants = req.body;
@@ -2727,13 +2733,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Re-define routes that need to emit events
   
   // Products update
-  app.post('/api/products', (req: Request, res: Response) => {
+  app.post('/api/products', authenticateUser, async (req: Request, res: Response) => {
     try {
       const tenantId = (req as any).tenantId;
-      const products = req.body;
-      if (Array.isArray(products)) {
+      if (!tenantId || tenantId === 'default-tenant-id') {
+        return res.status(400).json({ error: 'Missing or invalid tenant ID' });
+      }
+      const products = Array.isArray(req.body) ? req.body : [req.body];
+      if (products.length > 0) {
         dbService.saveProducts(products, tenantId);
-        io.emit('inventory-update'); // Emit update
+        io.emit('inventory-update');
         res.status(200).json({ message: 'Products updated successfully' });
       } else {
         res.status(400).json({ error: 'Invalid products data' });
