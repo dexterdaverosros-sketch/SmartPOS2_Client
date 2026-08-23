@@ -1090,9 +1090,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/sales-history', authenticateUser, async (req: Request, res: Response) => {
+  app.get('/api/sales-history', resolveSyncTenant, async (req: Request, res: Response) => {
     try {
-      const tenantId = (req as any).tenantId;
+      const tenantId = (req as any).tenantId || dbService.getDefaultOrOnlyTenantId();
       if (!tenantId || tenantId === 'default-tenant-id') {
         return res.status(400).json({ error: 'Missing or invalid tenant ID' });
       }
@@ -1507,7 +1507,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/sync/pull-all-from-sqlite', authenticateUser, async (req: Request, res: Response) => {
+  app.post('/api/sync/pull-all-from-sqlite', resolveSyncTenant, async (req: Request, res: Response) => {
     const normalizeTenantId = (row: any, sessionTenantId: string): any => {
       if (!row) return row;
       const out: any = { ...row };
@@ -1519,7 +1519,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     };
 
     try {
-      const tenantId = (req as any).tenantId;
+      const tenantId = (req as any).tenantId || dbService.getDefaultOrOnlyTenantId();
       if (!tenantId || tenantId === 'default-tenant-id' || tenantId === '') {
         return res.status(400).json({ error: 'DEXIE_SYNC_BLOCKED: Missing tenant_id' });
       }
@@ -1572,7 +1572,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const nonInventoryProducts = (dbService.getNonInventoryProducts(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
       const remittances = (dbService.getRemittances(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
       const notifications = (dbService.getNotifications(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
-      const settings = (dbService.getSettings(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
+      const rawSettings = dbService.getSettings(tenantId);
+      const settings = Array.isArray(rawSettings)
+        ? rawSettings.map((row: any) => normalizeTenantId(row, tenantId))
+        : Object.entries(rawSettings || {}).map(([key, value]) => ({ key, value: typeof value === 'object' ? JSON.stringify(value) : String(value), tenantId }));
       const attendance = (dbService.getAttendance(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
       const loginHistory = (dbService.getLoginHistory(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
       const auditLogs = (dbService.getAuditLogs(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
@@ -2666,9 +2669,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/remit/confirm/:id', authenticateUser, async (req: Request, res: Response) => {
+  app.post('/api/remit/confirm/:id', resolveSyncTenant, async (req: Request, res: Response) => {
     try {
-      const tenantId = (req as any).tenantId;
+      const tenantId = (req as any).tenantId || dbService.getDefaultOrOnlyTenantId();
       const { id } = req.params;
       const remittance = dbService.confirmRemittance(tenantId, id);
 
@@ -2736,9 +2739,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/remittances/pending', authenticateUser, async (req: Request, res: Response) => {
+  app.get('/api/remittances/pending', resolveSyncTenant, async (req: Request, res: Response) => {
     try {
-      const tenantId = (req as any).tenantId;
+      const tenantId = (req as any).tenantId || dbService.getDefaultOrOnlyTenantId();
       const pending = dbService.listPendingRemittances(tenantId);
       res.status(200).json(pending || []);
     } catch (error: any) {
@@ -2747,9 +2750,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/remittances/confirmed', authenticateUser, async (req: Request, res: Response) => {
+  app.get('/api/remittances/confirmed', resolveSyncTenant, async (req: Request, res: Response) => {
     try {
-      const tenantId = (req as any).tenantId;
+      const tenantId = (req as any).tenantId || dbService.getDefaultOrOnlyTenantId();
       const confirmed = dbService.listConfirmedRemittances(tenantId);
       res.status(200).json(confirmed || []);
     } catch (error: any) {
@@ -2758,9 +2761,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/sales/remitted/:staffId', authenticateUser, async (req: Request, res: Response) => {
+  app.get('/api/sales/remitted/:staffId', resolveSyncTenant, async (req: Request, res: Response) => {
     try {
-      const tenantId = (req as any).tenantId;
+      const tenantId = (req as any).tenantId || dbService.getDefaultOrOnlyTenantId();
       const { staffId } = req.params;
       const remittedSales = dbService.getRemittedSalesForStaff(tenantId, staffId);
       res.status(200).json(remittedSales || []);
