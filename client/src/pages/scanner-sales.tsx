@@ -470,6 +470,14 @@ const ScannerSales: React.FC = () => {
     setShowQuantityDialog(true);
   };
 
+  const handleSelectBaseProduct = (product: UIProduct) => {
+    setIsVariantSelectionOpen(false);
+    setScannedProduct(product);
+    setTempQuantity(1);
+    setTempUnit('pieces');
+    setShowQuantityDialog(true);
+  };
+
   useEffect(() => {
     if (!scannerSettings.enabled) return;
 
@@ -1200,38 +1208,81 @@ const ScannerSales: React.FC = () => {
           </AlertDialogContent>
         </AlertDialog>
 
-        {/* Variant Selection Dialog */}
+        {/* Variant & Base Product Selection Dialog */}
         <Dialog open={isVariantSelectionOpen} onOpenChange={setIsVariantSelectionOpen}>
-          <DialogContent className="rounded-[2.5rem] p-8 sm:max-w-[500px]">
+          <DialogContent className="rounded-[2.5rem] p-8 sm:max-w-[520px]">
             <DialogHeader className="mb-6">
               <DialogTitle className="text-2xl font-black tracking-tighter uppercase">{selectedProductForVariant?.name}</DialogTitle>
-              <DialogDescription className="text-[10px] font-black uppercase tracking-widest text-gray-400">Select preferred variant</DialogDescription>
+              <DialogDescription className="text-[10px] font-black uppercase tracking-widest text-gray-400">Select original product or variant</DialogDescription>
             </DialogHeader>
-            <div className="grid grid-cols-2 gap-4 max-h-[40vh] overflow-y-auto pr-1 custom-scrollbar">
-              {productVariants.map(variant => (
-                <button 
-                  key={variant.id}
-                  onClick={() => handleVariantSelect(variant)}
-                  disabled={(variant.quantity ?? 0) < 1}
-                  className={cn(
-                    "p-4 rounded-[1.5rem] border text-left transition-all group relative overflow-hidden",
-                    (variant.quantity ?? 0) < 1 
-                      ? "bg-gray-50 border-gray-100 opacity-50 grayscale" 
-                      : "bg-white border-gray-100 hover:border-[#BF953F]/30 hover:shadow-md active:scale-[0.98]"
-                  )}
-                >
-                  <div className="font-black text-[11px] uppercase tracking-tight text-gray-800 mb-1 group-hover:text-[#BF953F]">{variant.name}</div>
-                  <div className="font-black text-[#FF8882] text-sm">₱{variant.price.toFixed(2)}</div>
-                  <div className="text-[8px] font-bold text-gray-400 uppercase tracking-widest mt-2">{variant.quantity} In Stock</div>
-                  {(variant.quantity ?? 0) < 1 && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-white/40 backdrop-blur-[1px]">
-                      <span className="bg-red-500 text-white text-[8px] font-black uppercase px-2 py-1 rounded-full shadow-sm">Out of Stock</span>
+
+            <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-1 custom-scrollbar">
+              {/* Original Base Product Option */}
+              {selectedProductForVariant && (
+                <div className="space-y-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-[#BF953F]">Original Product</span>
+                  <button
+                    onClick={() => handleSelectBaseProduct(selectedProductForVariant)}
+                    disabled={(selectedProductForVariant.quantity ?? 0) < 1}
+                    className={cn(
+                      "w-full p-4 rounded-[1.5rem] border text-left transition-all group relative overflow-hidden flex justify-between items-center",
+                      (selectedProductForVariant.quantity ?? 0) < 1
+                        ? "bg-gray-50 border-gray-100 opacity-50 grayscale"
+                        : "bg-amber-50/40 border-amber-200/60 hover:border-[#BF953F] hover:shadow-md active:scale-[0.98]"
+                    )}
+                  >
+                    <div>
+                      <div className="font-black text-xs uppercase tracking-tight text-gray-900 group-hover:text-[#BF953F]">
+                        {selectedProductForVariant.name} <span className="text-[9px] font-bold text-[#BF953F] bg-[#BF953F]/10 px-2 py-0.5 rounded-full ml-1">(Base Item)</span>
+                      </div>
+                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-1">
+                        {selectedProductForVariant.quantity ?? 0} In Stock
+                      </div>
                     </div>
-                  )}
-                </button>
-              ))}
+                    <div className="text-right">
+                      <div className="font-black text-[#BF953F] text-base">₱{selectedProductForVariant.price.toFixed(2)}</div>
+                    </div>
+                    {(selectedProductForVariant.quantity ?? 0) < 1 && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-white/40 backdrop-blur-[1px]">
+                        <span className="bg-red-500 text-white text-[8px] font-black uppercase px-2 py-1 rounded-full shadow-sm">Out of Stock</span>
+                      </div>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {/* Variants Section */}
+              {productVariants.length > 0 && (
+                <div className="space-y-2 pt-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Available Variants</span>
+                  <div className="grid grid-cols-2 gap-3">
+                    {productVariants.map(variant => (
+                      <button 
+                        key={variant.id}
+                        onClick={() => handleVariantSelect(variant)}
+                        disabled={(variant.quantity ?? 0) < 1}
+                        className={cn(
+                          "p-4 rounded-[1.5rem] border text-left transition-all group relative overflow-hidden",
+                          (variant.quantity ?? 0) < 1 
+                            ? "bg-gray-50 border-gray-100 opacity-50 grayscale" 
+                            : "bg-white border-gray-100 hover:border-[#BF953F]/30 hover:shadow-md active:scale-[0.98]"
+                        )}
+                      >
+                        <div className="font-black text-[11px] uppercase tracking-tight text-gray-800 mb-1 group-hover:text-[#BF953F]">{variant.name}</div>
+                        <div className="font-black text-[#FF8882] text-sm">₱{variant.price.toFixed(2)}</div>
+                        <div className="text-[8px] font-bold text-gray-400 uppercase tracking-widest mt-2">{variant.quantity} In Stock</div>
+                        {(variant.quantity ?? 0) < 1 && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-white/40 backdrop-blur-[1px]">
+                            <span className="bg-red-500 text-white text-[8px] font-black uppercase px-2 py-1 rounded-full shadow-sm">Out of Stock</span>
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-            <DialogFooter className="mt-8">
+            <DialogFooter className="mt-6">
                <Button variant="outline" onClick={() => setIsVariantSelectionOpen(false)} className="w-full h-14 rounded-2xl font-black uppercase tracking-widest border-gray-100">Cancel</Button>
             </DialogFooter>
           </DialogContent>

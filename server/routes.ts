@@ -2562,6 +2562,161 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // Remittance API Routes
+  app.post('/api/remit', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const { staffId, staffName, amount, transactionCount } = req.body;
+      if (!staffId || amount === undefined || amount === null) {
+        return res.status(400).json({ error: 'staffId and amount are required' });
+      }
+
+      const remittanceData = {
+        id: randomUUID(),
+        tenantId,
+        staffId,
+        staffName: staffName || 'Staff',
+        amount: Number(amount),
+        transactionCount: Number(transactionCount || 0),
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      };
+
+      dbService.createRemittance(tenantId, remittanceData);
+
+      if (useCloud()) {
+        try {
+          const supabase = getSupabase();
+          if (supabase) {
+            await supabase.from('remittances').upsert({
+              id: remittanceData.id,
+              tenant_id: tenantId,
+              staff_id: remittanceData.staffId,
+              staff_name: remittanceData.staffName,
+              amount: remittanceData.amount,
+              transaction_count: remittanceData.transactionCount,
+              status: 'pending',
+              created_at: remittanceData.createdAt
+            });
+          }
+        } catch (cloudErr) {
+          console.warn('Failed to mirror remittance to Supabase cloud:', cloudErr);
+        }
+      }
+
+      io.emit('new-remittance', remittanceData);
+
+      res.status(201).json({ success: true, remittance: remittanceData });
+    } catch (error: any) {
+      console.error('Error creating remittance:', error);
+      res.status(500).json({ error: 'Failed to submit remittance', details: error?.message || String(error) });
+    }
+  });
+
+  app.post('/api/remit/confirm/:id', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const { id } = req.params;
+      const remittance = dbService.confirmRemittance(tenantId, id);
+
+      if (!remittance) {
+        return res.status(404).json({ error: 'Remittance not found' });
+      }
+
+      if (useCloud()) {
+        try {
+          const supabase = getSupabase();
+          if (supabase) {
+            await supabase.from('remittances').update({
+              status: 'confirmed',
+              confirmed_at: new Date().toISOString()
+            }).eq('id', id).eq('tenant_id', tenantId);
+
+            await supabase.from('sales').update({
+              remitted: true
+            }).eq('staff_id', remittance.staff_id || remittance.staffId).eq('tenant_id', tenantId).eq('remitted', false);
+          }
+        } catch (cloudErr) {
+          console.warn('Failed to update confirmed remittance in Supabase:', cloudErr);
+        }
+      }
+
+      io.emit('remittance-confirmed', {
+        staffId: remittance.staff_id || remittance.staffId,
+        remittanceId: id
+      });
+
+      res.status(200).json({ success: true, remittance });
+    } catch (error: any) {
+      console.error('Error confirming remittance:', error);
+      res.status(500).json({ error: 'Failed to confirm remittance', details: error?.message || String(error) });
+    }
+  });
+
+  app.post('/api/remit/cancel/:id', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const { id } = req.params;
+      const remittance = dbService.cancelRemittance(tenantId, id);
+
+      if (!remittance) {
+        return res.status(404).json({ error: 'Remittance not found' });
+      }
+
+      if (useCloud()) {
+        try {
+          const supabase = getSupabase();
+          if (supabase) {
+            await supabase.from('remittances').update({
+              status: 'cancelled'
+            }).eq('id', id).eq('tenant_id', tenantId);
+          }
+        } catch (cloudErr) {
+          console.warn('Failed to update cancelled remittance in Supabase:', cloudErr);
+        }
+      }
+
+      res.status(200).json({ success: true, remittance });
+    } catch (error: any) {
+      console.error('Error cancelling remittance:', error);
+      res.status(500).json({ error: 'Failed to cancel remittance', details: error?.message || String(error) });
+    }
+  });
+
+  app.get('/api/remittances/pending', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const pending = dbService.listPendingRemittances(tenantId);
+      res.status(200).json(pending || []);
+    } catch (error: any) {
+      console.error('Error listing pending remittances:', error);
+      res.status(500).json({ error: 'Failed to fetch pending remittances' });
+    }
+  });
+
+  app.get('/api/remittances/confirmed', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const confirmed = dbService.listConfirmedRemittances(tenantId);
+      res.status(200).json(confirmed || []);
+    } catch (error: any) {
+      console.error('Error listing confirmed remittances:', error);
+      res.status(500).json({ error: 'Failed to fetch confirmed remittances' });
+    }
+  });
+
+  app.get('/api/sales/remitted/:staffId', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const { staffId } = req.params;
+      const remittedSales = dbService.getRemittedSalesForStaff(tenantId, staffId);
+      res.status(200).json(remittedSales || []);
+    } catch (error: any) {
+      console.error('Error fetching remitted sales for staff:', error);
+      res.status(500).json({ error: 'Failed to fetch remitted sales' });
+    }
+  });
+
   // Middleware to attach io to req (optional, or just use global io)
   // But we need to emit from API routes.
   // Let's modify the routes to use this io instance.
