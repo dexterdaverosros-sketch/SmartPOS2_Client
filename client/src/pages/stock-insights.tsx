@@ -6,6 +6,7 @@ import { Calendar, ChevronDown, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { db } from '@/lib/db';
+import { cn } from '@/lib/utils';
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, subWeeks } from 'date-fns';
 
 export default function StockInsights() {
@@ -155,93 +156,106 @@ export default function StockInsights() {
   };
 
   return (
-    <Layout>
-      <div className="p-4 space-y-4 bg-gray-50 dark:bg-gray-900 min-h-screen">
-        {/* Back Button */}
-        <div className="flex items-center mb-4">
-            <Button 
-              variant="ghost" 
-              className="mr-2 px-2"
-              onClick={() => setLocation('/admin-main')}
-            >
-              <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-            </Button>
-            <h1 className="text-xl font-bold text-gray-800 dark:text-gray-200">Stock Insights</h1>
-        </div>
-
-        {/* Inventory Price & Cost Containers */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card className="p-6 bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center justify-center">
-                <h3 className="text-gray-500 dark:text-gray-400 font-medium mb-2">Inventory Price</h3>
-                <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{formatCurrency(inventoryPrice)}</p>
-            </Card>
-            <Card className="p-6 bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center justify-center">
-                <h3 className="text-gray-500 dark:text-gray-400 font-medium mb-2">Inventory Cost</h3>
-                <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{formatCurrency(inventoryCost)}</p>
-            </Card>
-        </div>
-
-        {/* Potential Sales Margin Container */}
-        <Card className="p-6 bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center justify-center">
-            <h3 className="text-gray-500 dark:text-gray-400 font-medium mb-2">Potential Sales Margin</h3>
-            <p className="text-3xl font-bold text-green-600 dark:text-green-400">{formatCurrency(potentialMargin)}</p>
-        </Card>
-
-        {/* Calendar Selectors */}
-        <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-                <label className="text-sm text-gray-600 dark:text-gray-400 ml-1">Start Date</label>
-                <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <Input 
-                        type="date" 
-                        value={startDate}
-                        onChange={(e) => setStartDate(e.target.value)}
-                        className="pl-10 bg-white dark:bg-gray-800"
-                    />
-                </div>
-            </div>
-            <div className="space-y-2">
-                <label className="text-sm text-gray-600 dark:text-gray-400 ml-1">End Date</label>
-                <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <Input 
-                        type="date" 
-                        value={endDate}
-                        onChange={(e) => setEndDate(e.target.value)}
-                        className="pl-10 bg-white dark:bg-gray-800"
-                    />
-                </div>
-            </div>
-        </div>
-
-        {/* Preset Dropdown Container */}
-        <div className="flex justify-end">
-            <div className="relative">
+    <Layout showNavigation={false}>
+      <div className="flex flex-col h-screen bg-slate-50 overflow-hidden">
+        {/* Modern Header */}
+        <div className="bg-slate-900 pt-8 pb-10 px-6 rounded-b-[3rem] relative overflow-hidden flex-none">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-[#BF953F]/10 rounded-full -mr-32 -mt-32 blur-3xl" />
+          <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/5 rounded-full -ml-24 -mb-24 blur-2xl" />
+          
+          <div className="max-w-7xl mx-auto w-full relative z-10">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-4">
                 <Button 
-                    variant="outline" 
-                    className="flex items-center gap-2 bg-white dark:bg-gray-800 min-w-[150px] justify-between"
-                    onClick={() => setDropdownOpen(!dropdownOpen)}
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => setLocation('/admin/reports')}
+                  className="w-10 h-10 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-all"
                 >
-                    <span>{selectedPreset}</span>
-                    <ChevronDown className="w-4 h-4" />
+                  <ArrowLeft className="w-5 h-5" />
                 </Button>
-                
-                {dropdownOpen && (
-                    <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-10 py-1">
-                        {["Today", "Last day", "This week", "Last week", "This Month", "Last Month", "Single Day", "Using Date Range"].map((option) => (
-                            <button
-                                key={option}
-                                className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                onClick={() => handlePresetChange(option)}
-                            >
-                                {option}
-                            </button>
-                        ))}
-                    </div>
-                )}
+                <div>
+                  <p className="text-[#BF953F] text-[10px] font-black uppercase tracking-[0.3em]">Analytics</p>
+                  <h1 className="text-2xl font-black text-white tracking-tighter uppercase">Stock & Inventory Insights</h1>
+                </div>
+              </div>
             </div>
+
+            {/* Controls Bar */}
+            <div className="flex flex-col md:flex-row items-center gap-4 bg-white/5 backdrop-blur-md p-3 rounded-[2rem] border border-white/10">
+              <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-2 w-full">
+                {[
+                  { label: 'Today', key: 'Today' },
+                  { label: 'This Week', key: 'This week' },
+                  { label: 'This Month', key: 'This Month' },
+                  { label: 'Custom Range', key: 'Using Date Range' }
+                ].map((preset) => (
+                  <button
+                    key={preset.key}
+                    onClick={() => handlePresetChange(preset.key)}
+                    className={cn(
+                      "h-10 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all",
+                      selectedPreset === preset.key ? "bg-[#BF953F] text-white shadow-lg shadow-[#BF953F]/20" : "text-white/60 hover:text-white hover:bg-white/5"
+                    )}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+              
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-white/10 rounded-2xl border border-white/10 w-full md:w-auto">
+                <Calendar className="w-4 h-4 text-[#BF953F] flex-none" />
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => { setStartDate(e.target.value); setSelectedPreset('Using Date Range'); }}
+                  className="bg-transparent text-[11px] font-black text-white focus:outline-none cursor-pointer uppercase tracking-tighter"
+                />
+                <span className="text-white/30 font-bold mx-0.5">→</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => { setEndDate(e.target.value); setSelectedPreset('Using Date Range'); }}
+                  className="bg-transparent text-[11px] font-black text-white focus:outline-none cursor-pointer uppercase tracking-tighter"
+                />
+              </div>
+            </div>
+          </div>
         </div>
+        {/* Main Content Area */}
+        <div className="flex-1 max-w-7xl mx-auto w-full p-6 overflow-y-auto custom-scrollbar">
+          {/* Inventory Price & Cost & Margin Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Inventory Price</p>
+                <p className="text-2xl font-black text-slate-900 mt-1">{formatCurrency(inventoryPrice)}</p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center">
+                <span className="text-xl font-black text-blue-500">₱</span>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Inventory Cost</p>
+                <p className="text-2xl font-black text-slate-900 mt-1">{formatCurrency(inventoryCost)}</p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center">
+                <span className="text-xl font-black text-amber-500">₱</span>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Potential Sales Margin</p>
+                <p className="text-2xl font-black text-emerald-600 mt-1">{formatCurrency(potentialMargin)}</p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center">
+                <span className="text-xl font-black text-emerald-500">%</span>
+              </div>
+            </div>
+          </div>
 
         {/* Top Selling Products Header */}
         <div className="text-center pt-4">
@@ -281,7 +295,8 @@ export default function StockInsights() {
                     </tbody>
                 </table>
             </div>
-        </Card>
+          </Card>
+        </div>
       </div>
     </Layout>
   );

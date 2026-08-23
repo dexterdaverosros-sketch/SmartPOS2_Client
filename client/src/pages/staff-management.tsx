@@ -535,10 +535,10 @@ const StaffManagement: React.FC = () => {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
               <Button
                 variant="outline"
-                className="border-gray-200 bg-white hover:bg-gray-50"
+                className="border-gray-200 bg-white hover:bg-gray-50 text-xs"
                 onClick={async () => {
                   try {
                     const data = await api.get('/api/server-info');
@@ -550,19 +550,19 @@ const StaffManagement: React.FC = () => {
                   }
                 }}
               >
-                <RefreshCw className="w-4 h-4 mr-2" />
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
                 Refresh
               </Button>
               <Button
                 onClick={() => setIsAddDialogOpen(true)}
-                className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white gap-2"
+                className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs gap-1.5"
               >
-                <UserPlus className="w-4 h-4" />
+                <UserPlus className="w-3.5 h-3.5" />
                 Add Staff
               </Button>
-              <Button variant="outline" onClick={handlePushToCloud} disabled={isPushingToCloud} className="border-blue-200 text-blue-700 bg-white">
-                <RefreshCw className={`w-4 h-4 mr-2 ${isPushingToCloud ? 'animate-spin' : ''}`} />
-                {isPushingToCloud ? 'Pushing...' : 'Push to Cloud'}
+              <Button variant="outline" onClick={handlePushToCloud} disabled={isPushingToCloud} className="border-blue-200 text-blue-700 bg-white text-xs">
+                <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isPushingToCloud ? 'animate-spin' : ''}`} />
+                {isPushingToCloud ? 'Pushing...' : 'Push Cloud'}
               </Button>
             </div>
           </div>

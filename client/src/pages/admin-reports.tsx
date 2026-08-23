@@ -282,26 +282,42 @@ export default function AdminReports() {
               </div>
             </div>
 
-            <div className="flex flex-col md:flex-row items-center gap-4 bg-white/5 backdrop-blur-md p-2 rounded-[2rem] border border-white/10">
-              <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-2 w-full">
+            <div className="flex flex-col md:flex-row items-center gap-4 bg-white/5 backdrop-blur-md p-3 rounded-[2rem] border border-white/10">
+              <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-2 w-full">
                 {['today', 'week', 'month', 'custom'].map((p) => (
                   <button
                     key={p}
                     onClick={() => setDurationPreset(p as any)}
                     className={cn(
                       "h-10 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all",
-                      duration === p ? "bg-[#BF953F] text-white" : "text-white/60 hover:text-white hover:bg-white/5"
+                      duration === p ? "bg-[#BF953F] text-white shadow-lg shadow-[#BF953F]/20" : "text-white/60 hover:text-white hover:bg-white/5"
                     )}
                   >
                     {p}
                   </button>
                 ))}
               </div>
-              <div className="flex items-center gap-2 px-4 py-2 bg-white/10 rounded-2xl border border-white/5 w-full md:w-auto">
-                <Calendar className="w-4 h-4 text-[#BF953F]" />
-                <span className="text-[10px] font-black text-white uppercase tracking-tighter">{startDate}</span>
-                <span className="text-white/20 mx-1">→</span>
-                <span className="text-[10px] font-black text-white uppercase tracking-tighter">{endDate}</span>
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-white/10 rounded-2xl border border-white/10 w-full md:w-auto">
+                <Calendar className="w-4 h-4 text-[#BF953F] flex-none" />
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => {
+                    setStartDate(e.target.value);
+                    setDuration('custom');
+                  }}
+                  className="bg-transparent text-[11px] font-black text-white focus:outline-none cursor-pointer uppercase tracking-tighter"
+                />
+                <span className="text-white/30 font-bold mx-0.5">→</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => {
+                    setEndDate(e.target.value);
+                    setDuration('custom');
+                  }}
+                  className="bg-transparent text-[11px] font-black text-white focus:outline-none cursor-pointer uppercase tracking-tighter"
+                />
               </div>
             </div>
           </div>

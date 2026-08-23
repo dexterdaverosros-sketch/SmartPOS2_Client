@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { db } from '@/lib/db';
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subDays, subWeeks, subMonths, isWithinInterval } from 'date-fns';
 import Layout from '@/components/Layout';
+import { cn } from '@/lib/utils';
 import { Expense } from '@shared/schema';
 
 const ExpenseReport: React.FC = () => {
@@ -180,217 +181,225 @@ const ExpenseReport: React.FC = () => {
   const overallTotal = expenses.reduce((sum, e) => sum + e.amount, 0);
 
   return (
-    <Layout>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 pb-20">
-        {/* Header */}
-        <div className="flex items-center mb-6 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm">
-             <Button 
-              variant="ghost" 
-              className="mr-2 px-2"
-              onClick={() => setLocation('/expenses')}
-            >
-              <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-            </Button>
-            <h1 className="text-xl font-bold text-gray-800 dark:text-gray-200">Expense Report</h1>
-        </div>
-
-        {/* Filters */}
-        <div className="grid grid-cols-2 gap-4 mb-4">
-            <div className="space-y-2">
-                <label className="text-sm text-gray-600 dark:text-gray-400 ml-1">Start Date</label>
-                <div className="relative">
-                    <CalendarIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <Input 
-                        type="date" 
-                        value={startDate}
-                        onChange={(e) => setStartDate(e.target.value)}
-                        className="pl-10 bg-white dark:bg-gray-800"
-                    />
-                </div>
-            </div>
-            <div className="space-y-2">
-                <label className="text-sm text-gray-600 dark:text-gray-400 ml-1">End Date</label>
-                <div className="relative">
-                    <CalendarIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <Input 
-                        type="date" 
-                        value={endDate}
-                        onChange={(e) => setEndDate(e.target.value)}
-                        className="pl-10 bg-white dark:bg-gray-800"
-                    />
-                </div>
-            </div>
-        </div>
-
-        {/* Duration Dropdown */}
-        <div className="mb-6">
-            <Card className="p-4 bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700">
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Select report Duration</div>
-                    <div className="relative w-full sm:w-auto">
-                        <Button
-                            variant="outline"
-                            className="w-full sm:w-[200px] justify-between bg-white dark:bg-gray-700 dark:text-gray-200"
-                            onClick={() => setDurationDropdownOpen(!durationDropdownOpen)}
-                        >
-                            <span>{selectedDuration}</span>
-                            <X className={`w-4 h-4 transition-transform ${durationDropdownOpen ? 'rotate-180' : ''}`} />
-                        </Button>
-                        {durationDropdownOpen && (
-                            <div className="absolute right-0 mt-2 w-full sm:w-[200px] bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-10 py-1">
-                                {["Today", "LastDay", "Single Day", "This Week", "Last Week", "This Month", "Last Month", "Date range"].map((opt) => (
-                                    <button
-                                        key={opt}
-                                        className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                        onClick={() => handleDurationChange(opt)}
-                                    >
-                                        {opt}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </Card>
-        </div>
-
-        {/* 3 Grid View Table */}
-        <Card className="overflow-hidden border-none shadow-md mb-6">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
-                <th className="px-4 py-3 text-left font-semibold">DATE</th>
-                <th className="px-4 py-3 text-center font-semibold">ENTRY</th>
-                <th className="px-4 py-3 text-right font-semibold">SUBTOTAL</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
-              {groupedExpenses.map((group, idx) => (
-                <tr 
-                    key={idx} 
-                    className="hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
-                    onClick={() => handleRowClick(group)}
+    <Layout showNavigation={false}>
+      <div className="flex flex-col h-screen bg-slate-50 overflow-hidden">
+        <div className="bg-slate-900 pt-8 pb-10 px-6 rounded-b-[3rem] relative overflow-hidden flex-none">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-[#BF953F]/10 rounded-full -mr-32 -mt-32 blur-3xl" />
+          <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/5 rounded-full -ml-24 -mb-24 blur-2xl" />
+          
+          <div className="max-w-7xl mx-auto w-full relative z-10">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-4">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => setLocation('/expenses')}
+                  className="w-10 h-10 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-all"
                 >
-                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">{group.date}</td>
-                  <td className="px-4 py-3 text-center text-gray-600 dark:text-gray-400">{group.count}</td>
-                  <td className="px-4 py-3 text-right text-gray-900 dark:text-gray-100 font-bold">{formatCurrency(group.total)}</td>
-                </tr>
-              ))}
-              {groupedExpenses.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="px-4 py-8 text-center text-gray-500">
-                    No records found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </Card>
-
-        {/* Footer Summary */}
-        <Card className="p-4 bg-white dark:bg-gray-800 shadow-md">
-            <div className="flex justify-between items-center">
-                <div className="text-gray-700 dark:text-gray-300 font-medium">Overall Entries: <span className="font-bold">{overallEntries}</span></div>
-                <div className="flex flex-col items-end">
-                    <span className="text-sm text-gray-500">Total</span>
-                    <span className="text-xl font-bold text-gray-900 dark:text-gray-100">{formatCurrency(overallTotal)}</span>
+                  <ArrowLeft className="w-5 h-5" />
+                </Button>
+                <div>
+                  <p className="text-[#BF953F] text-[10px] font-black uppercase tracking-[0.3em]">Financials</p>
+                  <h1 className="text-2xl font-black text-white tracking-tighter uppercase">Expense Report</h1>
                 </div>
+              </div>
             </div>
-        </Card>
 
-        {/* Details Modal */}
+            <div className="flex flex-col md:flex-row items-center gap-4 bg-white/5 backdrop-blur-md p-3 rounded-[2rem] border border-white/10">
+              <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-2 w-full">
+                {[
+                  { label: 'Today', key: 'Today' },
+                  { label: 'Yesterday', key: 'LastDay' },
+                  { label: 'This Week', key: 'This Week' },
+                  { label: 'This Month', key: 'This Month' }
+                ].map((preset) => (
+                  <button
+                    key={preset.key}
+                    onClick={() => handleDurationChange(preset.key)}
+                    className={cn(
+                      "h-10 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all",
+                      selectedDuration === preset.key ? "bg-[#BF953F] text-white shadow-lg shadow-[#BF953F]/20" : "text-white/60 hover:text-white hover:bg-white/5"
+                    )}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+              
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-white/10 rounded-2xl border border-white/10 w-full md:w-auto">
+                <CalendarIcon className="w-4 h-4 text-[#BF953F] flex-none" />
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => { setStartDate(e.target.value); setSelectedDuration('Date range'); }}
+                  className="bg-transparent text-[11px] font-black text-white focus:outline-none cursor-pointer uppercase tracking-tighter"
+                />
+                <span className="text-white/30 font-bold mx-0.5">→</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => { setEndDate(e.target.value); setSelectedDuration('Date range'); }}
+                  className="bg-transparent text-[11px] font-black text-white focus:outline-none cursor-pointer uppercase tracking-tighter"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 max-w-7xl mx-auto w-full p-6 overflow-y-auto custom-scrollbar">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Expense</p>
+                <p className="text-2xl font-black text-slate-900 mt-1">{formatCurrency(overallTotal)}</p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center">
+                <span className="text-xl font-black text-red-500">₱</span>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Entries</p>
+                <p className="text-2xl font-black text-slate-900 mt-1">{overallEntries}</p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center">
+                <span className="text-xl font-black text-blue-500">#</span>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Avg Expense / Group</p>
+                <p className="text-2xl font-black text-slate-900 mt-1">
+                  {formatCurrency(groupedExpenses.length > 0 ? overallTotal / groupedExpenses.length : 0)}
+                </p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center">
+                <span className="text-xl font-black text-amber-500">~</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
+            <div className="p-6 border-b border-slate-50 flex items-center justify-between">
+              <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-900">
+                Grouped Expense Records <span className="text-slate-400 ml-2">({groupedExpenses.length})</span>
+              </h2>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100">
+                    <th className="py-4 px-6 text-[9px] font-black uppercase tracking-widest text-slate-400">Date</th>
+                    <th className="py-4 px-6 text-[9px] font-black uppercase tracking-widest text-slate-400 text-center">Entries</th>
+                    <th className="py-4 px-6 text-[9px] font-black uppercase tracking-widest text-slate-400 text-right">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {groupedExpenses.map((group, idx) => (
+                    <tr 
+                      key={idx}
+                      onClick={() => handleRowClick(group)}
+                      className="group hover:bg-slate-50/80 transition-all cursor-pointer"
+                    >
+                      <td className="py-4 px-6 text-xs font-bold text-slate-900">{group.date}</td>
+                      <td className="py-4 px-6 text-center">
+                        <span className="px-3 py-1 bg-slate-100 text-slate-700 text-[10px] font-black rounded-full">
+                          {group.count} {group.count === 1 ? 'entry' : 'entries'}
+                        </span>
+                      </td>
+                      <td className="py-4 px-6 text-right text-xs font-black text-red-500">
+                        {formatCurrency(group.total)}
+                      </td>
+                    </tr>
+                  ))}
+                  {groupedExpenses.length === 0 && (
+                    <tr>
+                      <td colSpan={3} className="py-16 text-center text-slate-400 text-xs font-bold uppercase tracking-wider">
+                        No expense records found for the selected duration.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
         <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-            <DialogContent className="max-w-md bg-white dark:bg-gray-900">
-                <DialogHeader className="flex flex-row items-center gap-2 border-b pb-2">
-                    <Button variant="ghost" size="icon" onClick={() => setDetailsOpen(false)} className="h-8 w-8">
-                        <ArrowLeft className="w-4 h-4" />
+          <DialogContent className="max-w-md rounded-3xl p-6 bg-white">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-lg font-black text-slate-900 uppercase tracking-tight">
+                Expense Breakdown
+              </DialogTitle>
+            </DialogHeader>
+            <div className="py-2 space-y-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
+              {selectedDateExpenses?.items.map((item) => (
+                <div key={item.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        {format(new Date(item.date), 'hh:mm a • dd MMM yyyy')}
+                      </div>
+                      <div className="font-bold text-sm text-slate-900 mt-0.5">{item.category}</div>
+                      <div className="text-xs text-slate-500 mt-0.5">{item.description}</div>
+                    </div>
+                    <div className="font-black text-base text-red-500">
+                      {formatCurrency(item.amount)}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-2 border-t border-slate-200/50">
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="flex-1 h-9 rounded-xl text-[10px] font-black uppercase tracking-widest border-slate-200"
+                      onClick={() => handleEditClick(item)}
+                    >
+                      <Edit className="w-3.5 h-3.5 mr-1 text-slate-600" />
+                      Edit
                     </Button>
-                    <DialogTitle>Expense Details</DialogTitle>
-                </DialogHeader>
-                
-                <div className="py-4 space-y-4 max-h-[60vh] overflow-y-auto">
-                    {selectedDateExpenses?.items.map((item, i) => (
-                        <div key={item.id} className="border-b pb-4 last:border-0">
-                            <div className="flex justify-between items-start mb-2">
-                                <div className="text-sm text-gray-500">
-                                    {format(new Date(item.date), 'hh:mma dd MMMM- yyyy')}
-                                </div>
-                                <div className="font-bold text-lg text-gray-900 dark:text-gray-100">
-                                    {formatCurrency(item.amount)}
-                                </div>
-                            </div>
-                            
-                            <div className="space-y-1 mb-3">
-                                <div className="font-medium text-gray-800 dark:text-gray-200">{item.category}</div>
-                                <div className="text-sm text-gray-600 dark:text-gray-400">{item.description}</div>
-                            </div>
-
-                            <div className="flex gap-2">
-                                <Button 
-                                    size="sm" 
-                                    variant="outline" 
-                                    className="flex-1 gap-2 text-blue-600 border-blue-200 hover:bg-blue-50"
-                                    onClick={() => handleEditClick(item)}
-                                >
-                                    <Edit className="w-4 h-4" />
-                                    Edit Expense
-                                </Button>
-                                <Button 
-                                    size="sm" 
-                                    variant="outline" 
-                                    className="gap-2 text-red-600 border-red-200 hover:bg-red-50"
-                                    onClick={() => handleDeleteClick(item.id)}
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </Button>
-                            </div>
-                        </div>
-                    ))}
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="h-9 px-3 rounded-xl text-red-500 border-red-100 hover:bg-red-50"
+                      onClick={() => handleDeleteClick(item.id)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
                 </div>
-            </DialogContent>
+              ))}
+            </div>
+          </DialogContent>
         </Dialog>
 
-        {/* Edit Modal */}
         <Dialog open={editOpen} onOpenChange={setEditOpen}>
-            <DialogContent className="max-w-md bg-white dark:bg-gray-900">
-                <DialogHeader>
-                    <DialogTitle>Edit the expense of {editingExpense ? formatCurrency(editingExpense.amount) : ''}</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium">Total Expense</label>
-                        <Input 
-                            type="number" 
-                            value={editAmount} 
-                            onChange={(e) => setEditAmount(e.target.value)} 
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium">Name of Expense</label>
-                        <Input 
-                            value={editName} 
-                            onChange={(e) => setEditName(e.target.value)} 
-                            placeholder="e.g. Household Bills"
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium">Details</label>
-                        <Input 
-                            value={editDetails} 
-                            onChange={(e) => setEditDetails(e.target.value)} 
-                            placeholder="Details..."
-                        />
-                    </div>
-                </div>
-                <DialogFooter>
-                    <Button onClick={handleSaveEdit} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
-                        <Save className="w-4 h-4 mr-2" />
-                        Save
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
+          <DialogContent className="max-w-md rounded-3xl p-6 bg-white">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-black text-slate-900 uppercase tracking-tight">Edit Expense</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Category / Name</label>
+                <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-12 bg-slate-50 border-slate-100 rounded-2xl font-bold text-sm" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Amount (₱)</label>
+                <Input type="number" value={editAmount} onChange={e => setEditAmount(e.target.value)} className="h-12 bg-slate-50 border-slate-100 rounded-2xl font-bold text-sm" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Description</label>
+                <Input value={editDetails} onChange={e => setEditDetails(e.target.value)} className="h-12 bg-slate-50 border-slate-100 rounded-2xl font-bold text-sm" />
+              </div>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setEditOpen(false)} className="flex-1 h-12 rounded-2xl font-black uppercase tracking-widest">Cancel</Button>
+              <Button onClick={handleSaveEdit} className="flex-1 h-12 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest">Save Changes</Button>
+            </DialogFooter>
+          </DialogContent>
         </Dialog>
-
       </div>
     </Layout>
   );
