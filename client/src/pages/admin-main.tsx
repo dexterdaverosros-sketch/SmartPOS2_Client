@@ -109,12 +109,28 @@ const AdminMain: React.FC = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
   const [selectedRemittance, setSelectedRemittance] = useState<Remittance | null>(null);
+  const [remittanceSalesBreakdown, setRemittanceSalesBreakdown] = useState<any[]>([]);
   const [isConfirmingRemit, setIsConfirmingRemit] = useState(false);
   const [activeTab, setActiveTab] = useState<'updates' | 'remittance' | 'completed'>('updates');
   const [pendingRemittances, setPendingRemittances] = useState<Remittance[]>([]);
   const [confirmedRemittances, setConfirmedRemittances] = useState<Remittance[]>([]);
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedNotificationIds, setSelectedNotificationIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (selectedRemittance) {
+      SalesService.getAllSales().then(allSales => {
+        const staffSales = allSales.filter(s => 
+          s.staffId === selectedRemittance.staffId || 
+          (s as any).staff_id === selectedRemittance.staffId ||
+          (s as any).staffId === (selectedRemittance as any).staff_id
+        );
+        setRemittanceSalesBreakdown(staffSales);
+      }).catch(err => console.warn('Failed to load remittance breakdown sales:', err));
+    } else {
+      setRemittanceSalesBreakdown([]);
+    }
+  }, [selectedRemittance]);
 
   const [chartData, setChartData] = useState<Array<{ date: string; income: number; expenses: number }>>([]);
   const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
@@ -1163,10 +1179,42 @@ const AdminMain: React.FC = () => {
               <DialogTitle className="text-2xl font-black">Confirm Remittance</DialogTitle>
               <DialogDescription>From {selectedRemittance?.staffName}</DialogDescription>
             </DialogHeader>
-            <div className="my-6 p-4 bg-gray-50 rounded-2xl border space-y-2">
-              <div className="flex justify-between"><span className="text-[10px] font-bold text-gray-400 uppercase">Amount</span><span className="text-xl font-black">₱{selectedRemittance?.amount.toLocaleString()}</span></div>
-              <div className="flex justify-between"><span className="text-[10px] font-bold text-gray-400 uppercase">Orders</span><span className="text-sm font-bold">{selectedRemittance?.transactionCount}</span></div>
+
+            <div className="my-4 p-4 bg-gray-50 rounded-2xl border space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-bold text-gray-400 uppercase">Amount</span>
+                <span className="text-xl font-black text-[#BF953F]">₱{(selectedRemittance?.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-bold text-gray-400 uppercase">Orders</span>
+                <span className="text-sm font-bold text-gray-800">{selectedRemittance?.transactionCount}</span>
+              </div>
             </div>
+
+            {/* Transaction History Breakdown */}
+            <div className="mb-4">
+              <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 block mb-2">Transaction History</span>
+              <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1 custom-scrollbar">
+                {remittanceSalesBreakdown.length > 0 ? (
+                  remittanceSalesBreakdown.map((s, idx) => (
+                    <div key={s.id || idx} className="flex justify-between items-center p-3 bg-white border border-gray-100 rounded-xl text-xs">
+                      <div>
+                        <span className="font-bold text-gray-900 block">
+                          {s.createdAt ? new Date(s.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recent'}
+                        </span>
+                        <span className="text-[9px] font-bold text-gray-400 uppercase">{s.paymentType || 'cash'}</span>
+                      </div>
+                      <span className="font-black text-gray-900">₱{(s.total || 0).toLocaleString()}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-3 bg-gray-50 rounded-xl">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase">No recent local transaction details found</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="flex gap-3">
               <Button variant="outline" onClick={() => setSelectedRemittance(null)} className="flex-1">Cancel</Button>
               <Button onClick={handleConfirmRemittance} disabled={isConfirmingRemit} className="flex-1 bg-[#BF953F]">{isConfirmingRemit ? "..." : "Confirm"}</Button>

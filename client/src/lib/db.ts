@@ -182,31 +182,115 @@ export const NotificationService = {
 // Remittance Service
 export const RemittanceService = {
   async remit(data: { staffId: string; staffName: string; amount: number; transactionCount: number }): Promise<{ success: boolean; remittance: Remittance }> {
-    const res = await api.post<{ success: boolean, remittance: Remittance }>('/api/remit', data);
-    if (res.success && res.remittance) {
-      await db.remittances.put(res.remittance);
+    const localRemittance: Remittance = {
+      id: generateUUID(),
+      tenantId: localStorage.getItem('smartpos_tenant_id') || '',
+      staffId: data.staffId,
+      staffName: data.staffName,
+      amount: data.amount,
+      transactionCount: data.transactionCount,
+      status: 'pending',
+      createdAt: new Date()
+    } as any;
+
+    try {
+      const res = await api.post<{ success: boolean, remittance: Remittance }>('/api/remit', data);
+      if (res && res.success && res.remittance) {
+        const mapped = {
+          ...res.remittance,
+          staffName: (res.remittance as any).staff_name || res.remittance.staffName,
+          staffId: (res.remittance as any).staff_id || res.remittance.staffId,
+          transactionCount: (res.remittance as any).transaction_count || res.remittance.transactionCount,
+          createdAt: (res.remittance as any).created_at ? new Date((res.remittance as any).created_at) : (res.remittance.createdAt ? new Date(res.remittance.createdAt) : new Date())
+        };
+        await db.remittances.put(mapped);
+        return { success: true, remittance: mapped };
+      }
+    } catch (err) {
+      console.warn('[RemittanceService] Server POST /api/remit unreachable or offline, persisting local pending remittance:', err);
     }
-    return res;
+
+    await db.remittances.put(localRemittance);
+    return { success: true, remittance: localRemittance };
   },
+
   async confirm(id: string): Promise<{ success: boolean; remittance: Remittance }> {
-    const res = await api.post<{ success: boolean, remittance: Remittance }>(`/api/remit/confirm/${id}`, {});
-    if (res.success && res.remittance) {
-      await db.remittances.update(id, { status: 'confirmed', confirmedAt: new Date() });
+    try {
+      const res = await api.post<{ success: boolean, remittance: Remittance }>(`/api/remit/confirm/${id}`, {});
+      if (res && res.success) {
+        await db.remittances.update(id, { status: 'confirmed', confirmedAt: new Date() });
+      }
+    } catch (err) {
+      console.warn('[RemittanceService] Server POST /api/remit/confirm offline, updating local remittance:', err);
     }
-    return res;
+    await db.remittances.update(id, { status: 'confirmed', confirmedAt: new Date() });
+    const updated = await db.remittances.get(id);
+    if (updated) {
+      const sales = await db.sales.toArray();
+      const staffSales = sales.filter(s => s.staffId === updated.staffId && !s.remitted);
+      for (const s of staffSales) {
+        await db.sales.update(s.id, { remitted: true });
+      }
+    }
+    return { success: true, remittance: updated as any };
   },
+
   async cancel(id: string): Promise<{ success: boolean; remittance: Remittance }> {
-    const res = await api.post<{ success: boolean, remittance: Remittance }>(`/api/remit/cancel/${id}`, {});
-    if (res.success && res.remittance) {
-      await db.remittances.update(id, { status: 'cancelled' });
+    try {
+      const res = await api.post<{ success: boolean, remittance: Remittance }>(`/api/remit/cancel/${id}`, {});
+      if (res && res.success) {
+        await db.remittances.update(id, { status: 'cancelled' });
+      }
+    } catch (err) {
+      console.warn('[RemittanceService] Server POST /api/remit/cancel offline, updating local remittance:', err);
     }
-    return res;
+    await db.remittances.update(id, { status: 'cancelled' });
+    const updated = await db.remittances.get(id);
+    return { success: true, remittance: updated as any };
   },
+
   async listPending(): Promise<Remittance[]> {
-    return await api.get<Remittance[]>('/api/remittances/pending');
+    try {
+      const res = await api.get<Remittance[]>('/api/remittances/pending');
+      if (Array.isArray(res)) {
+        const mapped = res.map(r => ({
+          ...r,
+          staffName: (r as any).staff_name || r.staffName,
+          staffId: (r as any).staff_id || r.staffId,
+          transactionCount: (r as any).transaction_count || r.transactionCount,
+          createdAt: (r as any).created_at ? new Date((r as any).created_at) : (r.createdAt ? new Date(r.createdAt) : new Date())
+        }));
+        if (mapped.length > 0) {
+          await db.remittances.bulkPut(mapped);
+        }
+        return mapped;
+      }
+    } catch (err) {
+      console.warn('[RemittanceService] Failed to fetch pending remittances from server, returning local Dexie remittances:', err);
+    }
+    return await db.remittances.where('status').equals('pending').toArray();
   },
+
   async listConfirmed(): Promise<Remittance[]> {
-    return await api.get<Remittance[]>('/api/remittances/confirmed');
+    try {
+      const res = await api.get<Remittance[]>('/api/remittances/confirmed');
+      if (Array.isArray(res)) {
+        const mapped = res.map(r => ({
+          ...r,
+          staffName: (r as any).staff_name || r.staffName,
+          staffId: (r as any).staff_id || r.staffId,
+          transactionCount: (r as any).transaction_count || r.transactionCount,
+          createdAt: (r as any).created_at ? new Date((r as any).created_at) : (r.createdAt ? new Date(r.createdAt) : new Date())
+        }));
+        if (mapped.length > 0) {
+          await db.remittances.bulkPut(mapped);
+        }
+        return mapped;
+      }
+    } catch (err) {
+      console.warn('[RemittanceService] Failed to fetch confirmed remittances from server, returning local Dexie remittances:', err);
+    }
+    return await db.remittances.where('status').equals('confirmed').toArray();
   }
 };
 
