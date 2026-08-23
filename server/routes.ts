@@ -1831,34 +1831,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Deactivate staff while preserving sales, attendance, login, and audit history.
-  app.delete('/api/staff/:id', (req: Request, res: Response) => {
+  // Delete staff account permanently from SQLite and Supabase Cloud
+  app.delete('/api/staff/:id', resolveSyncTenant, async (req: Request, res: Response) => {
     try {
       const tenantId = (req as any).tenantId;
       const { id } = req.params;
-      const currentStaff = dbService.getStaffById(id, tenantId);
-      if (!currentStaff) {
-        return res.status(404).json({ error: 'Staff not found' });
-      }
 
       const { adminId, adminName } = getStaffAdminContext(req);
-      const updatedStaff = dbService.updateStaffStatus(id, tenantId, 'inactive');
+      const currentStaff = dbService.getStaffById(id, tenantId);
+
+      const result = await dbService.deleteStaff(id, tenantId);
+
       dbService.createAuditLog({
         tenantId,
         adminId,
         adminName,
-        action: 'deactivate_staff',
+        action: 'delete_staff',
         staffId: id,
-        staffName: currentStaff.name,
-        changedFields: ['employmentStatus'],
-        oldValues: { employmentStatus: currentStaff.employmentStatus },
-        newValues: { employmentStatus: 'inactive' },
+        staffName: currentStaff?.name || id,
+        changedFields: ['deleted'],
+        oldValues: { name: currentStaff?.name, staffId: currentStaff?.staffId },
+        newValues: { deleted: true },
         ipAddress: req.ip || req.socket.remoteAddress,
       });
 
-      res.status(200).json({ success: true, staff: updatedStaff });
+      res.status(200).json({ success: true, message: 'Staff deleted successfully', deletedId: result.deletedId });
     } catch (error) {
-      console.error('Error deactivating staff:', error);
+      console.error('Error deleting staff:', error);
       res.status(500).json({ error: 'Failed to remove staff' });
     }
   });

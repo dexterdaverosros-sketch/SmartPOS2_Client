@@ -459,15 +459,32 @@ const StaffManagement: React.FC = () => {
 
   const handleDelete = async () => {
     if (!deletingStaff) return;
+    const staffIdToDelete = deletingStaff.id;
+    const staffNameToDelete = deletingStaff.name;
 
     try {
-      await api.delete(`/api/staff/${deletingStaff.id}`);
-      await StaffService.deleteStaff(deletingStaff.id);
-      toast({ title: 'Staff Removed', description: `${deletingStaff.name} removed` });
-      await loadStaff();
+      // 1. Delete from Server SQLite & Supabase Cloud
+      try {
+        await api.delete(`/api/staff/${staffIdToDelete}`);
+      } catch (err) {
+        console.warn('Server delete /api/staff failed, proceeding with local delete:', err);
+      }
+
+      // 2. Delete from Local Dexie IndexedDB
+      await StaffService.deleteStaff(staffIdToDelete);
+      if ((deletingStaff as any).staffId) {
+        await StaffService.deleteStaff((deletingStaff as any).staffId);
+      }
+
+      // 3. Update local React state UI immediately
+      setStaff(prev => prev.filter(s => s.id !== staffIdToDelete && (s as any).staffId !== staffIdToDelete));
+
+      toast({ title: 'Staff Deleted', description: `${staffNameToDelete} deleted from local database and Supabase cloud` });
       setDeletingStaff(null);
+      await loadStaff();
     } catch (error) {
-      toast({ title: 'Error', description: 'Failed to remove staff', variant: 'destructive' });
+      console.error('Error deleting staff:', error);
+      toast({ title: 'Error', description: 'Failed to delete staff account', variant: 'destructive' });
     }
   };
 

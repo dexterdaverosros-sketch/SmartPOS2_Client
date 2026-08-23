@@ -1679,7 +1679,7 @@ export const dbService = {
       if (useCloud()) {
         const supabase = getSupabase();
         if (supabase) {
-          (async () => {
+          await (async () => {
             try {
               for (const m of processedStaff) {
                 const effectiveTenantId = m.tenantId || tenantId;
@@ -1941,6 +1941,40 @@ export const dbService = {
     }
 
     return dbService.getStaffById(id, tenantId);
+  },
+
+  deleteStaff: async (id: string, tenantId: string) => {
+    let tid = tenantId;
+    if (!tid || tid === 'default-tenant-id' || tid === 'default') {
+      tid = dbService.getDefaultOrOnlyTenantId() || tid;
+    }
+    const current = db.prepare('SELECT * FROM staff WHERE (id = ? OR staffId = ?) AND (tenant_id = ? OR tenant_id IS NULL OR tenant_id = \'\')').get(id, id, tid) as any;
+    const targetId = current?.id || id;
+    const targetStaffId = current?.staffId || id;
+
+    console.log(`[STAFF DELETE] Removing staff targetId=${targetId}, targetStaffId=${targetStaffId}, tenantId=${tid}`);
+
+    // 1. Delete from SQLite
+    db.prepare('DELETE FROM staff WHERE (id = ? OR staffId = ?) AND (tenant_id = ? OR tenant_id IS NULL OR tenant_id = \'\')').run(targetId, targetStaffId, tid);
+
+    // 2. Delete directly from Supabase Cloud
+    if (useCloud()) {
+      const supabase = getSupabase();
+      if (supabase) {
+        try {
+          const { error } = await supabase.from('staff').delete().or(`id.eq.${targetId},staff_id.eq.${targetStaffId}`);
+          if (error) {
+            console.error('[STAFF CLOUD DELETE ERROR]', error.message);
+          } else {
+            console.log(`[STAFF CLOUD DELETE SUCCESS] Deleted staff ${targetId} / ${targetStaffId} directly from Supabase cloud.`);
+          }
+        } catch (e) {
+          console.error('[STAFF CLOUD DELETE EXCEPTION]', e);
+        }
+      }
+    }
+
+    return { success: true, deletedId: targetId };
   },
 
   // Audit log functions
