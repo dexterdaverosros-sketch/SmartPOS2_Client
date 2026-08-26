@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Search, Filter, Plus, Edit, Trash2, Package, Image as ImageIcon, PlusCircle, Tag, X, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Search, Filter, Plus, Edit, Trash2, Package, Image as ImageIcon, PlusCircle, Tag, X, AlertTriangle, Upload, Download, FileSpreadsheet } from 'lucide-react';
 import { useLocation } from 'wouter';
 import Layout from '@/components/Layout';
 import { Button } from '@/components/ui/button';
@@ -258,6 +258,148 @@ const InventoryManagement: React.FC = () => {
     });
     
     setDeletingCategory(null);
+  };
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleExportCSV = () => {
+    if (products.length === 0) {
+      toast({
+        title: 'Export Empty',
+        description: 'No products available to export.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const headers = ['ID', 'Name', 'Barcode', 'Price', 'Cost', 'Quantity', 'Category', 'Created At'];
+    const rows = products.map((p) => [
+      `"${(p.id || '').replace(/"/g, '""')}"`,
+      `"${(p.name || '').replace(/"/g, '""')}"`,
+      `"${(p.barcode || '').replace(/"/g, '""')}"`,
+      p.price ?? 0,
+      (p as any).cost ?? 0,
+      p.quantity ?? 0,
+      `"${(p.category || 'general').replace(/"/g, '""')}"`,
+      `"${(p.createdAt ? new Date(p.createdAt).toISOString() : '').replace(/"/g, '""')}"`,
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const today = new Date().toISOString().split('T')[0];
+    link.href = url;
+    link.setAttribute('download', `inventory_export_${today}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: 'Export Successful',
+      description: `Exported ${products.length} product(s) to CSV file.`,
+    });
+  };
+
+  const parseCSV = (text: string) => {
+    const lines = text.split(/\r\n|\n/).filter((line) => line.trim() !== '');
+    if (lines.length < 2) return [];
+
+    const parseLine = (line: string) => {
+      const result: string[] = [];
+      let cur = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          result.push(cur.trim().replace(/^"|"$/g, ''));
+          cur = '';
+        } else {
+          cur += char;
+        }
+      }
+      result.push(cur.trim().replace(/^"|"$/g, ''));
+      return result;
+    };
+
+    const rawHeaders = parseLine(lines[0]);
+    const headers = rawHeaders.map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
+
+    const items: any[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const values = parseLine(lines[i]);
+      if (values.length === 0 || values.every((v) => v === '')) continue;
+      const rowObj: any = {};
+      headers.forEach((h, idx) => {
+        rowObj[h] = values[idx] || '';
+      });
+      items.push(rowObj);
+    }
+    return items;
+  };
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsLoading(true);
+    try {
+      const text = await file.text();
+      let importedRows: any[] = [];
+
+      if (file.name.endsWith('.json')) {
+        importedRows = JSON.parse(text);
+      } else {
+        importedRows = parseCSV(text);
+      }
+
+      if (!Array.isArray(importedRows) || importedRows.length === 0) {
+        throw new Error('No valid product records found in file.');
+      }
+
+      let count = 0;
+      for (const row of importedRows) {
+        const name = row.name || row.productname || row.title || row.product;
+        if (!name) continue;
+
+        const price = parseFloat(row.price || row.unitprice || '0');
+        const cost = parseFloat(row.cost || row.unitcost || '0');
+        const quantity = parseInt(row.quantity || row.qty || row.stock || '0', 10);
+        const category = row.category || row.cat || 'general';
+        const barcode = row.barcode || row.code || `IMP-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
+        await ProductService.addProduct({
+          name: String(name),
+          barcode: String(barcode),
+          price: isNaN(price) ? 0 : price,
+          cost: isNaN(cost) ? 0 : cost,
+          quantity: isNaN(quantity) ? 0 : quantity,
+          category: String(category),
+        });
+        count++;
+      }
+
+      await loadProducts();
+      await ProductService.syncAllProductsToServer();
+
+      toast({
+        title: 'Import Successful',
+        description: `Successfully imported ${count} product(s) into inventory.`,
+      });
+    } catch (err: any) {
+      console.error('Import error:', err);
+      toast({
+        title: 'Import Failed',
+        description: err.message || 'Failed to import products from file.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+      if (e.target) e.target.value = '';
+    }
   };
 
   useEffect(() => {
@@ -560,6 +702,35 @@ const InventoryManagement: React.FC = () => {
                     </span>
                   </Button>
                 </div>
+
+                {/* Import & Export Action Buttons */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept=".csv,.json"
+                  className="hidden"
+                  onChange={handleImportFile}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="whitespace-nowrap text-xs px-2.5 sm:px-3 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 text-gray-700 dark:text-gray-200 transition-all flex items-center gap-1.5"
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Import products from CSV or JSON file"
+                >
+                  <Upload className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Import</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="whitespace-nowrap text-xs px-2.5 sm:px-3 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 text-gray-700 dark:text-gray-200 transition-all flex items-center gap-1.5"
+                  onClick={handleExportCSV}
+                  title="Export current inventory products to CSV"
+                >
+                  <Download className="w-3.5 h-3.5 text-blue-500" />
+                  <span>Export</span>
+                </Button>
 
                 {/* Far Right: Edit/Delete Toggle Button */}
                 <Button
