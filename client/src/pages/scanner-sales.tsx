@@ -67,10 +67,6 @@ const ScannerSales: React.FC = () => {
   };
 
   const handleDeleteItem = async (productId: string) => {
-    if (isStaff) {
-      setDeleteItemId(productId);
-      return;
-    }
     removeFromCart(productId);
   };
 
