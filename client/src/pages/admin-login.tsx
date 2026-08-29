@@ -241,47 +241,19 @@ const AdminLogin: React.FC = () => {
             </form>
           </Form>
 
-          {/* Guest Mode Section */}
+          {/* Sign Up Section */}
           <div className="mt-6 text-center">
             <div className="flex items-center justify-center gap-3 mb-4">
               <div className="h-px w-12 bg-gray-200" />
-              <p className="text-[9px] font-black uppercase tracking-[0.3em] text-gray-400">or</p>
+              <p className="text-[9px] font-black uppercase tracking-[0.3em] text-gray-400">or don't have an account?</p>
               <div className="h-px w-12 bg-gray-200" />
             </div>
             <Button
-              onClick={async () => {
-                // Handle Guest Mode login
-                const guestUserId = 'guest-' + Date.now();
-                const guestExpiry = new Date();
-                guestExpiry.setDate(guestExpiry.getDate() + 5); // 5 days from now
-                
-                // Save guest session info
-                localStorage.setItem('smartpos_guest_mode', 'true');
-                localStorage.setItem('smartpos_guest_user_id', guestUserId);
-                localStorage.setItem('smartpos_guest_expiry', guestExpiry.toISOString());
-                
-                // Create a temporary guest user object
-                const guestUser = {
-                  id: guestUserId,
-                  username: 'guest',
-                  role: 'admin',
-                  businessName: 'Guest Business',
-                  ownerName: 'Guest User',
-                  mobile: '0000000000',
-                  createdAt: new Date().toISOString()
-                };
-                
-                login(guestUser as any, 'guest-token-' + Date.now());
-                toast({
-                  title: 'Welcome to Guest Mode!',
-                  description: 'Your data will be automatically deleted after 5 days.',
-                });
-                setLocation('/admin-dashboard');
-              }}
-              className="w-full h-12 bg-gradient-to-r from-gray-100 to-gray-50 text-gray-800 border border-gray-200 rounded-2xl font-black uppercase tracking-[0.2em] hover:from-gray-200 hover:to-gray-100 transition-all"
+              onClick={() => setLocation('/register-tenant')}
+              className="w-full h-12 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-2xl font-black uppercase tracking-[0.2em] hover:from-emerald-600 hover:to-teal-700 shadow-md shadow-emerald-500/20 transition-all"
             >
               <User className="w-4 h-4 mr-2" />
-              Guest Mode
+              Sign Up / Register Store
             </Button>
           </div>
           

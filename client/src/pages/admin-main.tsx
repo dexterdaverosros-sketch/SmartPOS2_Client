@@ -456,6 +456,16 @@ const AdminMain: React.FC = () => {
         loadStats();
         loadFinancialData();
       });
+      socket.on('new-remittance', () => {
+        loadNotifications();
+        loadStats();
+        loadFinancialData();
+      });
+      socket.on('unread-count-changed', (data: { count: number }) => {
+        if (typeof data?.count === 'number') {
+          setUnreadCount(data.count);
+        }
+      });
     }
 
     const timer = setInterval(() => setCurrentDateTime(new Date()), 1000);
@@ -464,6 +474,8 @@ const AdminMain: React.FC = () => {
       if (socket) {
         socket.off('notification-received');
         socket.off('remittance-sent');
+        socket.off('new-remittance');
+        socket.off('unread-count-changed');
       }
     };
   }, [socket]);

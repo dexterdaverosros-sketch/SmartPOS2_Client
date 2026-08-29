@@ -2230,12 +2230,18 @@ export const dbService = {
 
 
   // Auth & Session methods
-  getStaffByStaffId: (staffId: string, tenantId: string) => {
-    return db.prepare('SELECT * FROM staff WHERE staffId = ? AND tenant_id = ?').get(staffId, tenantId);
+  getStaffByStaffId: (staffId: string, tenantId?: string) => {
+    const sId = (staffId || '').trim();
+    if (!sId) return null;
+    if (tenantId && tenantId !== 'default-tenant-id') {
+      const match = db.prepare('SELECT * FROM staff WHERE (LOWER(staffId) = LOWER(?) OR LOWER(staff_id) = LOWER(?)) AND tenant_id = ?').get(sId, sId, tenantId);
+      if (match) return match;
+    }
+    return db.prepare('SELECT * FROM staff WHERE LOWER(staffId) = LOWER(?) OR LOWER(staff_id) = LOWER(?)').get(sId, sId);
   },
 
-  verifyStaffCredentials: (staffId: string, passkey: string, tenantId: string) => {
-    return db.prepare('SELECT * FROM staff WHERE staffId = ? AND tenant_id = ?').get(staffId, tenantId);
+  verifyStaffCredentials: (staffId: string, passkey: string, tenantId?: string) => {
+    return dbService.getStaffByStaffId(staffId, tenantId);
   },
 
   createSession: (session: { id: string; user_id: string; token: string; tenant_id?: string; device_info: string; ip_address: string; created_at: string; last_active_at: string }) => {
@@ -2379,6 +2385,12 @@ export const dbService = {
       : db.prepare("SELECT * FROM remittances WHERE status = 'pending' ORDER BY created_at DESC").all();
   },
 
+  listConfirmedRemittances: (tenantId?: string) => {
+    return tenantId 
+      ? db.prepare("SELECT * FROM remittances WHERE status IN ('confirmed', 'completed') AND tenant_id = ? ORDER BY created_at DESC").all(tenantId)
+      : db.prepare("SELECT * FROM remittances WHERE status IN ('confirmed', 'completed') ORDER BY created_at DESC").all();
+  },
+
   cancelRemittance: (tenantId: string | any, id?: string) => {
     const effId = typeof tenantId === 'string' && id ? id : (typeof tenantId === 'string' ? tenantId : id);
     const effTenantId = typeof tenantId === 'string' && id ? tenantId : null;
@@ -2404,12 +2416,6 @@ export const dbService = {
 
       return remittance;
     })();
-  },
-
-  listConfirmedRemittances: (tenantId?: string) => {
-    return tenantId 
-      ? db.prepare("SELECT * FROM remittances WHERE status = 'confirmed' AND tenant_id = ? ORDER BY created_at DESC").all(tenantId)
-      : db.prepare("SELECT * FROM remittances WHERE status = 'confirmed' ORDER BY created_at DESC").all();
   },
 
   // Notification methods

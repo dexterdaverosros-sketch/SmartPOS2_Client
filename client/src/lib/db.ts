@@ -273,7 +273,12 @@ export const RemittanceService = {
 
   async listConfirmed(): Promise<Remittance[]> {
     try {
-      const res = await api.get<Remittance[]>('/api/remittances/confirmed');
+      let res: Remittance[] = [];
+      try {
+        res = await api.get<Remittance[]>('/api/remittances/confirmed');
+      } catch {
+        res = await api.get<Remittance[]>('/api/remittances/completed');
+      }
       if (Array.isArray(res)) {
         const mapped = res.map(r => ({
           ...r,
@@ -290,7 +295,7 @@ export const RemittanceService = {
     } catch (err) {
       console.warn('[RemittanceService] Failed to fetch confirmed remittances from server, returning local Dexie remittances:', err);
     }
-    return await db.remittances.where('status').equals('confirmed').toArray();
+    return await db.remittances.where('status').anyOf('confirmed', 'completed').toArray();
   }
 };
 

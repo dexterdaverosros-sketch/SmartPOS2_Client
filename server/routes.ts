@@ -139,6 +139,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       console.log("USER CREATED:", user);
+
+      // Save to local SQLite database as well
+      try {
+        const sqlite = initSQLite();
+        sqlite.prepare(`
+          INSERT OR REPLACE INTO users (id, username, password, role, businessName, tenant_id)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(userId, username, hashedPassword, 'admin', storeName, tenant.id);
+        console.log("SAVED REGISTERED ADMIN TO LOCAL SQLITE DB");
+      } catch (localDbErr) {
+        console.warn("Failed to save registered admin to local DB:", localDbErr);
+      }
       
       res.status(201).json({ success: true, tenant, user });
     } catch (error) {
@@ -604,44 +616,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const tenant = await getTenantFromHeader(req);
 
       // Verify credentials with tenant check
-      let staff = null;
+      let staff: any = null;
       const supabase = getSupabase();
       
-      if (supabase && tenant) {
-        // Check Supabase first with tenant ID validation
-        const { data, error } = await supabase
-          .from('staff')
-          .select('*')
-          .eq('staff_id', staffId)
-          .eq('tenant_id', tenant.id)
-          .single();
-          
-        if (!error && data) {
+      const sId = (staffId || '').trim();
+
+      if (supabase) {
+        let query = supabase.from('staff').select('*').ilike('staff_id', sId);
+        if (tenant && tenant.id && tenant.id !== 'default-tenant-id') {
+          query = query.eq('tenant_id', tenant.id);
+        }
+        const { data, error } = await query;
+        if (!error && data && data.length > 0) {
+          const row = data[0];
           staff = {
-            id: data.id,
-            name: data.name,
-            staffId: data.staff_id,
-            passkey: data.passhash,
-            createdBy: data.created_by || null,
-            createdAt: data.created_at || new Date().toISOString(),
-            tenantId: data.tenant_id
+            id: row.id,
+            name: row.name,
+            staffId: row.staff_id,
+            passkey: row.passkey || row.passhash,
+            createdBy: row.created_by || null,
+            createdAt: row.created_at || new Date().toISOString(),
+            tenantId: row.tenant_id
           };
-          // Save to local DB for future offline use
-          await dbService.saveStaff([staff], tenant.id);
+          if (tenant && tenant.id) {
+            await dbService.saveStaff([staff], tenant.id);
+          }
         }
       } 
       
       // If not in Supabase, try local
       if (!staff) {
-        staff = dbService.getStaffByStaffId(staffId, tenant.id) as any;
+        staff = dbService.getStaffByStaffId(sId, tenant?.id) as any;
       }
 
       if (!staff) {
         return res.status(401).json({ error: 'Invalid credentials' });
       }
 
-      // Verify password using bcrypt
-      const isValid = await bcrypt.compare(passkey, staff.passkey);
+      // Verify passkey using bcrypt or plaintext comparison
+      const storedKey = staff.passkey || staff.passHash || staff.passhash || '';
+      let isValid = false;
+      if (storedKey) {
+        if (storedKey.startsWith('$2a$') || storedKey.startsWith('$2b$')) {
+          isValid = await bcrypt.compare(passkey.trim(), storedKey);
+        } else {
+          isValid = (passkey.trim() === String(storedKey).trim());
+        }
+      }
+
       if (!isValid) {
         return res.status(401).json({ error: 'Invalid credentials' });
       }
@@ -2706,6 +2728,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('Error confirming remittance:', error);
       res.status(500).json({ error: 'Failed to confirm remittance', details: error?.message || String(error) });
+    }
+  });
+
+  app.get('/api/remittances/completed', resolveSyncTenant, async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).tenantId || dbService.getDefaultOrOnlyTenantId();
+      const completed = dbService.listConfirmedRemittances(tenantId);
+      res.json(completed);
+    } catch (error: any) {
+      console.error('Error fetching completed remittances:', error);
+      res.status(500).json({ error: 'Failed to fetch completed remittances' });
     }
   });
 

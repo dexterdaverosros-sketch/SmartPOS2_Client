@@ -59,6 +59,7 @@ const ScannerSales: React.FC = () => {
   const [nonInvName, setNonInvName] = useState("");
   const [nonInvPrice, setNonInvPrice] = useState("");
   const [nonInvQty, setNonInvQty] = useState("1");
+  const [nonInvUnit, setNonInvUnit] = useState<'pieces' | 'kilo' | 'gram' | 'liter'>("pieces");
   
   const handleCancelQuantity = () => {
     setShowQuantityDialog(false);
@@ -225,16 +226,19 @@ const ScannerSales: React.FC = () => {
   const handleAddNonInventory = () => {
     if (!nonInvName || !nonInvPrice) return;
     const price = parseFloat(nonInvPrice);
-    const qty = parseInt(nonInvQty) || 1;
+    const qty = parseFloat(nonInvQty) || 1;
     if (isNaN(price) || price <= 0) return;
+
+    const formattedUnit = nonInvUnit === 'kilo' ? 'KILO' : (nonInvUnit === 'gram' ? 'GRAM' : (nonInvUnit === 'liter' ? 'LITER' : 'pieces'));
+    const isWeight = nonInvUnit === 'kilo' || nonInvUnit === 'gram' || nonInvUnit === 'liter';
 
     const newItem: CartItem = {
       productId: 'NON_INVENTORY_' + Math.random().toString(36).substr(2, 9),
-      name: nonInvName,
+      name: nonInvName + (isWeight ? ` (${qty} ${formattedUnit})` : ''),
       price: price,
-      quantity: qty,
-      unit: 'pieces',
-      subtotal: price * qty,
+      quantity: isWeight ? 1 : qty,
+      unit: formattedUnit as any,
+      subtotal: price * (isWeight ? 1 : qty),
       isNonInventory: true
     };
     
@@ -243,6 +247,7 @@ const ScannerSales: React.FC = () => {
     setNonInvName("");
     setNonInvPrice("");
     setNonInvQty("1");
+    setNonInvUnit("pieces");
     setIsNonInventoryOpen(false);
   };
 
@@ -1033,19 +1038,55 @@ const ScannerSales: React.FC = () => {
                       <div className="space-y-2">
                         <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Received Amount (₱)</Label>
                         <Input 
-                        type="number" 
-                        value={paymentAmount ?? ''} 
-                        onChange={e => {
-                          const val = parseFloat(e.target.value);
-                          setPaymentAmount(isNaN(val) ? null : val);
-                          setPaymentError(false);
-                        }} 
-                        placeholder="0.00" 
-                        className={cn(
-                          "h-14 bg-gray-50 border border-gray-200 rounded-2xl font-black text-xl px-6 focus:ring-2 focus:ring-[#BF953F]/30 focus:border-[#BF953F]",
-                          paymentError && "ring-2 ring-red-500/30 bg-red-50 border-red-300"
-                        )} 
-                      />
+                          type="number" 
+                          value={paymentAmount ?? ''} 
+                          onChange={e => {
+                            const val = parseFloat(e.target.value);
+                            setPaymentAmount(isNaN(val) ? null : val);
+                            setPaymentError(false);
+                          }} 
+                          placeholder="0.00" 
+                          className={cn(
+                            "h-14 bg-gray-50 border border-gray-200 rounded-2xl font-black text-xl px-6 focus:ring-2 focus:ring-[#BF953F]/30 focus:border-[#BF953F]",
+                            paymentError && "ring-2 ring-red-500/30 bg-red-50 border-red-300"
+                          )} 
+                        />
+                        {/* Quick Cash Selection Chips */}
+                        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPaymentAmount(getCartTotal());
+                              setPaymentError(false);
+                            }}
+                            className={cn(
+                              "px-2.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all border",
+                              paymentAmount === getCartTotal()
+                                ? "bg-[#BF953F] text-white border-[#BF953F] shadow-sm"
+                                : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
+                            )}
+                          >
+                            Exact
+                          </button>
+                          {[50, 100, 200, 500, 1000].map((denom) => (
+                            <button
+                              key={denom}
+                              type="button"
+                              onClick={() => {
+                                setPaymentAmount(denom);
+                                setPaymentError(false);
+                              }}
+                              className={cn(
+                                "px-2.5 py-1.5 rounded-xl text-xs font-black transition-all border",
+                                paymentAmount === denom
+                                  ? "bg-[#BF953F] text-white border-[#BF953F] shadow-sm"
+                                  : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
+                              )}
+                            >
+                              ₱{denom}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                       
                       <div className="p-4 bg-gray-50/50 rounded-2xl border border-gray-100">
@@ -1300,37 +1341,61 @@ const ScannerSales: React.FC = () => {
           <DialogContent className="rounded-[2.5rem] p-8 sm:max-w-[400px]">
             <DialogHeader className="mb-6">
               <DialogTitle className="text-2xl font-black tracking-tighter uppercase">Non-Inventory Item</DialogTitle>
-              <DialogDescription className="text-[10px] font-black uppercase tracking-widest text-gray-400">Add a one-time product</DialogDescription>
+              <DialogDescription className="text-[10px] font-black uppercase tracking-widest text-gray-400">Add a custom or weighted product (e.g., Oil in KILO)</DialogDescription>
             </DialogHeader>
-            <div className="space-y-5">
+            <div className="space-y-4">
               <div className="space-y-1.5">
                 <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 ml-1">Item Name</Label>
                 <Input
                   value={nonInvName}
                   onChange={e => setNonInvName(e.target.value)}
-                  placeholder="Enter item name"
+                  placeholder="e.g., Cooking Oil"
                   className="h-12 bg-gray-50 border-gray-100 rounded-2xl font-bold text-sm placeholder:text-gray-300 focus:ring-2 focus:ring-[#BF953F]/20 focus:border-[#BF953F]"
                 />
               </div>
+
               <div className="space-y-1.5">
-                <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 ml-1">Price (₱)</Label>
-                <Input
-                  type="number"
-                  value={nonInvPrice}
-                  onChange={e => setNonInvPrice(e.target.value)}
-                  placeholder="0.00"
-                  className="h-12 bg-gray-50 border-gray-100 rounded-2xl font-bold text-sm placeholder:text-gray-300 focus:ring-2 focus:ring-[#BF953F]/20 focus:border-[#BF953F]"
-                />
+                <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 ml-1">Unit / Category</Label>
+                <Select value={nonInvUnit} onValueChange={(val: any) => setNonInvUnit(val)}>
+                  <SelectTrigger className="h-12 bg-gray-50 border-gray-100 rounded-2xl font-bold text-sm">
+                    <SelectValue placeholder="Select unit" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pieces">Pieces (pcs)</SelectItem>
+                    <SelectItem value="kilo">Kilo (kg)</SelectItem>
+                    <SelectItem value="gram">Gram (g)</SelectItem>
+                    <SelectItem value="liter">Liter (L)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 ml-1">Quantity</Label>
-                <Input
-                  type="number"
-                  value={nonInvQty}
-                  onChange={e => setNonInvQty(e.target.value)}
-                  placeholder="1"
-                  className="h-12 bg-gray-50 border-gray-100 rounded-2xl font-bold text-sm placeholder:text-gray-300 focus:ring-2 focus:ring-[#BF953F]/20 focus:border-[#BF953F]"
-                />
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 ml-1">
+                    {nonInvUnit === 'kilo' ? 'Kilos / Qty' : (nonInvUnit === 'gram' ? 'Grams / Qty' : (nonInvUnit === 'liter' ? 'Liters / Qty' : 'Quantity'))}
+                  </Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={nonInvQty}
+                    onChange={e => setNonInvQty(e.target.value)}
+                    placeholder="1"
+                    className="h-12 bg-gray-50 border-gray-100 rounded-2xl font-bold text-sm placeholder:text-gray-300 focus:ring-2 focus:ring-[#BF953F]/20 focus:border-[#BF953F]"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 ml-1">
+                    {nonInvUnit === 'pieces' ? 'Price (₱)' : 'Actual Total (₱)'}
+                  </Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={nonInvPrice}
+                    onChange={e => setNonInvPrice(e.target.value)}
+                    placeholder="0.00"
+                    className="h-12 bg-gray-50 border-gray-100 rounded-2xl font-bold text-sm placeholder:text-gray-300 focus:ring-2 focus:ring-[#BF953F]/20 focus:border-[#BF953F]"
+                  />
+                </div>
               </div>
             </div>
             <DialogFooter className="mt-8 flex gap-3">
@@ -1392,6 +1457,42 @@ const ScannerSales: React.FC = () => {
                     paymentError && "ring-2 ring-red-500/20 bg-red-50"
                   )} 
                 />
+                {/* Quick Cash Selection Chips */}
+                <div className="flex items-center justify-center gap-1.5 flex-wrap pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentAmount(getCartTotal());
+                      setPaymentError(false);
+                    }}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all border",
+                      paymentAmount === getCartTotal()
+                        ? "bg-[#BF953F] text-white border-[#BF953F] shadow-sm"
+                        : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
+                    )}
+                  >
+                    Exact
+                  </button>
+                  {[50, 100, 200, 500, 1000].map((denom) => (
+                    <button
+                      key={denom}
+                      type="button"
+                      onClick={() => {
+                        setPaymentAmount(denom);
+                        setPaymentError(false);
+                      }}
+                      className={cn(
+                        "px-3 py-1.5 rounded-xl text-xs font-black transition-all border",
+                        paymentAmount === denom
+                          ? "bg-[#BF953F] text-white border-[#BF953F] shadow-sm"
+                          : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
+                      )}
+                    >
+                      ₱{denom}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="flex justify-between items-end">
