@@ -622,65 +622,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const sId = (staffId || '').trim();
 
       if (supabase) {
-        let query = supabase.from('staff').select('*').ilike('staff_id', sId);
-        if (tenant && tenant.id && tenant.id !== 'default-tenant-id') {
-          query = query.eq('tenant_id', tenant.id);
-        }
-        const { data, error } = await query;
+        // Query Supabase for staff matching staff_id or staffId
+        const { data, error } = await supabase.from('staff').select('*');
         if (!error && data && data.length > 0) {
-          const row = data[0];
-          staff = {
-            id: row.id,
-            name: row.name,
-            staffId: row.staff_id,
-            passkey: row.passkey || row.passhash,
-            createdBy: row.created_by || null,
-            createdAt: row.created_at || new Date().toISOString(),
-            tenantId: row.tenant_id
-          };
-          if (tenant && tenant.id) {
-            await dbService.saveStaff([staff], tenant.id);
+          const row = data.find((r: any) => {
+            const sid = String(r.staff_id || r.staffId || '').trim().toLowerCase();
+            return sid === sId.toLowerCase();
+          });
+          if (row) {
+            staff = {
+              id: row.id,
+              name: row.name || `${row.first_name || ''} ${row.last_name || ''}`.trim() || 'Staff Member',
+              staffId: row.staff_id || row.staffId,
+              passkey: row.passkey || row.passhash || row.pass_key || row.passHash || '',
+              createdBy: row.created_by || row.createdBy || null,
+              createdAt: row.created_at || row.createdAt || new Date().toISOString(),
+              tenantId: row.tenant_id || row.tenantId || (tenant?.id || 'default-tenant-id')
+            };
+            await dbService.saveStaff([staff], staff.tenantId);
           }
         }
       } 
       
-      // If not in Supabase, try local
+      // If not found in Supabase, try local SQLite
       if (!staff) {
         staff = dbService.getStaffByStaffId(sId, tenant?.id) as any;
       }
 
       if (!staff) {
-        return res.status(401).json({ error: 'Invalid credentials' });
+        return res.status(401).json({ error: 'Invalid staff credentials' });
       }
 
       // Verify passkey using bcrypt or plaintext comparison
-      const storedKey = staff.passkey || staff.passHash || staff.passhash || '';
+      const storedKey = String(staff.passkey || staff.passHash || staff.passhash || '').trim();
       let isValid = false;
       if (storedKey) {
         if (storedKey.startsWith('$2a$') || storedKey.startsWith('$2b$')) {
           isValid = await bcrypt.compare(passkey.trim(), storedKey);
         } else {
-          isValid = (passkey.trim() === String(storedKey).trim());
+          isValid = (passkey.trim() === storedKey);
         }
       }
 
       if (!isValid) {
-        return res.status(401).json({ error: 'Invalid credentials' });
+        return res.status(401).json({ error: 'Invalid staff credentials' });
       }
 
-      // Create session — staff login requires a verified tenant (from subdomain header or staff record).
-      const sessionTenantId = (tenant && tenant.id !== 'default-tenant-id' ? tenant.id : null)
-        ?? (staff.tenantId && staff.tenantId !== 'default-tenant-id' ? staff.tenantId : null);
-      if (!sessionTenantId) {
-        console.warn('ERROR: cannot create staff session — no verified tenant resolved');
-        return res.status(401).json({ error: 'Tenant context missing: ensure X-Tenant-ID subdomain is set' });
-      }
+      // Create session — resolve tenant or default to default-tenant-id
+      const sessionTenantId = (tenant && tenant.id ? tenant.id : null)
+        ?? (staff.tenantId ? staff.tenantId : null)
+        ?? 'default-tenant-id';
+
       const token = randomUUID();
       const session = {
         id: randomUUID(),
         user_id: staff.id,
         token,
-        tenant_id: sessionTenantId, // Store tenant ID in session
+        tenant_id: sessionTenantId,
         device_info: deviceInfo || 'Unknown Device',
         ip_address: req.ip || req.socket.remoteAddress || 'Unknown',
         created_at: new Date().toISOString(),

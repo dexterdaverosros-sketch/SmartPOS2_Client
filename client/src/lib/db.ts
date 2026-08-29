@@ -394,10 +394,20 @@ export class AuthService {
   }
 
   static async loginStaff(staffId: string, passkey: string): Promise<User | null> {
-    const staffMember = await db.staff.where('staffId').equals(staffId).first();
+    const sId = (staffId || '').trim().toLowerCase();
+    const allStaff = await db.staff.toArray();
+    const staffMember = allStaff.find(s => String(s.staffId || (s as any).staff_id || '').trim().toLowerCase() === sId);
     if (!staffMember) return null;
     
-    const isValid = await verifyPassword(passkey, staffMember.passkey);
+    const storedKey = String(staffMember.passkey || (staffMember as any).passhash || '').trim();
+    let isValid = false;
+    if (storedKey) {
+      if (storedKey.startsWith('$2a$') || storedKey.startsWith('$2b$')) {
+        isValid = await verifyPassword(passkey.trim(), storedKey);
+      } else {
+        isValid = (passkey.trim() === storedKey);
+      }
+    }
     if (!isValid) return null;
 
     // Return a user-like object for staff
