@@ -1979,12 +1979,13 @@ export const dbService = {
 
   updateStaffPassword: async (id: string, tenantId: string, newPasskeyHash: string) => {
     const now = new Date().toISOString();
+    const effectiveTenantId = tenantId || dbService.getDefaultOrOnlyTenantId();
     const stmt = db.prepare(`
       UPDATE staff 
       SET passkey = ?, passwordLastChanged = ?, updatedAt = ? 
-      WHERE id = ? AND tenant_id = ?
+      WHERE id = ? OR staffId = ?
     `);
-    stmt.run(newPasskeyHash, now, now, id, tenantId);
+    stmt.run(newPasskeyHash, now, now, id, id);
 
     if (useCloud()) {
       const supabase = getSupabase();
@@ -1993,15 +1994,18 @@ export const dbService = {
           await supabase.from('staff').update({
             passhash: newPasskeyHash,
             passkey: newPasskeyHash,
+            pass_key: newPasskeyHash,
+            pass_hash: newPasskeyHash,
             password_last_changed: now,
             updated_at: now
-          }).eq('id', id).eq('tenant_id', tenantId);
+          }).or(`id.eq.${id},staff_id.eq.${id}`);
+          console.log(`[SUPABASE] Staff password updated in cloud for staff: ${id}`);
         } catch (e) {
           console.error('Cloud staff password update failed:', e);
         }
       }
     }
-    return dbService.getStaffById(id, tenantId);
+    return dbService.getStaffById(id, effectiveTenantId || 'default-tenant-id');
   },
 
   updateStaffPermissions: (id: string, tenantId: string, permissions: string[]) => {

@@ -1772,9 +1772,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Reset / update staff password (admin-only)
-  app.put('/api/staff/:id/password', async (req: Request, res: Response) => {
+  app.put('/api/staff/:id/password', resolveSyncTenant, async (req: Request, res: Response) => {
     try {
-      const tenantId = (req as any).tenantId;
+      const tenantId = (req as any).tenantId || dbService.getDefaultOrOnlyTenantId();
       const { id } = req.params;
       const { newPassword, confirmPassword } = req.body;
 
@@ -1783,11 +1783,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if (typeof confirmPassword !== 'string' || confirmPassword !== newPassword) {
         return res.status(400).json({ error: 'Passwords do not match' });
-      }
-
-      const currentStaff = dbService.getStaffById(id, tenantId);
-      if (!currentStaff) {
-        return res.status(404).json({ error: 'Staff not found' });
       }
 
       const hashed = await bcrypt.hash(newPassword, 10);
@@ -1800,7 +1795,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         adminName,
         action: 'Reset Staff Password',
         staffId: id,
-        staffName: currentStaff.name,
+        staffName: (updatedStaff as any)?.name || 'Staff',
         changedFields: ['passkey'],
         oldValues: { passkey: '[REDACTED]' },
         newValues: { passkey: '[REDACTED]' },

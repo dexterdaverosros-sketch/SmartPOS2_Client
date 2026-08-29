@@ -146,7 +146,7 @@ const BookKeeping: React.FC = () => {
               <Button variant="ghost" size="icon" onClick={() => setLocation('/admin-main')}>
                 <ArrowLeft className="w-5 h-5" />
               </Button>
-              <h1 className="text-xl font-bold tracking-tight">Bookeeping</h1>
+              <h1 className="text-xl font-bold tracking-tight">Bookkeeping</h1>
             </div>
             <Button className="bg-[#BF953F] hover:bg-[#B38728]" onClick={() => setIsAddEntryOpen(true)}>
               <Plus className="w-4 h-4 mr-2" /> New Entry

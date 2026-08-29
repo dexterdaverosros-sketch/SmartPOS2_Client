@@ -36,7 +36,7 @@ const translations = {
     executiveTools: 'Executive Tools',
     financials: 'Financials',
     expenses: 'Expenses',
-    bookkeeping: 'Bookeeping',
+    bookkeeping: 'Bookkeeping',
     history: 'History',
     analytics: 'Analytics',
     income: 'Income',

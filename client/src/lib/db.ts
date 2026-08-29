@@ -521,6 +521,21 @@ export class AuthService {
       console.warn('Failed to sync profile image to server:', e);
     }
   }
+
+  static async updateStaffPassword(id: string, newPasskey: string): Promise<void> {
+    const hashedPasskey = await hashPassword(newPasskey);
+    const now = new Date();
+    await db.staff.update(id, {
+      passkey: hashedPasskey,
+      passwordLastChanged: now,
+      updatedAt: now
+    });
+    try {
+      await api.put(`/api/staff/${id}/password`, { newPassword: newPasskey, confirmPassword: newPasskey });
+    } catch (e) {
+      console.warn('Failed to sync staff password update to server:', e);
+    }
+  }
 }
 
 // Product service

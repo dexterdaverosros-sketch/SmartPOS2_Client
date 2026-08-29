@@ -10,6 +10,7 @@ import {
   Filter,
   RefreshCw,
   Eye,
+  EyeOff,
   Edit,
   Lock,
   Key,
@@ -160,6 +161,7 @@ const StaffManagement: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isPushingToCloud, setIsPushingToCloud] = useState(false);
   const [isFetchingFromCloud, setIsFetchingFromCloud] = useState(false);
+  const [showAddPasskey, setShowAddPasskey] = useState(false);
 
   // Permission options
   const permissionOptions = [
@@ -1018,7 +1020,17 @@ const StaffManagement: React.FC = () => {
                     <FormItem>
                       <FormLabel>Passkey</FormLabel>
                       <FormControl>
-                        <Input type="password" placeholder="Create a secure passkey" {...field} />
+                        <div className="relative">
+                          <Input type={showAddPasskey ? "text" : "password"} placeholder="Create a secure passkey" className="pr-10" {...field} />
+                          <button
+                            type="button"
+                            onClick={() => setShowAddPasskey(!showAddPasskey)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                            title={showAddPasskey ? "Hide passkey" : "Show passkey"}
+                          >
+                            {showAddPasskey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1167,6 +1179,7 @@ const EditStaffForm = ({
   const [pwNew, setPwNew] = useState('');
   const [pwConfirm, setPwConfirm] = useState('');
   const [pwSaving, setPwSaving] = useState(false);
+  const [showEditPw, setShowEditPw] = useState(false);
   const { toast: pwToast } = useToast();
 
   const handleResetPassword = async () => {
@@ -1379,25 +1392,45 @@ const EditStaffForm = ({
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-200">New Password</label>
-                <Input
-                  type="password"
-                  placeholder="Enter new password (min 4 characters)"
-                  autoComplete="new-password"
-                  value={pwNew}
-                  onChange={(e) => setPwNew(e.target.value)}
-                  className="bg-white dark:bg-gray-800"
-                />
+                <div className="relative">
+                  <Input
+                    type={showEditPw ? "text" : "password"}
+                    placeholder="Enter new password (min 4 characters)"
+                    autoComplete="new-password"
+                    value={pwNew}
+                    onChange={(e) => setPwNew(e.target.value)}
+                    className="bg-white dark:bg-gray-800 pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowEditPw(!showEditPw)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                    title={showEditPw ? "Hide password" : "Show password"}
+                  >
+                    {showEditPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Confirm New Password</label>
-                <Input
-                  type="password"
-                  placeholder="Re-enter new password"
-                  autoComplete="new-password"
-                  value={pwConfirm}
-                  onChange={(e) => setPwConfirm(e.target.value)}
-                  className="bg-white dark:bg-gray-800"
-                />
+                <div className="relative">
+                  <Input
+                    type={showEditPw ? "text" : "password"}
+                    placeholder="Re-enter new password"
+                    autoComplete="new-password"
+                    value={pwConfirm}
+                    onChange={(e) => setPwConfirm(e.target.value)}
+                    className="bg-white dark:bg-gray-800 pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowEditPw(!showEditPw)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                    title={showEditPw ? "Hide password" : "Show password"}
+                  >
+                    {showEditPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <div className="flex gap-2 pt-2">
                 <Button
