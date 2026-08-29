@@ -1703,31 +1703,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update staff
-  app.put('/api/staff/:id', async (req: Request, res: Response) => {
+  app.put('/api/staff/:id', resolveSyncTenant, async (req: Request, res: Response) => {
     try {
-      const tenantId = (req as any).tenantId;
+      const tenantId = (req as any).tenantId || dbService.getDefaultOrOnlyTenantId();
       const { id } = req.params;
-      const parsed = staffUpdateSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ error: 'Invalid staff update', details: parsed.error.flatten() });
-      }
-      const updates = parsed.data;
+      
+      const body = { ...req.body };
+      delete body.id;
+      delete body.staffId;
+      delete body.passkey;
 
-      // Get current staff to find changed fields
+      const parsed = staffUpdateSchema.safeParse(body);
+      const updates = parsed.success ? parsed.data : body;
+
       const currentStaff = dbService.getStaffById(id, tenantId);
       if (!currentStaff) {
         return res.status(404).json({ error: 'Staff not found' });
       }
 
-      // Update staff
-      // Resolve current admin for audit context
       const { adminId, adminName } = getStaffAdminContext(req);
       const updatedStaff = await dbService.updateStaff(id, tenantId, updates, adminId || undefined, adminName || undefined);
 
+      if (useCloud()) {
+        try {
+          const supabase = getSupabase();
+          if (supabase) {
+            const firstName = updates.firstName || updates.first_name || (currentStaff as any).firstName || '';
+            const lastName = updates.lastName || updates.last_name || (currentStaff as any).lastName || '';
+            const fullName = updates.name || `${firstName} ${lastName}`.trim() || currentStaff.name;
+
+            await supabase.from('staff').update({
+              first_name: firstName || null,
+              last_name: lastName || null,
+              middle_name: updates.middleName || updates.middle_name || null,
+              name: fullName,
+              email: updates.email || null,
+              phone: updates.phone || null,
+              address: updates.address || null,
+              role: updates.role || currentStaff.role || 'cashier',
+              branch: updates.branch || null,
+              department: updates.department || null,
+              employment_status: updates.employmentStatus || updates.employment_status || (currentStaff as any).employmentStatus || 'active',
+              updated_at: new Date().toISOString()
+            }).or(`id.eq.${id},staff_id.eq.${id}`);
+            console.log(`[SUPABASE] Staff updated in cloud for staff ID: ${id}`);
+          }
+        } catch (cloudErr) {
+          console.warn('Failed to mirror staff update to Supabase cloud:', cloudErr);
+        }
+      }
+
       res.status(200).json(updatedStaff);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating staff:', error);
-      res.status(500).json({ error: 'Failed to update staff' });
+      res.status(500).json({ error: error?.message || 'Failed to update staff' });
     }
   });
 

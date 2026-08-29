@@ -578,7 +578,7 @@ const StaffManagement: React.FC = () => {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto">
               <Button
                 variant="outline"
                 className="border-gray-200 bg-white hover:bg-gray-50 text-xs"
@@ -694,12 +694,12 @@ const StaffManagement: React.FC = () => {
               />
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full no-scrollbar flex-nowrap sm:flex-wrap">
               {filterOptions.map(filter => (
                 <button
                   key={filter}
                   onClick={() => setActiveFilter(filter.toLowerCase())}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all border ${
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border flex-shrink-0 ${
                     activeFilter === filter.toLowerCase()
                       ? 'bg-[#2563EB] text-white border-[#2563EB] shadow-sm'
                       : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
@@ -757,7 +757,7 @@ const StaffManagement: React.FC = () => {
 
         {/* View Staff Dialog */}
         <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden">
+          <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl p-4 sm:p-6">
             <DialogHeader>
               <DialogTitle>Staff Details</DialogTitle>
             </DialogHeader>
@@ -941,7 +941,7 @@ const StaffManagement: React.FC = () => {
 
         {/* Edit Staff Dialog */}
         <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl p-4 sm:p-6">
             <DialogHeader>
               <DialogTitle>Edit Staff</DialogTitle>
             </DialogHeader>
@@ -959,22 +959,22 @@ const StaffManagement: React.FC = () => {
         </Dialog>
 
         {/* Floating Add Staff Button */}
-        <div className="fixed bottom-8 right-8">
+        <div className="fixed bottom-6 right-6 z-20">
           <motion.button
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ type: 'spring', stiffness: 300 }}
             onClick={() => setIsAddDialogOpen(true)}
-            className="flex items-center gap-2 bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white px-6 py-3 rounded-2xl shadow-lg hover:shadow-xl transition-all hover:-translate-y-1"
+            className="flex items-center gap-2 bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white px-5 py-3 rounded-2xl shadow-lg hover:shadow-xl transition-all hover:-translate-y-1"
           >
             <Plus className="w-5 h-5" />
-            <span className="font-semibold">Add Staff</span>
+            <span className="font-semibold text-sm">Add Staff</span>
           </motion.button>
         </div>
 
         {/* Add Staff Dialog */}
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl p-4 sm:p-6">
             <DialogHeader>
               <DialogTitle>Add Staff Member</DialogTitle>
             </DialogHeader>
@@ -1521,26 +1521,24 @@ const StaffCard = ({
       className="bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-1 transition-all"
     >
       <CardHeader className="pb-4">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-4">
-            <div className={`relative w-14 h-14 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white font-bold text-lg shadow-md`}>
-              {initials}
-              <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-white ${
-                member.isOnline ? 'bg-green-500' : 'bg-gray-300'
-              } ${member.isOnline ? 'animate-pulse' : ''}`} />
-            </div>
-            <div>
-              <CardTitle className="text-lg font-bold text-gray-900">{member.name}</CardTitle>
-              <div className="flex items-center gap-2 mt-1">
-                <Badge className={`px-2 py-0.5 rounded-full text-xs font-medium border-0 ${roleColor}`}>
-                  {member.role || 'Cashier'}
-                </Badge>
-                <Badge className={`px-2 py-0.5 rounded-full text-xs font-medium border-0 ${
-                  member.isOnline ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-600'
-                }`}>
-                  {member.isOnline ? 'Online' : 'Offline'}
-                </Badge>
-              </div>
+        <div className="flex items-center gap-3 min-w-0">
+          <div className={`relative w-12 h-12 sm:w-14 sm:h-14 flex-shrink-0 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white font-bold text-base sm:text-lg shadow-md`}>
+            {initials}
+            <div className={`absolute -bottom-1 -right-1 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-white ${
+              member.isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-300'
+            }`} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <CardTitle className="text-base sm:text-lg font-bold text-gray-900 truncate">{member.name}</CardTitle>
+            <div className="flex items-center gap-1.5 flex-wrap mt-1">
+              <Badge className={`px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium border-0 ${roleColor}`}>
+                {member.role || 'Cashier'}
+              </Badge>
+              <Badge className={`px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium border-0 ${
+                member.isOnline ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-600'
+              }`}>
+                {member.isOnline ? 'Online' : 'Offline'}
+              </Badge>
             </div>
           </div>
         </div>
