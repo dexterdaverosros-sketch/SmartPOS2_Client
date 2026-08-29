@@ -2639,9 +2639,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Remittance API Routes
-  app.post('/api/remit', authenticateUser, async (req: Request, res: Response) => {
+  app.post('/api/remit', resolveSyncTenant, async (req: Request, res: Response) => {
     try {
-      const tenantId = (req as any).tenantId;
+      const tenantId = (req as any).tenantId || dbService.getDefaultOrOnlyTenantId();
       const { staffId, staffName, amount, transactionCount } = req.body;
       if (!staffId || amount === undefined || amount === null) {
         return res.status(400).json({ error: 'staffId and amount are required' });
@@ -2680,7 +2680,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Create Admin Notification for Remittance
+      let notification: any = null;
+      try {
+        notification = dbService.createNotification(tenantId, {
+          type: 'remittance',
+          message: `${remittanceData.staffName} submitted a remittance of ₱${remittanceData.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} for ${remittanceData.transactionCount} transaction(s).`,
+          data: JSON.stringify({
+            remittanceId: remittanceData.id,
+            staffName: remittanceData.staffName,
+            amount: remittanceData.amount,
+            transactionCount: remittanceData.transactionCount
+          })
+        });
+      } catch (notifErr) {
+        console.warn('Failed to create remittance notification:', notifErr);
+      }
+
+      const unreadCount = dbService.getUnreadNotificationCount(tenantId);
+
+      // Broadcast real-time events across all devices
       io.emit('new-remittance', remittanceData);
+      io.emit('remittance-sent', remittanceData);
+      if (notification) {
+        io.emit('notification-received', notification);
+      }
+      io.emit('unread-count-changed', { count: unreadCount });
 
       res.status(201).json({ success: true, remittance: remittanceData });
     } catch (error: any) {

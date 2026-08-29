@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, useDragControls, PanInfo, AnimatePresence } from 'framer-motion';
-import { Home, Trash2, CreditCard, AlertTriangle, LogOut, Search, ArrowLeft, Edit, Usb, Bluetooth, Send, ShoppingCart, AlertCircle, Package, X, ChevronUp, ChevronDown, Plus, User, Cpu } from 'lucide-react';
+import { Home, Trash2, CreditCard, AlertTriangle, LogOut, Search, ArrowLeft, Edit, Usb, Bluetooth, Send, ShoppingCart, AlertCircle, Package, X, ChevronUp, ChevronDown, Plus, User, Cpu, RefreshCw } from 'lucide-react';
 import { useLocation } from 'wouter';
 import Layout from '@/components/Layout';
 import Scanner from '@/components/Scanner';
@@ -17,6 +17,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useDevices } from '@/contexts/DeviceContext';
 import { useToast } from '@/hooks/use-toast';
 import { ProductService, SalesService, AuthService, db, CreditorService, NonInventoryProductService, RemittanceService } from '@/lib/db';
+import { databaseSyncService } from '@/lib/sync';
 import type { Product, Variant, Sale, CartItem } from '@shared/schema';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -249,6 +250,12 @@ const ScannerSales: React.FC = () => {
 
   const handleRemitClick = async () => {
     try {
+      const tenantId = user?.tenantId || (user as any)?.tenant_id || 'default-tenant-id';
+      try {
+        await databaseSyncService.pullAllFromServerIntoDexie(tenantId);
+      } catch (syncErr) {
+        console.warn('Pre-remit sync warning:', syncErr);
+      }
       const allSales = await SalesService.getAllSales();
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -393,10 +400,38 @@ const ScannerSales: React.FC = () => {
       setProducts(combined);
       const cats = Array.from(new Set(combined.map(p => p.category || 'Uncategorized')));
       setCategories(['all', ...cats]);
+      return combined;
     } catch (error) {
       console.error('Failed to load products', error);
+      return [];
     }
   };
+
+  const [isFetching, setIsFetching] = useState(false);
+
+  const handleFetchData = async () => {
+    setIsFetching(true);
+    try {
+      const tenantId = user?.tenantId || (user as any)?.tenant_id || 'default-tenant-id';
+      toast({ title: 'Syncing Catalog...', description: 'Fetching products and credentials from cloud' });
+      await databaseSyncService.pullAllFromServerIntoDexie(tenantId);
+      await loadProducts();
+      toast({ title: 'Catalog Synced', description: 'All products and inventory successfully updated' });
+    } catch (err: any) {
+      console.error('Fetch error:', err);
+      toast({ title: 'Fetch Failed', description: err?.message || 'Could not fetch catalog from cloud', variant: 'destructive' });
+    } finally {
+      setIsFetching(false);
+    }
+  };
+
+  useEffect(() => {
+    loadProducts().then((prods) => {
+      if (prods && prods.length === 0) {
+        handleFetchData();
+      }
+    });
+  }, []);
 
   useEffect(() => {
     let result = products;
@@ -775,6 +810,17 @@ const ScannerSales: React.FC = () => {
                 </div>
               </div>
               <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  disabled={isFetching}
+                  onClick={handleFetchData}
+                  className="h-11 px-3.5 rounded-2xl border-slate-200 shadow-sm bg-white hover:bg-slate-50 text-slate-700 active:scale-95 transition-all text-xs font-bold flex items-center gap-2"
+                  title="Fetch latest products & data from cloud"
+                >
+                  <RefreshCw className={cn("w-4 h-4 text-emerald-600", isFetching && "animate-spin")} />
+                  <span className="hidden sm:inline">Fetch Data</span>
+                </Button>
+
                 {isStaff ? (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
