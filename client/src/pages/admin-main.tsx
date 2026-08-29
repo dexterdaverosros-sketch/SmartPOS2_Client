@@ -494,8 +494,12 @@ const AdminMain: React.FC = () => {
     handleMarkAsRead(notification.id);
     if (notification.type === 'remittance' && notification.data) {
       try {
-        const data = JSON.parse(notification.data);
-        if (data.remittanceId) fetchAndShowRemittance(data.remittanceId);
+        const rawData = notification.data;
+        const data = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
+        const remitId = data?.remittanceId || data?.id || data?.remittance_id;
+        if (remitId) {
+          fetchAndShowRemittance(remitId);
+        }
       } catch (e) {
         console.error('Failed to parse notification data', e);
       }
@@ -505,9 +509,36 @@ const AdminMain: React.FC = () => {
   const fetchAndShowRemittance = async (id: string) => {
     try {
       const pending = await RemittanceService.listPending();
-      const found = pending.find((r: Remittance) => r.id === id);
-      if (found) setSelectedRemittance(found);
-      else toast({ title: "Remittance Not Found", description: "This remittance may have already been processed." });
+      let found = pending.find((r: Remittance) => r.id === id);
+      if (!found) {
+        // Direct server fallback
+        try {
+          const res = await api.get<any[]>('/api/remittances/pending');
+          if (Array.isArray(res)) {
+            const raw = res.find((r: any) => r.id === id || r.remittance_id === id);
+            if (raw) {
+              found = {
+                id: raw.id,
+                tenantId: raw.tenantId || raw.tenant_id || '',
+                staffId: raw.staffId || raw.staff_id || '',
+                staffName: raw.staffName || raw.staff_name || 'Staff',
+                amount: Number(raw.amount || 0),
+                transactionCount: Number(raw.transactionCount || raw.transaction_count || 0),
+                status: raw.status || 'pending',
+                createdAt: raw.createdAt ? new Date(raw.createdAt) : new Date(),
+                confirmedAt: raw.confirmedAt ? new Date(raw.confirmedAt) : (raw.confirmed_at ? new Date(raw.confirmed_at) : null)
+              };
+            }
+          }
+        } catch (serverErr) {
+          console.warn('Failed to fetch pending remittance fallback from server:', serverErr);
+        }
+      }
+      if (found) {
+        setSelectedRemittance(found);
+      } else {
+        toast({ title: "Remittance Not Found", description: "This remittance may have already been processed." });
+      }
     } catch (error) {
       console.error('Failed to fetch remittance', error);
     }

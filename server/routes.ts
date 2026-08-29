@@ -2798,7 +2798,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/remittances/pending', resolveSyncTenant, async (req: Request, res: Response) => {
     try {
       const tenantId = (req as any).tenantId || dbService.getDefaultOrOnlyTenantId();
-      const pending = dbService.listPendingRemittances(tenantId);
+      let pending = dbService.listPendingRemittances(tenantId) as any[];
+
+      if (useCloud()) {
+        try {
+          const supabase = getSupabase();
+          if (supabase) {
+            let query = supabase.from('remittances').select('*').eq('status', 'pending');
+            if (tenantId && tenantId !== 'default-tenant-id') {
+              query = query.eq('tenant_id', tenantId);
+            }
+            const { data, error } = await query;
+            if (!error && data && data.length > 0) {
+              for (const row of data) {
+                const mapped = {
+                  id: row.id,
+                  tenantId: row.tenant_id,
+                  staffId: row.staff_id,
+                  staffName: row.staff_name || 'Staff',
+                  amount: Number(row.amount || 0),
+                  transactionCount: Number(row.transaction_count || 0),
+                  status: row.status || 'pending',
+                  createdAt: row.created_at || new Date().toISOString()
+                };
+                dbService.createRemittance(row.tenant_id || tenantId, mapped);
+              }
+              pending = dbService.listPendingRemittances(tenantId) as any[];
+            }
+          }
+        } catch (cloudErr) {
+          console.warn('Failed to fetch pending remittances from Supabase cloud:', cloudErr);
+        }
+      }
+
       res.status(200).json(pending || []);
     } catch (error: any) {
       console.error('Error listing pending remittances:', error);
@@ -3009,160 +3041,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(200).json({ synced: rows.length });
     } catch {
       res.status(500).json({ error: 'Failed to sync admins' });
-    }
-  });
-
-  // Remittance & Notifications Routes
-  app.post('/api/remit', authenticateUser, async (req: Request, res: Response) => {
-    try {
-      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
-      const { staffId, staffName, amount, transactionCount } = req.body;
-      const id = randomUUID();
-      const remittance = dbService.createRemittance(tenantId, {
-        id,
-        staffId,
-        staffName,
-        amount,
-        transactionCount
-      });
-
-      // Create notification for admin
-      const notification = dbService.createNotification(tenantId, {
-        type: 'remittance',
-        message: `${staffName} remitted ₱${amount.toLocaleString()} for ${transactionCount} transactions.`,
-        data: { remittanceId: id, staffName, amount, transactionCount }
-      });
-
-      // Notify all admins via socket
-      io.emit('notification-received', notification);
-      io.emit('remittance-sent', remittance);
-
-      res.status(201).json({ success: true, remittance });
-    } catch (error) {
-      console.error('Remittance error:', error);
-      res.status(500).json({ error: 'Failed to process remittance' });
-    }
-  });
-
-  app.post('/api/remit/confirm/:id', async (req: Request, res: Response) => {
-    try {
-      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
-      const { id } = req.params;
-      const remittance = dbService.confirmRemittance(tenantId, id) as any;
-      if (!remittance) return res.status(404).json({ error: 'Remittance not found' });
-
-      // Create notification about confirmation (optional)
-      const notification = dbService.createNotification(tenantId, {
-        type: 'system_update',
-        message: `Remittance of ₱${remittance.amount} from ${remittance.staff_name} has been confirmed.`,
-        data: { remittanceId: id }
-      });
-
-      io.emit('notification-received', notification);
-      io.emit('remittance-confirmed', remittance);
-
-      res.json({ success: true, remittance });
-    } catch (error) {
-      console.error('Confirmation error:', error);
-      res.status(500).json({ error: 'Failed to confirm remittance' });
-    }
-  });
-
-  app.get('/api/remittances/pending', async (req: Request, res: Response) => {
-    try {
-      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
-      const pending = dbService.listPendingRemittances(tenantId);
-      res.json(pending);
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to fetch pending remittances' });
-    }
-  });
-
-  app.get('/api/remittances/confirmed', async (req: Request, res: Response) => {
-    try {
-      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
-      const confirmed = dbService.listConfirmedRemittances(tenantId);
-      res.json(confirmed);
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to fetch confirmed remittances' });
-    }
-  });
-
-  app.get('/api/sales/remitted/:staffId', async (req: Request, res: Response) => {
-    try {
-      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
-      const { staffId } = req.params;
-      const remittedSales = dbService.getRemittedSalesForStaff(tenantId, staffId);
-      res.json(remittedSales);
-    } catch (error) {
-      console.error('Error fetching remitted sales:', error);
-      res.status(500).json({ error: 'Failed to fetch remitted sales' });
-    }
-  });
-
-  app.get('/api/notifications', async (req: Request, res: Response) => {
-    try {
-      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
-      const userId = (req.query.userId as string) || null;
-      const notifications = dbService.listNotifications(tenantId, userId);
-      res.json(notifications);
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to fetch notifications' });
-    }
-  });
-
-  app.get('/api/notifications/unread-count', async (req: Request, res: Response) => {
-    try {
-      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
-      const userId = (req.query.userId as string) || null;
-      const count = dbService.getUnreadNotificationCount(tenantId, userId);
-      res.json({ count });
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to fetch unread count' });
-    }
-  });
-
-  app.patch('/api/notifications/:id/read', async (req: Request, res: Response) => {
-    try {
-      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
-      dbService.markNotificationRead(tenantId, req.params.id);
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to mark notification as read' });
-    }
-  });
-
-  app.patch('/api/notifications/mark-all-read', async (req: Request, res: Response) => {
-    try {
-      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
-      const userId = (req.query.userId as string) || null;
-      dbService.markAllNotificationsRead(tenantId, userId);
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to mark all notifications as read' });
-    }
-  });
-
-  app.delete('/api/notifications/:id', async (req: Request, res: Response) => {
-    try {
-      const tenantId = (req as any).tenantId || (req as any).tenant?.id || (req.headers['x-tenant-id'] as string) || '';
-      dbService.deleteNotification(tenantId, req.params.id);
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to delete notification' });
-    }
-  });
-
-  app.post('/api/notifications/delete-many', async (req: Request, res: Response) => {
-    try {
-      const { ids } = req.body;
-      if (!Array.isArray(ids)) {
-        return res.status(400).json({ error: 'Invalid ids format' });
-      }
-      dbService.deleteNotifications(ids);
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to delete notifications' });
     }
   });
 
