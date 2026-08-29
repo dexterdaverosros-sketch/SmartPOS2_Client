@@ -3,7 +3,7 @@ import type { User } from '@shared/schema';
 import { io, Socket } from 'socket.io-client';
 import { toast } from '@/hooks/use-toast';
 import api from '@/lib/api';
-import { AuthService } from '@/lib/db';
+import { db, AuthService } from '@/lib/db';
 import { databaseSyncService } from '@/lib/sync';
 
 interface AuthContextType {
@@ -242,7 +242,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
     if (socket && user) {
       socket.emit('leave-user', user.id);
     }
@@ -251,24 +251,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       api.post('/api/auth/logout', {}).catch(console.error);
     }
     
-    // If in guest mode, clean up all guest data
-    if (isGuest) {
-      localStorage.removeItem('smartpos_guest_mode');
-      localStorage.removeItem('smartpos_guest_user_id');
-      localStorage.removeItem('smartpos_guest_expiry');
-      // Clear all other smartpos_ items
-      Object.keys(localStorage).forEach(key => {
-        if (key.startsWith('smartpos_')) {
-          localStorage.removeItem(key);
-        }
-      });
+    // Purge local Dexie IndexedDB to enforce strict data isolation between accounts
+    try {
+      await Promise.all([
+        db.products.clear(),
+        db.variants.clear(),
+        db.staff.clear(),
+        db.sales.clear(),
+        db.saleItems.clear(),
+        db.expenses.clear(),
+        db.purchases.clear(),
+        db.creditors.clear(),
+        db.nonInventoryProducts.clear(),
+        db.remittances.clear(),
+        db.notifications.clear()
+      ]);
+      console.log('[AUTH LOGOUT] Local Dexie cache successfully cleared.');
+    } catch (e) {
+      console.warn('[AUTH LOGOUT] Failed to clear local Dexie tables:', e);
     }
-    
+
     setUser(null);
     setToken(null);
     setIsGuest(false);
     localStorage.removeItem('smartpos_user');
     localStorage.removeItem('smartpos_token');
+    localStorage.removeItem('smartpos_tenant_id');
+    localStorage.removeItem('smartpos_guest_mode');
+    localStorage.removeItem('smartpos_guest_user_id');
+    localStorage.removeItem('smartpos_guest_expiry');
   };
 
   const value = {

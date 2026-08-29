@@ -372,7 +372,7 @@ export class DatabaseSyncService {
 
       onProgress?.(60, 'Writing data to local database...');
 
-      // Safe, atomic bulkPut into Dexie IndexedDB without clearing existing local data
+      // Safe, atomic replace of Dexie IndexedDB data for tenant isolation
       await db.transaction(
         'rw',
         [
@@ -390,6 +390,22 @@ export class DatabaseSyncService {
           db.notifications
         ],
         async () => {
+          // Clear all tables first to enforce strict data isolation across store accounts
+          await Promise.all([
+            db.products.clear(),
+            db.variants.clear(),
+            db.staff.clear(),
+            db.users.clear(),
+            db.sales.clear(),
+            db.saleItems.clear(),
+            db.expenses.clear(),
+            db.purchases.clear(),
+            db.creditors.clear(),
+            db.nonInventoryProducts.clear(),
+            db.remittances.clear(),
+            db.notifications.clear()
+          ]);
+
           if (Array.isArray(data.products) && data.products.length > 0) {
             await db.products.bulkPut(data.products);
           }

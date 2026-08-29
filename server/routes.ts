@@ -1674,20 +1674,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get staff by ID with all details
-  app.get('/api/staff/:id', (req: Request, res: Response) => {
+  app.get('/api/staff/:id', resolveSyncTenant, async (req: Request, res: Response) => {
     try {
-      const tenantId = (req as any).tenantId;
+      const tenantId = (req as any).tenantId || dbService.getDefaultOrOnlyTenantId();
       const { id } = req.params;
-      const staff = dbService.getStaffById(id, tenantId);
+      let staff: any = dbService.getStaffById(id, tenantId);
+
+      if (!staff && useCloud()) {
+        try {
+          const supabase = getSupabase();
+          if (supabase) {
+            const { data } = await supabase.from('staff').select('*').or(`id.eq.${id},staff_id.eq.${id}`).single();
+            if (data) {
+              staff = {
+                id: data.id,
+                tenantId: data.tenant_id,
+                name: data.name || `${data.first_name || ''} ${data.last_name || ''}`.trim(),
+                staffId: data.staff_id,
+                firstName: data.first_name,
+                middleName: data.middle_name,
+                lastName: data.last_name,
+                email: data.email,
+                phone: data.phone,
+                address: data.address,
+                role: data.role,
+                branch: data.branch,
+                department: data.department,
+                employmentStatus: data.employment_status || 'active',
+                createdAt: data.created_at
+              };
+              dbService.saveStaff([staff], tenantId);
+            }
+          }
+        } catch (cloudErr) {
+          console.warn('Cloud staff lookup fallback failed:', cloudErr);
+        }
+      }
+
       if (!staff) {
-        return res.status(404).json({ error: 'Staff not found' });
+        return res.status(404).json({ error: 'Staff member not found' });
       }
 
       // Get additional data
-      const performance = dbService.getStaffPerformance(staff.id, tenantId);
-      const attendance = dbService.getStaffAttendance(staff.id, tenantId);
-      const activity = dbService.getStaffActivity(staff.id, tenantId);
-      const loginHistory = dbService.getStaffLoginHistory(staff.id, tenantId);
+      const performance = dbService.getStaffPerformance(staff.id, tenantId) || { todaySales: 0, weeklySales: 0, monthlySales: 0, transactionCount: 0, itemsSold: 0 };
+      const attendance = dbService.getStaffAttendance(staff.id, tenantId) || null;
+      const activity = dbService.getStaffActivity(staff.id, tenantId) || [];
+      const loginHistory = dbService.getStaffLoginHistory(staff.id, tenantId) || [];
 
       res.status(200).json({
         ...staff,

@@ -200,9 +200,33 @@ const StaffManagement: React.FC = () => {
   const loadStaffDetails = async (staffId: string) => {
     setIsLoadingStaff(true);
     try {
-      const response = await api.get(`/api/staff/${staffId}`);
-      setSelectedStaff(response);
-      return response;
+      let response: any = null;
+      try {
+        response = await api.get(`/api/staff/${staffId}`);
+      } catch (serverErr) {
+        console.warn('[Staff Details] Server fetch failed, attempting local Dexie lookup:', serverErr);
+        const local = await db.staff.get(staffId);
+        if (local) {
+          response = {
+            ...local,
+            performance: { todaySales: 0, weeklySales: 0, monthlySales: 0, transactionCount: 0, itemsSold: 0 },
+            attendance: null,
+            activity: [],
+            loginHistory: []
+          };
+        }
+      }
+      if (response) {
+        setSelectedStaff(response);
+        return response;
+      } else {
+        toast({
+          title: 'Error',
+          description: 'Failed to load staff details',
+          variant: 'destructive',
+        });
+        return null;
+      }
     } catch (error) {
       console.error('Error loading staff details:', error);
       toast({
