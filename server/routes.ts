@@ -2836,7 +2836,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/remittances/confirmed', resolveSyncTenant, async (req: Request, res: Response) => {
     try {
       const tenantId = (req as any).tenantId || dbService.getDefaultOrOnlyTenantId();
-      const confirmed = dbService.listConfirmedRemittances(tenantId);
+      let confirmed = dbService.listConfirmedRemittances(tenantId) as any[];
+
+      if (useCloud()) {
+        try {
+          const supabase = getSupabase();
+          if (supabase) {
+            let query = supabase.from('remittances').select('*').in('status', ['confirmed', 'completed']);
+            if (tenantId && tenantId !== 'default-tenant-id') {
+              query = query.eq('tenant_id', tenantId);
+            }
+            const { data, error } = await query;
+            if (!error && data && data.length > 0) {
+              for (const row of data) {
+                const mapped = {
+                  id: row.id,
+                  tenantId: row.tenant_id,
+                  staffId: row.staff_id,
+                  staffName: row.staff_name || 'Staff',
+                  amount: Number(row.amount || 0),
+                  transactionCount: Number(row.transaction_count || 0),
+                  status: 'confirmed',
+                  createdAt: row.created_at || new Date().toISOString(),
+                  confirmedAt: row.confirmed_at || row.updated_at || new Date().toISOString()
+                };
+                dbService.createRemittance(row.tenant_id || tenantId, mapped);
+                dbService.confirmRemittance(row.tenant_id || tenantId, row.id);
+              }
+              confirmed = dbService.listConfirmedRemittances(tenantId) as any[];
+            }
+          }
+        } catch (cloudErr) {
+          console.warn('Failed to fetch confirmed remittances from Supabase cloud:', cloudErr);
+        }
+      }
+
       res.status(200).json(confirmed || []);
     } catch (error: any) {
       console.error('Error listing confirmed remittances:', error);

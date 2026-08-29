@@ -450,6 +450,7 @@ const AdminMain: React.FC = () => {
         setNotifications(prev => [notification, ...prev]);
         setUnreadCount(prev => prev + 1);
         toast({ title: "New Notification", description: notification.message });
+        loadNotifications();
       });
       socket.on('remittance-sent', () => {
         loadNotifications();
@@ -460,6 +461,14 @@ const AdminMain: React.FC = () => {
         loadNotifications();
         loadStats();
         loadFinancialData();
+      });
+      socket.on('remittance-confirmed', () => {
+        loadNotifications();
+        loadStats();
+        loadFinancialData();
+      });
+      socket.on('remittance-cancelled', () => {
+        loadNotifications();
       });
       socket.on('unread-count-changed', (data: { count: number }) => {
         if (typeof data?.count === 'number') {
@@ -475,6 +484,8 @@ const AdminMain: React.FC = () => {
         socket.off('notification-received');
         socket.off('remittance-sent');
         socket.off('new-remittance');
+        socket.off('remittance-confirmed');
+        socket.off('remittance-cancelled');
         socket.off('unread-count-changed');
       }
     };

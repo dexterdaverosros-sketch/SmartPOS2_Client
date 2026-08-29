@@ -255,11 +255,26 @@ export const RemittanceService = {
       if (Array.isArray(res)) {
         const mapped = res.map(r => ({
           ...r,
-          staffName: (r as any).staff_name || r.staffName,
-          staffId: (r as any).staff_id || r.staffId,
-          transactionCount: (r as any).transaction_count || r.transactionCount,
-          createdAt: (r as any).created_at ? new Date((r as any).created_at) : (r.createdAt ? new Date(r.createdAt) : new Date())
+          id: r.id,
+          tenantId: (r as any).tenantId || (r as any).tenant_id || '',
+          staffName: (r as any).staff_name || r.staffName || 'Staff',
+          staffId: (r as any).staff_id || r.staffId || '',
+          amount: Number(r.amount || 0),
+          transactionCount: Number((r as any).transaction_count || r.transactionCount || 0),
+          status: 'pending' as const,
+          createdAt: (r as any).created_at ? new Date((r as any).created_at) : (r.createdAt ? new Date(r.createdAt) : new Date()),
+          confirmedAt: (r as any).confirmed_at ? new Date((r as any).confirmed_at) : (r.confirmedAt ? new Date(r.confirmedAt) : null)
         }));
+
+        // Purge or update any local Dexie records that are no longer pending on server
+        const pendingServerIds = new Set(mapped.map(m => m.id));
+        const localPending = await db.remittances.where('status').equals('pending').toArray();
+        for (const lp of localPending) {
+          if (!pendingServerIds.has(lp.id)) {
+            await db.remittances.update(lp.id, { status: 'confirmed' as any });
+          }
+        }
+
         if (mapped.length > 0) {
           await db.remittances.bulkPut(mapped);
         }
@@ -282,10 +297,15 @@ export const RemittanceService = {
       if (Array.isArray(res)) {
         const mapped = res.map(r => ({
           ...r,
-          staffName: (r as any).staff_name || r.staffName,
-          staffId: (r as any).staff_id || r.staffId,
-          transactionCount: (r as any).transaction_count || r.transactionCount,
-          createdAt: (r as any).created_at ? new Date((r as any).created_at) : (r.createdAt ? new Date(r.createdAt) : new Date())
+          id: r.id,
+          tenantId: (r as any).tenantId || (r as any).tenant_id || '',
+          staffName: (r as any).staff_name || r.staffName || 'Staff',
+          staffId: (r as any).staff_id || r.staffId || '',
+          amount: Number(r.amount || 0),
+          transactionCount: Number((r as any).transaction_count || r.transactionCount || 0),
+          status: 'confirmed' as const,
+          createdAt: (r as any).created_at ? new Date((r as any).created_at) : (r.createdAt ? new Date(r.createdAt) : new Date()),
+          confirmedAt: (r as any).confirmed_at ? new Date((r as any).confirmed_at) : (r.confirmedAt ? new Date(r.confirmedAt) : new Date())
         }));
         if (mapped.length > 0) {
           await db.remittances.bulkPut(mapped);
