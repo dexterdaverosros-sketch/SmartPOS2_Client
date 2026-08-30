@@ -87,18 +87,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { storeName, subdomain, username, password } = req.body;
       console.log("Data:", { storeName, subdomain, username });
       
-      const boundTenantId = await dbService.getBoundTenantId();
-      if (boundTenantId) {
-        console.warn(`[DEVICE LOCK REJECT] Device is bound to tenant ${boundTenantId}, registration blocked.`);
-        return res.status(403).json({
-          error: "DEVICE_BOUND_TO_OTHER_ADMIN",
-          message: "This device/system is registered to another Admin account. Creating additional Admin accounts on this device is restricted to protect database integrity."
-        });
-      }
-      
       const supabase = getSupabase();
       if (!supabase) {
         return res.status(500).json({ error: "Cloud not configured" });
+      }
+
+      // CLOUD-FIRST DEVICE LOCK VERIFICATION:
+      // Verify if Supabase Cloud actually has any active tenants or if the bound tenant still exists in Supabase.
+      try {
+        const { data: cloudTenants } = await supabase.from('tenants').select('id');
+        if (!cloudTenants || cloudTenants.length === 0) {
+          console.log('[CLOUD-FIRST CHECK] No active tenants exist in Supabase Cloud. Clearing local device lock!');
+          dbService.clearBoundTenantId();
+        } else {
+          const boundTenantId = await dbService.getBoundTenantId();
+          if (boundTenantId) {
+            const { data: boundCloudTenants } = await supabase.from('tenants').select('id').eq('id', boundTenantId);
+            if (!boundCloudTenants || boundCloudTenants.length === 0) {
+              console.log(`[CLOUD-FIRST CHECK] Bound tenant ${boundTenantId} was deleted in Supabase Cloud. Clearing local device lock!`);
+              dbService.clearBoundTenantId();
+            } else {
+              console.warn(`[DEVICE LOCK REJECT] Device is bound to active cloud tenant ${boundTenantId}`);
+              return res.status(403).json({
+                error: "DEVICE_BOUND_TO_OTHER_ADMIN",
+                message: "This device/system is registered to another active Admin store account. Creating additional Admin accounts on this device is restricted to protect database integrity."
+              });
+            }
+          }
+        }
+      } catch (checkErr) {
+        console.warn('[CLOUD-FIRST CHECK WARNING] Cloud verification error, falling back:', checkErr);
       }
       
       // 1. Create tenant
