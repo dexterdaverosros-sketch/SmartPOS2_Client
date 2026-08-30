@@ -3616,6 +3616,28 @@ export const dbService = {
     console.log('[PULL COMPLETE] tenant_id=' + tenantId + ' duration_ms=' + _pullDur);
     console.log('=== Full sync from Supabase complete ===');
     return { success: true, message: 'All data pulled from Supabase', duration_ms: _pullDur };
+  },
+
+  getBoundTenantId: (): string | null => {
+    try {
+      const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('device_bound_tenant_id') as any;
+      if (row && row.value) return String(row.value);
+      const firstAdmin = db.prepare('SELECT tenant_id FROM users WHERE role = ? LIMIT 1').get('admin') as any;
+      if (firstAdmin && firstAdmin.tenant_id) return String(firstAdmin.tenant_id);
+      return null;
+    } catch {
+      return null;
+    }
+  },
+
+  setBoundTenantId: (tenantId: string) => {
+    try {
+      const stmt = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+      stmt.run('device_bound_tenant_id', tenantId);
+      console.log(`[DEVICE LOCK] System bound to tenant_id: ${tenantId}`);
+    } catch (e) {
+      console.error('Failed to set bound tenant ID:', e);
+    }
   }
 };
 

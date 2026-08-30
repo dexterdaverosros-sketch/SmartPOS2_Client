@@ -87,6 +87,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { storeName, subdomain, username, password } = req.body;
       console.log("Data:", { storeName, subdomain, username });
       
+      const boundTenantId = dbService.getBoundTenantId();
+      if (boundTenantId) {
+        console.warn(`[DEVICE LOCK REJECT] Device is bound to tenant ${boundTenantId}, registration blocked.`);
+        return res.status(403).json({
+          error: "DEVICE_BOUND_TO_OTHER_ADMIN",
+          message: "This device/system is registered to another Admin account. Creating additional Admin accounts on this device is restricted to protect database integrity."
+        });
+      }
+      
       const supabase = getSupabase();
       if (!supabase) {
         return res.status(500).json({ error: "Cloud not configured" });
@@ -147,11 +156,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           INSERT OR REPLACE INTO users (id, username, password, role, businessName, tenant_id)
           VALUES (?, ?, ?, ?, ?, ?)
         `).run(userId, username, hashedPassword, 'admin', storeName, tenant.id);
+        dbService.setBoundTenantId(tenant.id);
         console.log("SAVED REGISTERED ADMIN TO LOCAL SQLITE DB");
       } catch (localDbErr) {
         console.warn("Failed to save registered admin to local DB:", localDbErr);
       }
       
+      dbService.setBoundTenantId(tenant.id);
       res.status(201).json({ success: true, tenant, user });
     } catch (error) {
       console.error("TENANT REGISTRATION ERROR:", error);
@@ -529,10 +540,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       console.log('=== CREATING SESSION ===');
-      // Resolve verified tenant: prefer subdomain-looked-up tenant.id,
-      // fall back to admin.tenant_id (if user record carries its own verified tenant).
+      const boundTenantId = dbService.getBoundTenantId();
       const sessionTenantId = (tenant && tenant.id !== 'default-tenant-id' ? tenant.id : null)
         ?? (admin.tenant_id && admin.tenant_id !== 'default-tenant-id' ? admin.tenant_id : null);
+
+      if (boundTenantId && sessionTenantId && boundTenantId !== sessionTenantId) {
+        console.warn(`[DEVICE LOCK REJECT] Device is bound to tenant ${boundTenantId}, but login requested ${sessionTenantId}`);
+        return res.status(403).json({
+          error: 'DEVICE_BOUND_TO_OTHER_ADMIN',
+          message: 'This device/system is registered to another Admin account. Accessing multiple Admin accounts on the same device is restricted to protect database integrity.'
+        });
+      }
+
+      if (!boundTenantId && sessionTenantId) {
+        dbService.setBoundTenantId(sessionTenantId);
+      }
+
       if (!sessionTenantId) {
         console.warn('ERROR: cannot create admin session — no verified tenant resolved');
         return res.status(401).json({ error: 'Tenant context missing: ensure X-Tenant-ID subdomain is set' });
@@ -2749,6 +2772,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
             transactionCount: remittanceData.transactionCount
           })
         });
+
+        if (useCloud()) {
+          try {
+            const supabase = getSupabase();
+            if (supabase && notification) {
+              await supabase.from('notifications').insert({
+                id: notification.id || randomUUID(),
+                tenant_id: tenantId,
+                type: 'remittance',
+                message: notification.message,
+                data: notification.data,
+                is_read: false,
+                created_at: new Date().toISOString()
+              });
+            }
+          } catch (cloudNotifErr) {
+            console.warn('Failed to mirror notification to Supabase cloud:', cloudNotifErr);
+          }
+        }
       } catch (notifErr) {
         console.warn('Failed to create remittance notification:', notifErr);
       }
