@@ -459,6 +459,17 @@ export class DatabaseSyncService {
       this.isSyncing = false;
     }
   }
+
+  async pushAllToCloud(tenantId: string) {
+    try {
+      console.log('[SYNC PUSH] Pushing offline data to cloud for tenant:', tenantId);
+      const res = await api.post('/api/sync/push-to-cloud', { tenantId });
+      return res;
+    } catch (err) {
+      console.warn('[SYNC PUSH FAILED]', err);
+      throw err;
+    }
+  }
 }
 
 // Create a singleton instance

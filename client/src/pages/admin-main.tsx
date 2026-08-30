@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLocation } from 'wouter';
-import { LogOut, DollarSign, Package, Plus, Eye, Calendar, CreditCard, Receipt, User, FileText, Lock, FileSpreadsheet, BarChart3, Bell, CheckCircle, Clock, ArrowRight, Monitor, Tablet, Smartphone, Trash2, Edit, RefreshCw, History, Cloud, Download, Settings, X } from 'lucide-react';
+import { LogOut, DollarSign, Package, Plus, Eye, Calendar, CreditCard, Receipt, User, FileText, Lock, FileSpreadsheet, BarChart3, Bell, CheckCircle, Clock, ArrowRight, Monitor, Tablet, Smartphone, Trash2, Edit, RefreshCw, History, Cloud, Download, Settings, X, AlertTriangle, WifiOff } from 'lucide-react';
 import Layout from '@/components/Layout';
 import FloatingActionButton from '@/components/FloatingActionButton';
 import { useAuth } from '@/contexts/AuthContext';
@@ -22,6 +22,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import type { Notification, Remittance } from '@shared/schema';
 import { useLanguage } from '@/contexts/LanguageContext';
 
@@ -86,6 +88,9 @@ const AdminMain: React.FC = () => {
   const { language, setLanguage, t } = useLanguage();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
+  const { isOnline } = useNetworkStatus();
+  const [showAdminOfflinePrompt, setShowAdminOfflinePrompt] = useState(!navigator.onLine);
+  
   const [stats, setStats] = useState({
     todaySales: 0,
     totalProducts: 0,
@@ -671,6 +676,16 @@ const AdminMain: React.FC = () => {
 
   return (
     <Layout>
+      {!isOnline && (
+        <div className="bg-amber-500/10 border-b border-amber-500/20 px-6 py-2.5 flex items-center justify-between text-xs text-amber-600 dark:text-amber-300 z-50">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+            <span>
+              <strong>Offline Mode Active:</strong> Remittances, real-time staff status tracking, and cloud sync are unavailable while offline. Local changes will save to device.
+            </span>
+          </div>
+        </div>
+      )}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -1292,8 +1307,29 @@ const AdminMain: React.FC = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Notifications Sheet/Dialog */}
-
+        <AlertDialog open={showAdminOfflinePrompt} onOpenChange={setShowAdminOfflinePrompt}>
+          <AlertDialogContent className="bg-slate-900 border border-slate-800 text-slate-100 rounded-3xl p-6 max-w-md z-[100]">
+            <AlertDialogHeader className="space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                <AlertTriangle className="w-6 h-6 text-amber-400" />
+              </div>
+              <AlertDialogTitle className="text-xl font-bold text-white">
+                Offline Mode Warning
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-slate-300 text-xs leading-relaxed">
+                You are running in offline mode without internet connection. Real-time staff tracking, cross-device remittances, and cloud synchronization are temporarily unavailable. Local changes will be saved to your device until internet is restored.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="mt-6">
+              <AlertDialogAction
+                onClick={() => setShowAdminOfflinePrompt(false)}
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold py-2.5 shadow-lg shadow-blue-600/30"
+              >
+                Proceed to Admin Dashboard
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </motion.div>
     </Layout>
   );

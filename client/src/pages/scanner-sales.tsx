@@ -18,6 +18,7 @@ import { useDevices } from '@/contexts/DeviceContext';
 import { useToast } from '@/hooks/use-toast';
 import { ProductService, SalesService, AuthService, db, CreditorService, NonInventoryProductService, RemittanceService } from '@/lib/db';
 import { databaseSyncService } from '@/lib/sync';
+import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import type { Product, Variant, Sale, CartItem } from '@shared/schema';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -36,7 +37,8 @@ const ScannerSales: React.FC = () => {
   const { cart, addToCart, removeFromCart, updateCartItem, clearCart, getCartTotal } = useApp();
   const { deviceMode, connectedDevices, printToThermalPrinter } = useDevices();
   const { toast } = useToast();
-  const dragControls = useDragControls();
+  const { isOnline } = useNetworkStatus();
+  const [showOfflinePrompt, setShowOfflinePrompt] = useState(!navigator.onLine);
   
   const [mode, setMode] = useState<'scanner' | 'manual'>('scanner');
   const [quantity, setQuantity] = useState(1);
@@ -802,11 +804,16 @@ const ScannerSales: React.FC = () => {
             <div className="flex justify-between items-center mb-6 flex-none px-1">
               <div className="flex flex-col">
                 <h2 className="text-xl font-black tracking-tighter uppercase text-slate-900">Sales Terminal</h2>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                    {isStaff ? `Revenue: ₱${todaysTotal.toFixed(2)}` : 'Admin Console'}
+                <div className="flex items-center gap-2 mt-0.5">
+                  <div className={cn("w-2 h-2 rounded-full animate-pulse", isOnline ? "bg-emerald-500" : "bg-rose-500")} />
+                  <span className={cn("text-[10px] font-black uppercase tracking-widest", isOnline ? "text-slate-400" : "text-rose-500 font-extrabold")}>
+                    {isOnline ? 'Online' : 'Offline Mode (Local DB)'}
                   </span>
+                  {isStaff && (
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l border-slate-200 pl-2">
+                      Rev: ₱{todaysTotal.toFixed(2)}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex gap-2">
@@ -831,11 +838,23 @@ const ScannerSales: React.FC = () => {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent side="bottom" align="end" className="w-56 bg-white border border-gray-100 shadow-2xl rounded-2xl p-2 z-[60]">
                       <DropdownMenuItem
-                        onClick={handleRemitClick}
-                        className="h-12 px-4 rounded-xl text-sm font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-600 cursor-pointer flex items-center group"
+                        onClick={() => {
+                          if (!isOnline) {
+                            toast({ title: "Remittance Disabled", description: "Remittance is disabled in offline mode until internet is restored.", variant: "destructive" });
+                            return;
+                          }
+                          handleRemitClick();
+                        }}
+                        className={cn(
+                          "h-12 px-4 rounded-xl text-sm font-semibold cursor-pointer flex items-center group",
+                          !isOnline ? "opacity-60 text-slate-400 hover:bg-transparent" : "text-gray-700 hover:bg-blue-50 hover:text-blue-600"
+                        )}
                       >
                         <Send className="w-4 h-4 mr-3 text-gray-400 group-hover:text-blue-500" />
-                        <span>Remit Funds</span>
+                        <div className="flex flex-col">
+                          <span>Remit Funds</span>
+                          {!isOnline && <span className="text-[9px] text-rose-500 font-normal">Offline (Disabled)</span>}
+                        </div>
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => setShowHardwareSetup(true)}
@@ -1710,6 +1729,36 @@ const ScannerSales: React.FC = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <AlertDialog open={showOfflinePrompt} onOpenChange={setShowOfflinePrompt}>
+          <AlertDialogContent className="bg-slate-900 border border-slate-800 text-slate-100 rounded-3xl p-6 max-w-md z-[100]">
+            <AlertDialogHeader className="space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                <AlertCircle className="w-6 h-6 text-amber-400" />
+              </div>
+              <AlertDialogTitle className="text-xl font-bold text-white">
+                No Internet Connection Detected
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-slate-300 text-xs leading-relaxed">
+                You don't have internet connection. All your sales data will store in local DB and remittance cannot be processed until the internet is back. Would you like to proceed to sales terminal to process sales?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="mt-6 flex items-center gap-3">
+              <AlertDialogCancel
+                onClick={() => setLocation('/')}
+                className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700 rounded-xl text-xs font-semibold py-2.5"
+              >
+                No, Go Back
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => setShowOfflinePrompt(false)}
+                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold py-2.5 shadow-lg shadow-blue-600/30"
+              >
+                Yes, Proceed
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </motion.div>
     </Layout>
   );

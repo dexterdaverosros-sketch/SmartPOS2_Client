@@ -43,6 +43,7 @@ import NotFound from "@/pages/not-found";
 import ProductDetails from "@/pages/product-details";
 import ProductVariantAdd from "@/pages/product-variant-add";
 import ProductVariantEdit from "@/pages/product-variant-edit";
+import { NetworkSyncPrompt } from "@/components/NetworkSyncPrompt";
 
 function Router() {
   return (
@@ -136,6 +137,7 @@ function App() {
             <LanguageProvider>
               <DeviceProvider>
                 <Toaster />
+                <NetworkSyncPrompt />
                 <Router />
               </DeviceProvider>
             </LanguageProvider>
