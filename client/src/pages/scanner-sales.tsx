@@ -111,11 +111,6 @@ const ScannerSales: React.FC = () => {
       setIsSavingCreditor(false);
     }
   };
-  
-  const handleCancelQuantity = () => {
-    setShowQuantityDialog(false);
-    setScannedProduct(null);
-  };
 
   const handleDeleteItem = async (productId: string) => {
     removeFromCart(productId);
@@ -657,6 +652,30 @@ const ScannerSales: React.FC = () => {
     }
   };
 
+  const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
+
+  const handleCancelQuantity = () => {
+    setShowQuantityDialog(false);
+    setScannedProduct(null);
+    setEditingCartItem(null);
+  };
+
+  const handleEditItem = (item: CartItem) => {
+    const matchedProduct = products.find(p => p.id === item.productId) || ({
+      id: item.productId,
+      name: item.name,
+      price: item.price,
+      quantity: 999999,
+      isNonInventory: item.isNonInventory
+    } as UIProduct);
+
+    setEditingCartItem(item);
+    setScannedProduct(matchedProduct);
+    setTempQuantity(item.quantity);
+    setTempUnit(item.unit);
+    setShowQuantityDialog(true);
+  };
+
   const handleConfirmQuantity = () => {
     if (!scannedProduct) return;
     const currentTempQuantity = tempQuantity === '' ? 1 : tempQuantity;
@@ -673,12 +692,23 @@ const ScannerSales: React.FC = () => {
         toast({ title: 'Insufficient Stock', description: `Only ${scannedProduct.quantity} pieces available`, variant: 'destructive' });
         return;
       }
-      const existingCartItem = cart.find(item => item.productId === scannedProduct.id);
-      const currentCartQuantity = existingCartItem ? existingCartItem.quantity : 0;
-      if (currentCartQuantity + actualQuantity > scannedProduct.quantity) {
-        toast({ title: 'Insufficient Stock', description: `Cannot add ${actualQuantity} more. Only ${scannedProduct.quantity - currentCartQuantity} pieces available`, variant: 'destructive' });
-        return;
+      if (!editingCartItem) {
+        const existingCartItem = cart.find(item => item.productId === scannedProduct.id);
+        const currentCartQuantity = existingCartItem ? existingCartItem.quantity : 0;
+        if (currentCartQuantity + actualQuantity > scannedProduct.quantity) {
+          toast({ title: 'Insufficient Stock', description: `Cannot add ${actualQuantity} more. Only ${scannedProduct.quantity - currentCartQuantity} pieces available`, variant: 'destructive' });
+          return;
+        }
       }
+    }
+
+    if (editingCartItem) {
+      updateCartItem(scannedProduct.id, currentTempQuantity);
+      toast({ title: 'Item Updated', description: `${scannedProduct.name} updated to ${currentTempQuantity} ${tempUnit}` });
+      setEditingCartItem(null);
+      setShowQuantityDialog(false);
+      setScannedProduct(null);
+      return;
     }
 
     const cartItem: CartItem = {
@@ -703,11 +733,6 @@ const ScannerSales: React.FC = () => {
       return;
     }
     setIsPayModalOpen(true);
-  };
-
-  const handleEditItem = (item: CartItem) => {
-    setEditingItem(item);
-    setEditQuantityStr(item.quantity.toString());
   };
 
   const saveEditedQuantity = () => {
@@ -1328,8 +1353,14 @@ const ScannerSales: React.FC = () => {
                             <div className="font-bold text-[11px] uppercase tracking-tight text-slate-800 line-clamp-1">{item.name}</div>
                             <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">₱{item.price.toFixed(2)} × {item.quantity} {item.unit}</div>
                           </div>
-                          <div className="text-right flex items-center gap-4">
+                          <div className="text-right flex items-center gap-2">
                             <div className="font-black text-slate-900 text-[11px]">₱{item.subtotal.toFixed(2)}</div>
+                            <button 
+                              onClick={() => handleEditItem(item)} 
+                              className="text-slate-600 transition-colors p-1.5 bg-slate-100 rounded-lg hover:bg-slate-200"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
                             <button 
                               onClick={() => handleDeleteItem(item.productId)} 
                               className="text-red-500 transition-colors p-1.5 bg-red-50 rounded-lg shadow-sm border border-red-200 hover:border-red-400 hover:bg-red-100"
