@@ -1467,26 +1467,27 @@ export const dbService = {
               remitted,
               created_at
             `)
+            .eq('tenant_id', tenantId)
             .order('created_at', { ascending: false });
 
           if (!saleError && cloudSales) {
             // Also fetch staff names for these sales
-            const { data: cloudStaff } = await supabase.from('staff').select('staff_id, name');
+            const { data: cloudStaff } = await supabase.from('staff').select('staff_id, name').eq('tenant_id', tenantId);
             const staffMap = new Map((cloudStaff || []).map(s => [s.staff_id, s.name]));
 
             sales = cloudSales.map(s => ({
               saleId: s.id,
-              total: s.total,
-              paymentType: s.payment_type,
-              paymentAmount: s.payment_amount,
+              total: Number(s.total || 0),
+              paymentType: s.payment_type || 'cash',
+              paymentAmount: Number(s.payment_amount || s.total || 0),
               staffId: s.staff_id,
               remitted: !!s.remitted,
               createdAt: s.created_at,
               staffName: staffMap.get(s.staff_id) || 'Staff'
             }));
           }
-        } catch (err) {
-          console.error('Failed to fetch sales from Supabase:', err);
+        } catch (cloudErr) {
+          console.warn('Failed to fetch sales from cloud fallback:', cloudErr);
         }
       }
     }
@@ -3372,7 +3373,11 @@ export const dbService = {
         `);
         db.transaction((sales: any[]) => {
           for (const s of sales) {
-            insert.run(s.id, tenantId, s.total, s.payment_type, s.payment_amount, s.staff_id, s.remitted ? 1 : 0, s.created_at);
+            const payType = s.payment_type || s.paymentType || 'cash';
+            const payAmount = Number(s.payment_amount || s.paymentAmount || s.total || 0);
+            const stfId = s.staff_id || s.staffId || null;
+            const createdAt = s.created_at || s.createdAt || new Date().toISOString();
+            insert.run(s.id, tenantId, Number(s.total || 0), payType, payAmount, stfId, s.remitted ? 1 : 0, createdAt);
           }
         })(cloudSales);
         console.log('[LOCAL SYNC] entity=sales rows_received=' + _n + ' rows_saved=' + _n);
@@ -3397,7 +3402,11 @@ export const dbService = {
         `);
         db.transaction((items: any[]) => {
           for (const i of items) {
-            insert.run(i.id, tenantId, i.sale_id, i.product_id, i.quantity, i.price, i.unit, i.product_name, i.is_non_inventory ? 1 : 0);
+            const saleId = i.sale_id || i.saleId || '';
+            const prodId = i.product_id || i.productId || null;
+            const prodName = i.product_name || i.productName || 'Product';
+            const isNonInv = i.is_non_inventory || i.isNonInventory ? 1 : 0;
+            insert.run(i.id, tenantId, saleId, prodId, Number(i.quantity || 1), Number(i.price || 0), i.unit || null, prodName, isNonInv);
           }
         })(cloudSaleItems);
         console.log('[LOCAL SYNC] entity=sale_items rows_received=' + _n + ' rows_saved=' + _n);
@@ -3406,6 +3415,66 @@ export const dbService = {
     } catch (e: any) {
       console.error('[PULL ERROR] entity=sale_items tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
       throw e;
+    }
+
+    // 11a. Pull Expenses
+    try {
+      const { data: cloudExpenses, error: expErr } = await supabase.from('expenses').select('*').eq('tenant_id', tenantId);
+      if (!expErr && cloudExpenses && cloudExpenses.length > 0) {
+        const insert = db.prepare(`
+          INSERT OR REPLACE INTO expenses
+          (id, tenant_id, category, description, amount, date, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        db.transaction((rows: any[]) => {
+          for (const r of rows) {
+            insert.run(r.id, tenantId, r.category || 'General', r.description || '', Number(r.amount || 0), r.date || r.created_at, r.created_at || new Date().toISOString(), r.updated_at || r.created_at);
+          }
+        })(cloudExpenses);
+        console.log('[LOCAL SYNC] entity=expenses rows_saved=' + cloudExpenses.length);
+      }
+    } catch (e: any) {
+      console.warn('[PULL WARNING] entity=expenses tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+    }
+
+    // 11b. Pull Purchases
+    try {
+      const { data: cloudPurchases, error: purErr } = await supabase.from('purchases').select('*').eq('tenant_id', tenantId);
+      if (!purErr && cloudPurchases && cloudPurchases.length > 0) {
+        const insert = db.prepare(`
+          INSERT OR REPLACE INTO purchases
+          (id, tenant_id, supplier_name, item_name, quantity, total_cost, date, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        db.transaction((rows: any[]) => {
+          for (const r of rows) {
+            insert.run(r.id, tenantId, r.supplier_name || r.supplierName || 'Supplier', r.item_name || r.itemName || 'Item', Number(r.quantity || 1), Number(r.total_cost || r.totalCost || 0), r.date || r.created_at, r.created_at || new Date().toISOString(), r.updated_at || r.created_at);
+          }
+        })(cloudPurchases);
+        console.log('[LOCAL SYNC] entity=purchases rows_saved=' + cloudPurchases.length);
+      }
+    } catch (e: any) {
+      console.warn('[PULL WARNING] entity=purchases tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+    }
+
+    // 11c. Pull Creditors
+    try {
+      const { data: cloudCreditors, error: credErr } = await supabase.from('creditors').select('*').eq('tenant_id', tenantId);
+      if (!credErr && cloudCreditors && cloudCreditors.length > 0) {
+        const insert = db.prepare(`
+          INSERT OR REPLACE INTO creditors
+          (id, tenant_id, name, phone, address, amount_owed, due_date, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        db.transaction((rows: any[]) => {
+          for (const r of rows) {
+            insert.run(r.id, tenantId, r.name, r.phone || '', r.address || '', Number(r.amount_owed || r.amountOwed || 0), r.due_date || r.dueDate || null, r.status || 'unpaid', r.created_at || new Date().toISOString(), r.updated_at || r.created_at);
+          }
+        })(cloudCreditors);
+        console.log('[LOCAL SYNC] entity=creditors rows_saved=' + cloudCreditors.length);
+      }
+    } catch (e: any) {
+      console.warn('[PULL WARNING] entity=creditors tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
     }
 
     // 12. Pull Remittances

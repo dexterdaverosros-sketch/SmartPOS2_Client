@@ -97,6 +97,9 @@ const TransactionHistory: React.FC = () => {
 
   useEffect(() => {
     fetchTransactions();
+    const handleSync = () => fetchTransactions();
+    window.addEventListener('tenant-data-synced', handleSync);
+    return () => window.removeEventListener('tenant-data-synced', handleSync);
   }, [toast]);
   
   const handleViewDetails = async (transaction: Transaction) => {

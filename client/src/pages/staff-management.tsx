@@ -438,9 +438,15 @@ const StaffManagement: React.FC = () => {
 
     init();
 
+    const handleTenantSync = () => {
+      loadStaff();
+    };
+    window.addEventListener('tenant-data-synced', handleTenantSync);
+
     return () => {
       cancelled = true;
       clearInterval(heartbeatInterval);
+      window.removeEventListener('tenant-data-synced', handleTenantSync);
       if (socketRef.current) {
         if (user?.id) {
           try { socketRef.current.emit('adminOffline', { adminId: user.id }); } catch (_) {}
