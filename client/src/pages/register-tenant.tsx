@@ -24,6 +24,32 @@ const RegisterTenant: React.FC = () => {
     }));
   };
 
+  const handleUnbindDevice = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/tenants/unbind-device', { method: 'POST' });
+      const d = await res.json();
+      if (res.ok) {
+        setResult({
+          success: true,
+          message: 'Device lock successfully reset! You can now register your store.'
+        });
+      } else {
+        setResult({
+          success: false,
+          message: d.error || 'Failed to unbind device.'
+        });
+      }
+    } catch (e) {
+      setResult({
+        success: false,
+        message: 'Network error resetting device lock.'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -178,8 +204,18 @@ const RegisterTenant: React.FC = () => {
                   ) : (
                     <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-rose-400" />
                   )}
-                  <div className="leading-relaxed font-medium">
-                    {result.message}
+                  <div className="leading-relaxed font-medium flex-1">
+                    <div>{result.message}</div>
+                    {!result.success && (
+                      <button
+                        type="button"
+                        onClick={handleUnbindDevice}
+                        className="mt-2.5 text-xs font-semibold px-3.5 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 transition-all flex items-center gap-2 shadow-sm"
+                      >
+                        <ShieldCheck className="w-4 h-4 text-rose-400" />
+                        <span>Force Reset & Unbind Device Lock</span>
+                      </button>
+                    )}
                   </div>
                 </motion.div>
               )}

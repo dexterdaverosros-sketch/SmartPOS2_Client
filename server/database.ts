@@ -3667,7 +3667,8 @@ export const dbService = {
     try {
       db.prepare('DELETE FROM settings WHERE key = ?').run('device_bound_tenant_id');
       db.prepare('DELETE FROM users').run();
-      console.log('[DEVICE UNBIND SUCCESS] Unbound device and cleared stale local admin cache.');
+      db.prepare('DELETE FROM sessions').run();
+      console.log('[DEVICE UNBIND SUCCESS] Unbound device and cleared stale local settings, users, and sessions.');
     } catch (e) {
       console.error('Failed to clear bound tenant ID:', e);
     }

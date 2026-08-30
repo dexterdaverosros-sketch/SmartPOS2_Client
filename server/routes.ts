@@ -92,31 +92,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(500).json({ error: "Cloud not configured" });
       }
 
-      // CLOUD-FIRST DEVICE LOCK VERIFICATION:
-      // Verify if Supabase Cloud actually has any active tenants or if the bound tenant still exists in Supabase.
+      // STRICT CLOUD-FIRST DEVICE UNBIND & VERIFICATION:
+      // Query Supabase Cloud for active tenants and admin users.
       try {
-        const { data: cloudTenants } = await supabase.from('tenants').select('id');
-        if (!cloudTenants || cloudTenants.length === 0) {
-          console.log('[CLOUD-FIRST CHECK] No active tenants exist in Supabase Cloud. Clearing local device lock!');
+        const { data: cloudTenants } = await supabase.from('tenants').select('id, subdomain, store_name');
+        const { data: cloudAdminUsers } = await supabase.from('users').select('id, username, tenant_id, role');
+
+        const activeAdmins = (cloudAdminUsers || []).filter((u: any) => u.role === 'admin' || u.role === 'owner');
+        const activeTenants = cloudTenants || [];
+
+        console.log(`[CLOUD VERIFICATION] Found ${activeTenants.length} tenants and ${activeAdmins.length} admin users in Supabase Cloud.`);
+
+        // IF NO ADMIN ACCOUNTS OR NO TENANTS EXIST IN SUPABASE CLOUD:
+        if (activeTenants.length === 0 || activeAdmins.length === 0) {
+          console.log('[CLOUD UNBIND] No active admin accounts exist in Supabase Cloud. Unbinding local device completely!');
           dbService.clearBoundTenantId();
         } else {
+          // Check if device_bound_tenant_id exists in local settings
           const boundTenantId = await dbService.getBoundTenantId();
           if (boundTenantId) {
-            const { data: boundCloudTenants } = await supabase.from('tenants').select('id').eq('id', boundTenantId);
-            if (!boundCloudTenants || boundCloudTenants.length === 0) {
-              console.log(`[CLOUD-FIRST CHECK] Bound tenant ${boundTenantId} was deleted in Supabase Cloud. Clearing local device lock!`);
+            const isBoundTenantActive = activeTenants.some((t: any) => t.id === boundTenantId);
+            const isBoundAdminActive = activeAdmins.some((u: any) => u.tenant_id === boundTenantId);
+
+            if (!isBoundTenantActive || !isBoundAdminActive) {
+              console.log(`[CLOUD UNBIND] Bound tenant ${boundTenantId} no longer has an active admin in Supabase Cloud. Unbinding local device!`);
               dbService.clearBoundTenantId();
             } else {
-              console.warn(`[DEVICE LOCK REJECT] Device is bound to active cloud tenant ${boundTenantId}`);
-              return res.status(403).json({
-                error: "DEVICE_BOUND_TO_OTHER_ADMIN",
-                message: "This device/system is registered to another active Admin store account. Creating additional Admin accounts on this device is restricted to protect database integrity."
-              });
+              const requestedSubdomain = String(subdomain || '').toLowerCase().trim();
+              const boundTenantObj = activeTenants.find((t: any) => t.id === boundTenantId);
+              if (boundTenantObj && boundTenantObj.subdomain === requestedSubdomain) {
+                console.log(`[DEVICE LOCK] User is re-registering bound tenant ${requestedSubdomain}. Allowing!`);
+              } else {
+                console.warn(`[DEVICE LOCK REJECT] Device is bound to active cloud store: ${boundTenantObj?.store_name || boundTenantId}`);
+                return res.status(403).json({
+                  error: "DEVICE_BOUND_TO_OTHER_ADMIN",
+                  message: "This device/system is registered to another active Admin store account. Creating additional Admin accounts on this device is restricted to protect database integrity."
+                });
+              }
             }
           }
         }
       } catch (checkErr) {
-        console.warn('[CLOUD-FIRST CHECK WARNING] Cloud verification error, falling back:', checkErr);
+        console.warn('[CLOUD VERIFICATION WARNING] Verification check error, auto unbinding:', checkErr);
+        dbService.clearBoundTenantId();
       }
       
       // 1. Create tenant
@@ -185,6 +203,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("TENANT REGISTRATION ERROR:", error);
       res.status(500).json({ error: "Tenant registration failed", details: error });
+    }
+  });
+
+  app.post('/api/tenants/unbind-device', (req: Request, res: Response) => {
+    try {
+      dbService.clearBoundTenantId();
+      res.json({ success: true, message: 'Device successfully unbound from local tenant lock.' });
+    } catch (e: any) {
+      res.status(500).json({ error: 'Failed to unbind device', details: e?.message || String(e) });
     }
   });
 
