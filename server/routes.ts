@@ -978,6 +978,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.put('/api/auth/change-password', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId;
+      const tenantId = (req as any).tenantId;
+      const { currentPassword, newPassword } = req.body;
+
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ error: 'Current password and new password are required' });
+      }
+
+      // 1. Get user from local SQLite or Supabase
+      let user: any = dbService.getUserById(userId);
+      if (!user) {
+        user = dbService.getAdmin(tenantId);
+      }
+
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      // 2. Verify current password
+      const storedKey = String(user.password || '').trim();
+      let isValid = false;
+      if (storedKey) {
+        if (storedKey.startsWith('$2a$') || storedKey.startsWith('$2b$')) {
+          isValid = await bcrypt.compare(currentPassword.trim(), storedKey);
+        } else {
+          isValid = (currentPassword.trim() === storedKey);
+        }
+      }
+
+      if (!isValid) {
+        return res.status(400).json({ error: 'Incorrect current password' });
+      }
+
+      // 3. Hash new password
+      const newHash = await bcrypt.hash(newPassword.trim(), 10);
+
+      // 4. Update in local SQLite
+      try {
+        const sqlite = initSQLite();
+        sqlite.prepare('UPDATE users SET password = ? WHERE id = ?').run(newHash, user.id);
+      } catch (err) {
+        console.warn('Failed to update local SQLite admin password:', err);
+      }
+
+      // 5. Update in Supabase Cloud
+      if (useCloud()) {
+        try {
+          const supabase = getSupabase();
+          if (supabase) {
+            await supabase.from('users').update({ password: newHash }).eq('id', user.id);
+            console.log(`[PASSWORD CHANGE] Admin password updated in Supabase Cloud for user: ${user.id}`);
+          }
+        } catch (cloudErr) {
+          console.warn('Failed to update admin password in Supabase cloud:', cloudErr);
+        }
+      }
+
+      res.json({ success: true, message: 'Password updated successfully in local DB and Supabase Cloud' });
+    } catch (error: any) {
+      console.error('Error changing password:', error);
+      res.status(500).json({ error: 'Failed to change password', details: error?.message || String(error) });
+    }
+  });
+
   app.post('/api/auth/verify-security-answers', async (req: Request, res: Response) => {
     try {
       const { username, answers } = req.body;

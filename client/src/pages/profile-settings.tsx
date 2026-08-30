@@ -316,17 +316,25 @@ const ProfileSettings: React.FC = () => {
 
   const onSubmitCredentials = async (data: CredentialsFormData) => {
     if (data.newPassword !== data.confirmPassword) {
-      toast({ title: 'Error', description: "Passwords don't match", variant: 'destructive' });
+      toast({ title: 'Error', description: "New password and confirm password don't match", variant: 'destructive' });
       return;
     }
     setIsLoading(true);
     try {
-      console.log('Password updated:', data);
-      toast({ title: 'Password Updated', description: 'Your password has been updated successfully' });
-      credentialsForm.reset();
-      setShowAccountDetails(false);
-    } catch (error) {
-      toast({ title: 'Error', description: 'Failed to update password', variant: 'destructive' });
+      const response = await api.put('/api/auth/change-password', {
+        currentPassword: data.currentPassword,
+        newPassword: data.newPassword
+      });
+      if (response && (response.success || response.ok)) {
+        toast({ title: 'Password Updated', description: 'Your password has been updated in local DB and Supabase Cloud!' });
+        credentialsForm.reset();
+        setShowAccountDetails(false);
+      } else {
+        toast({ title: 'Error', description: (response as any)?.error || 'Failed to update password', variant: 'destructive' });
+      }
+    } catch (error: any) {
+      console.error('Password update error:', error);
+      toast({ title: 'Error', description: error?.response?.data?.error || error?.message || 'Failed to update password', variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
@@ -621,45 +629,7 @@ const ProfileSettings: React.FC = () => {
             </div>
           </div>
 
-          <div className="space-y-6">
-            <div className="flex items-center gap-4">
-              <h2 className="text-xs font-black uppercase tracking-[0.3em] text-gray-400">Payment Gateways</h2>
-              <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
-            </div>
 
-            <div className={cn(
-              "grid gap-4",
-              (deviceMode === 'pc' || deviceMode === 'tablet') ? "grid-cols-2" : "grid-cols-1"
-            )}>
-              {[
-                { name: 'gcash', connected: gcashConnected, loading: connectingWallet === 'gcash' },
-                { name: 'maya', connected: mayaConnected, loading: connectingWallet === 'maya' }
-              ].map((wallet) => (
-                <div key={wallet.name} className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className={cn("p-3 rounded-xl", wallet.connected ? "bg-emerald-50 text-emerald-500" : "bg-gray-50 text-gray-400")}>
-                      <Wallet className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-gray-900 dark:text-white tracking-tight uppercase">{wallet.name}</h4>
-                      <p className={cn("text-[10px] font-black uppercase tracking-widest", wallet.connected ? "text-emerald-500" : "text-gray-400")}>
-                        {wallet.connected ? 'Account Linked' : 'Disconnected'}
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    variant={wallet.connected ? "outline" : "default"}
-                    size="sm"
-                    className={cn("h-9 px-6 rounded-xl font-bold uppercase text-[10px] tracking-widest transition-all", !wallet.connected && "bg-[#BF953F] hover:bg-[#B38728]")}
-                    onClick={() => startWalletOAuth(wallet.name as any)}
-                    disabled={wallet.loading}
-                  >
-                    {wallet.loading ? '...' : (wallet.connected ? 'Manage' : 'Connect')}
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </div>
 
           <div className="pt-8 flex justify-center">
             <Button

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, useDragControls, PanInfo, AnimatePresence } from 'framer-motion';
-import { Home, Trash2, CreditCard, AlertTriangle, LogOut, Search, ArrowLeft, Edit, Usb, Bluetooth, Send, ShoppingCart, AlertCircle, Package, X, ChevronUp, ChevronDown, Plus, User, Cpu, RefreshCw } from 'lucide-react';
+import { Home, Trash2, CreditCard, AlertTriangle, LogOut, Search, ArrowLeft, Edit, Usb, Bluetooth, Send, ShoppingCart, AlertCircle, Package, X, ChevronUp, ChevronDown, Plus, User, Cpu, RefreshCw, DollarSign, Info } from 'lucide-react';
 import { useLocation } from 'wouter';
 import Layout from '@/components/Layout';
 import Scanner from '@/components/Scanner';
@@ -63,6 +63,54 @@ const ScannerSales: React.FC = () => {
   const [nonInvPrice, setNonInvPrice] = useState("");
   const [nonInvQty, setNonInvQty] = useState("1");
   const [nonInvUnit, setNonInvUnit] = useState<'pieces' | 'kilo' | 'gram' | 'liter'>("pieces");
+  
+  // Inline Creditor State
+  const [isAddCreditorOpen, setIsAddCreditorOpen] = useState(false);
+  const [newCreditorName, setNewCreditorName] = useState('');
+  const [newCreditorPhone, setNewCreditorPhone] = useState('');
+  const [newCreditorAddress, setNewCreditorAddress] = useState('');
+  const [isSavingCreditor, setIsSavingCreditor] = useState(false);
+
+  const loadCreditors = async () => {
+    try {
+      const list = await CreditorService.getAllCreditors();
+      setCreditors(list.map(c => ({ id: c.id, name: c.name })));
+    } catch (e) {
+      console.warn('Failed to load creditors:', e);
+    }
+  };
+
+  const handleCreateCreditorInline = async () => {
+    if (!newCreditorName.trim()) {
+      toast({ title: "Name Required", description: "Please enter creditor name", variant: "destructive" });
+      return;
+    }
+    setIsSavingCreditor(true);
+    try {
+      const newCreditor = await CreditorService.addCreditor({
+        tenantId: user?.tenantId || '',
+        name: newCreditorName.trim(),
+        phone: newCreditorPhone.trim() || undefined,
+        address: newCreditorAddress.trim() || undefined,
+        amount: 0,
+        description: '',
+        dueDate: new Date().toISOString(),
+        reminderDate: new Date().toISOString(),
+        isPaid: false
+      } as any);
+      toast({ title: "Creditor Profile Created", description: `Added ${newCreditorName} to creditors list` });
+      setCreditors(prev => [...prev, { id: newCreditor.id, name: newCreditor.name }]);
+      setSelectedCreditor({ id: newCreditor.id, name: newCreditor.name });
+      setIsAddCreditorOpen(false);
+      setNewCreditorName('');
+      setNewCreditorPhone('');
+      setNewCreditorAddress('');
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to add creditor", variant: "destructive" });
+    } finally {
+      setIsSavingCreditor(false);
+    }
+  };
   
   const handleCancelQuantity = () => {
     setShowQuantityDialog(false);
@@ -428,12 +476,16 @@ const ScannerSales: React.FC = () => {
   };
 
   useEffect(() => {
-    loadProducts().then((prods) => {
-      if (prods && prods.length === 0) {
-        handleFetchData();
+    const tenantId = user?.tenantId || (user as any)?.tenant_id || localStorage.getItem('smartpos_tenant') || '';
+    if (tenantId) {
+      localStorage.setItem('smartpos_tenant', tenantId);
+    }
+    loadProducts().then(async (prods) => {
+      if (!prods || prods.length === 0) {
+        await handleFetchData();
       }
     });
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     let result = products;
@@ -804,7 +856,11 @@ const ScannerSales: React.FC = () => {
             <div className="flex justify-between items-center mb-6 flex-none px-1">
               <div className="flex flex-col">
                 <h2 className="text-xl font-black tracking-tighter uppercase text-slate-900">Sales Terminal</h2>
-                <div className="flex items-center gap-2 mt-0.5">
+                <div className="text-[11px] font-bold text-slate-600 flex items-center gap-1.5 mt-0.5">
+                  <User className="w-3.5 h-3.5 text-blue-500" />
+                  <span>Logged Staff: <strong className="text-slate-900">{user?.ownerName || user?.username || user?.staffId || 'Staff Member'}</strong></span>
+                </div>
+                <div className="flex items-center gap-2 mt-1">
                   <div className={cn("w-2 h-2 rounded-full animate-pulse", isOnline ? "bg-emerald-500" : "bg-rose-500")} />
                   <span className={cn("text-[10px] font-black uppercase tracking-widest", isOnline ? "text-slate-400" : "text-rose-500 font-extrabold")}>
                     {isOnline ? 'Online' : 'Offline Mode (Local DB)'}
@@ -1096,59 +1152,138 @@ const ScannerSales: React.FC = () => {
                     </div>
 
                     <div className="space-y-4 bg-white border-t border-gray-100 pt-6 pb-4 flex-none sticky bottom-0">
+                      {/* Payment Type Selection */}
                       <div className="space-y-2">
-                        <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Received Amount (₱)</Label>
-                        <Input 
-                          type="number" 
-                          value={paymentAmount ?? ''} 
-                          onChange={e => {
-                            const val = parseFloat(e.target.value);
-                            setPaymentAmount(isNaN(val) ? null : val);
-                            setPaymentError(false);
-                          }} 
-                          placeholder="0.00" 
-                          className={cn(
-                            "h-14 bg-gray-50 border border-gray-200 rounded-2xl font-black text-xl px-6 focus:ring-2 focus:ring-[#BF953F]/30 focus:border-[#BF953F]",
-                            paymentError && "ring-2 ring-red-500/30 bg-red-50 border-red-300"
-                          )} 
-                        />
-                        {/* Quick Cash Selection Chips */}
-                        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                        <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Payment Method</Label>
+                        <div className="grid grid-cols-3 gap-2">
                           <button
                             type="button"
-                            onClick={() => {
-                              setPaymentAmount(getCartTotal());
-                              setPaymentError(false);
-                            }}
+                            onClick={() => { setPaymentType('cash'); setPaymentAmount(null); }}
                             className={cn(
-                              "px-2.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all border",
-                              paymentAmount === getCartTotal()
-                                ? "bg-[#BF953F] text-white border-[#BF953F] shadow-sm"
-                                : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
+                              "py-3 rounded-2xl font-black text-xs uppercase tracking-wider transition-all border flex items-center justify-center gap-1.5",
+                              paymentType === 'cash' ? "bg-slate-900 text-white border-slate-900 shadow-md" : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
                             )}
                           >
-                            Exact
+                            <DollarSign className="w-4 h-4" /> Cash
                           </button>
-                          {[50, 100, 200, 500, 1000].map((denom) => (
+                          <button
+                            type="button"
+                            onClick={() => { setPaymentType('ewallet'); setPaymentAmount(getCartTotal()); }}
+                            className={cn(
+                              "py-3 rounded-2xl font-black text-xs uppercase tracking-wider transition-all border flex items-center justify-center gap-1.5",
+                              paymentType === 'ewallet' ? "bg-blue-600 text-white border-blue-600 shadow-md" : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
+                            )}
+                          >
+                            <CreditCard className="w-4 h-4" /> E-Wallet
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setPaymentType('credits'); setPaymentAmount(0); loadCreditors(); }}
+                            className={cn(
+                              "py-3 rounded-2xl font-black text-xs uppercase tracking-wider transition-all border flex items-center justify-center gap-1.5",
+                              paymentType === 'credits' ? "bg-[#BF953F] text-white border-[#BF953F] shadow-md" : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
+                            )}
+                          >
+                            <User className="w-4 h-4" /> Credits
+                          </button>
+                        </div>
+                      </div>
+
+                      {paymentType === 'ewallet' && (
+                        <div className="p-3 bg-blue-50 border border-blue-100 rounded-2xl text-[10px] text-blue-700 font-bold flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                          <span>E-Wallet payment is verified out-of-system by staff (GCash, Maya, QR Ph, etc.).</span>
+                        </div>
+                      )}
+
+                      {paymentType === 'credits' && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Select Creditor Account</Label>
                             <button
-                              key={denom}
+                              type="button"
+                              onClick={() => setIsAddCreditorOpen(true)}
+                              className="text-[10px] font-black uppercase tracking-wider text-[#BF953F] hover:underline flex items-center gap-1"
+                            >
+                              <Plus className="w-3 h-3" /> Add New Creditor
+                            </button>
+                          </div>
+                          <Select
+                            value={selectedCreditor?.id || ''}
+                            onValueChange={(val) => {
+                              const found = creditors.find(c => c.id === val);
+                              setSelectedCreditor(found ? { id: found.id, name: found.name } : null);
+                            }}
+                          >
+                            <SelectTrigger className="h-12 bg-gray-50 border-gray-200 rounded-2xl font-bold text-sm">
+                              <SelectValue placeholder="-- Select Creditor Account --" />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-2xl border-gray-100">
+                              {creditors.map(c => (
+                                <SelectItem key={c.id} value={c.id} className="font-bold text-xs">
+                                  {c.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+
+                      {paymentType === 'cash' && (
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Received Amount (₱)</Label>
+                          <Input 
+                            type="number" 
+                            value={paymentAmount ?? ''} 
+                            onChange={e => {
+                              const val = parseFloat(e.target.value);
+                              setPaymentAmount(isNaN(val) ? null : val);
+                              setPaymentError(false);
+                            }} 
+                            placeholder="0.00" 
+                            className={cn(
+                              "h-14 bg-gray-50 border border-gray-200 rounded-2xl font-black text-xl px-6 focus:ring-2 focus:ring-[#BF953F]/30 focus:border-[#BF953F]",
+                              paymentError && "ring-2 ring-red-500/30 bg-red-50 border-red-300"
+                            )} 
+                          />
+                          {/* Quick Cash Selection Chips */}
+                          <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                            <button
                               type="button"
                               onClick={() => {
-                                setPaymentAmount(denom);
+                                setPaymentAmount(getCartTotal());
                                 setPaymentError(false);
                               }}
                               className={cn(
-                                "px-2.5 py-1.5 rounded-xl text-xs font-black transition-all border",
-                                paymentAmount === denom
+                                "px-2.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all border",
+                                paymentAmount === getCartTotal()
                                   ? "bg-[#BF953F] text-white border-[#BF953F] shadow-sm"
                                   : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
                               )}
                             >
-                              ₱{denom}
+                              Exact
                             </button>
-                          ))}
+                            {[50, 100, 200, 500, 1000].map((denom) => (
+                              <button
+                                key={denom}
+                                type="button"
+                                onClick={() => {
+                                  setPaymentAmount(denom);
+                                  setPaymentError(false);
+                                }}
+                                className={cn(
+                                  "px-2.5 py-1.5 rounded-xl text-xs font-black transition-all border",
+                                  paymentAmount === denom
+                                    ? "bg-[#BF953F] text-white border-[#BF953F] shadow-sm"
+                                    : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
+                                )}
+                              >
+                                ₱{denom}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
+                      )}
                       
                       <div className="p-4 bg-gray-50/50 rounded-2xl border border-gray-100">
                         <div className="flex justify-between items-center">
@@ -1759,6 +1894,55 @@ const ScannerSales: React.FC = () => {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        <Dialog open={isAddCreditorOpen} onOpenChange={setIsAddCreditorOpen}>
+          <DialogContent className="rounded-[2.5rem] p-6 sm:max-w-[420px] z-[110]">
+            <DialogHeader className="mb-4">
+              <div className="w-12 h-12 bg-[#BF953F]/10 rounded-2xl flex items-center justify-center mb-2">
+                <User className="w-6 h-6 text-[#BF953F]" />
+              </div>
+              <DialogTitle className="text-xl font-black tracking-tighter uppercase">Add New Creditor Profile</DialogTitle>
+              <DialogDescription className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Create a customer profile for credit purchases</DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Customer Full Name *</Label>
+                <Input
+                  value={newCreditorName}
+                  onChange={e => setNewCreditorName(e.target.value)}
+                  placeholder="e.g., Juan Dela Cruz"
+                  className="h-12 bg-slate-50 border-slate-200 rounded-2xl font-bold text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Mobile / Phone Number</Label>
+                <Input
+                  value={newCreditorPhone}
+                  onChange={e => setNewCreditorPhone(e.target.value)}
+                  placeholder="0917 000 0000"
+                  className="h-12 bg-slate-50 border-slate-200 rounded-2xl font-bold text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Address / Note</Label>
+                <Input
+                  value={newCreditorAddress}
+                  onChange={e => setNewCreditorAddress(e.target.value)}
+                  placeholder="Brgy, City / Customer Note"
+                  className="h-12 bg-slate-50 border-slate-200 rounded-2xl font-bold text-sm"
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="mt-6 flex gap-3">
+              <Button variant="outline" onClick={() => setIsAddCreditorOpen(false)} className="flex-1 h-12 rounded-2xl font-black uppercase tracking-widest border-slate-200">Cancel</Button>
+              <Button onClick={handleCreateCreditorInline} disabled={isSavingCreditor || !newCreditorName.trim()} className="flex-1 h-12 bg-[#BF953F] text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-[#BF953F]/20">
+                {isSavingCreditor ? 'Saving...' : 'Save & Select'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </motion.div>
     </Layout>
   );

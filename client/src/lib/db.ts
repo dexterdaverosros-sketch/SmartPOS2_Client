@@ -1523,9 +1523,17 @@ export class CreditorService {
     static async addCreditor(creditorData: Omit<Creditor, 'id'>): Promise<Creditor> {
         const creditor: Creditor = {
             id: generateUUID(),
-            ...creditorData,
-        };
+            tenantId: (creditorData as any).tenantId || '',
+            name: creditorData.name,
+            amount: creditorData.amount || 0,
+            description: creditorData.description || '',
+            dueDate: creditorData.dueDate || new Date().toISOString(),
+            reminderDate: creditorData.reminderDate || new Date().toISOString(),
+            isPaid: creditorData.isPaid || false,
+            createdAt: new Date(),
+        } as any;
         await db.creditors.add(creditor);
+        api.post('/api/creditors', creditor).catch(e => console.warn('Failed to sync creditor to server:', e));
         return creditor;
     }
 
