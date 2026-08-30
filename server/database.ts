@@ -3618,15 +3618,58 @@ export const dbService = {
     return { success: true, message: 'All data pulled from Supabase', duration_ms: _pullDur };
   },
 
-  getBoundTenantId: (): string | null => {
+  getBoundTenantId: async (): Promise<string | null> => {
     try {
       const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('device_bound_tenant_id') as any;
-      if (row && row.value) return String(row.value);
+      const boundId = row && row.value ? String(row.value) : null;
+
+      // If bound tenant ID exists, verify whether active tenant / user exists in Supabase Cloud or local SQLite
+      if (boundId) {
+        if (useCloud()) {
+          try {
+            const supabase = getSupabase();
+            if (supabase) {
+              const { data: cloudUsers } = await supabase.from('users').select('id, tenant_id').eq('tenant_id', boundId);
+              const { data: cloudTenants } = await supabase.from('tenants').select('id').eq('id', boundId);
+              
+              if ((!cloudUsers || cloudUsers.length === 0) && (!cloudTenants || cloudTenants.length === 0)) {
+                console.log(`[DEVICE UNBIND] Bound tenant ${boundId} was deleted in Supabase Cloud. Automatically unbinding device!`);
+                dbService.clearBoundTenantId();
+                return null;
+              }
+            }
+          } catch (cloudErr) {
+            console.warn('[DEVICE UNBIND CHECK] Failed to query Supabase cloud:', cloudErr);
+          }
+        }
+
+        const localAdmin = db.prepare('SELECT id FROM users WHERE tenant_id = ?').get(boundId);
+        if (!localAdmin) {
+          const anyAdmin = db.prepare('SELECT tenant_id FROM users WHERE role = ? LIMIT 1').get('admin') as any;
+          if (!anyAdmin) {
+            dbService.clearBoundTenantId();
+            return null;
+          }
+        }
+        return boundId;
+      }
+
+      // Check fallback first admin in local SQLite
       const firstAdmin = db.prepare('SELECT tenant_id FROM users WHERE role = ? LIMIT 1').get('admin') as any;
       if (firstAdmin && firstAdmin.tenant_id) return String(firstAdmin.tenant_id);
       return null;
     } catch {
       return null;
+    }
+  },
+
+  clearBoundTenantId: () => {
+    try {
+      db.prepare('DELETE FROM settings WHERE key = ?').run('device_bound_tenant_id');
+      db.prepare('DELETE FROM users').run();
+      console.log('[DEVICE UNBIND SUCCESS] Unbound device and cleared stale local admin cache.');
+    } catch (e) {
+      console.error('Failed to clear bound tenant ID:', e);
     }
   },
 

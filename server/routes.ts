@@ -87,7 +87,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { storeName, subdomain, username, password } = req.body;
       console.log("Data:", { storeName, subdomain, username });
       
-      const boundTenantId = dbService.getBoundTenantId();
+      const boundTenantId = await dbService.getBoundTenantId();
       if (boundTenantId) {
         console.warn(`[DEVICE LOCK REJECT] Device is bound to tenant ${boundTenantId}, registration blocked.`);
         return res.status(403).json({
@@ -540,7 +540,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       console.log('=== CREATING SESSION ===');
-      const boundTenantId = dbService.getBoundTenantId();
+      const boundTenantId = await dbService.getBoundTenantId();
       const sessionTenantId = (tenant && tenant.id !== 'default-tenant-id' ? tenant.id : null)
         ?? (admin.tenant_id && admin.tenant_id !== 'default-tenant-id' ? admin.tenant_id : null);
 
