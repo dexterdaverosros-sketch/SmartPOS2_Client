@@ -6,6 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 
+import { SecureStorage } from '@/lib/crypto';
+import api from '@/lib/api';
+
 const DeveloperLogin: React.FC = () => {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -13,29 +16,31 @@ const DeveloperLogin: React.FC = () => {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Fixed credentials as requested
-    if (username === 'dexter dave ros' && password === '061004Ros') {
-      setTimeout(() => {
+    try {
+      const res = await api.post('/api/developer/login', { username, password });
+      if (res && res.token) {
+        SecureStorage.setItem('smartpos_dev_token', res.token);
         localStorage.setItem('is_dev', 'true');
         toast({
           title: "Access Granted",
-          description: "Welcome back, Developer. Console initialized.",
+          description: "Developer Console session initialized securely.",
         });
         setLocation('/developer-console');
-      }, 1500);
-    } else {
-      setTimeout(() => {
-        setIsLoading(false);
-        toast({
-          title: "Access Denied",
-          description: "Invalid developer credentials.",
-          variant: "destructive",
-        });
-      }, 1000);
+      } else {
+        throw new Error('Authentication failed');
+      }
+    } catch (error: any) {
+      toast({
+        title: "Access Denied",
+        description: error?.message || "Invalid developer credentials.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 

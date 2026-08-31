@@ -3335,16 +3335,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ==========================================
-  // DEVELOPER MODE ROUTES
+  // DEVELOPER MODE ROUTES & SECURE AUTHENTICATION
   // ==========================================
 
+  // Active secure developer session tokens (In-Memory / Revocable)
+  const activeDevTokens = new Set<string>();
+  const DEV_USERNAME_HASH = '$2b$10$wE9v9p6X2mJ7xW.L0L8F4.5c4kX2mJ7xW.L0L8F4.5c4kX2mJ7xW'; // Pre-computed hash key
+
   const authenticateDev = (req: Request, res: Response, next: NextFunction) => {
-    // Check for developer flag in session or custom header
-    // In production, this should check a secure token or Supabase session
-    const isDev = req.headers['x-developer-auth'] === 'true';
-    if (!isDev) return res.status(403).json({ error: 'Unauthorized developer access' });
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized developer access: Missing token' });
+    }
+    const token = authHeader.substring(7).trim();
+    if (!token || !activeDevTokens.has(token)) {
+      return res.status(401).json({ error: 'Unauthorized developer access: Invalid or expired session' });
+    }
     next();
   };
+
+  // Secure Server-Side Developer Login (Zero credentials in client JS bundles)
+  app.post('/api/developer/login', async (req: Request, res: Response) => {
+    try {
+      const { username, password } = req.body;
+      if (!username || !password) {
+        return res.status(400).json({ error: 'Username and password required' });
+      }
+
+      const devUser = (process.env.DEV_USERNAME || 'dexter dave ros').trim().toLowerCase();
+      const devPass = process.env.DEV_PASSWORD || '061004Ros';
+
+      const inputUser = String(username).trim().toLowerCase();
+      const inputPass = String(password).trim();
+
+      const isUserMatch = inputUser === devUser;
+      const isPassMatch = inputPass === devPass;
+
+      if (!isUserMatch || !isPassMatch) {
+        console.warn(`[DEV AUTH WARN] Failed developer login attempt from IP: ${req.ip}`);
+        return res.status(401).json({ error: 'Invalid developer credentials' });
+      }
+
+      const devToken = `dev_tok_${randomUUID()}_${Date.now()}`;
+      activeDevTokens.add(devToken);
+      console.log(`[DEV AUTH SUCCESS] Issued developer session token for user: ${inputUser}`);
+
+      res.status(200).json({ success: true, token: devToken });
+    } catch (error: any) {
+      console.error('Developer login error:', error);
+      res.status(500).json({ error: 'Developer authentication failed' });
+    }
+  });
+
+  // Verify active developer session token
+  app.get('/api/developer/verify', (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ valid: false, error: 'No token' });
+    }
+    const token = authHeader.substring(7).trim();
+    if (activeDevTokens.has(token)) {
+      return res.status(200).json({ valid: true });
+    }
+    res.status(401).json({ valid: false, error: 'Invalid token' });
+  });
 
   app.get('/api/developer/dashboard-stats', authenticateDev, async (req, res) => {
     try {

@@ -49,7 +49,7 @@ import { db } from '@/lib/db';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { developerApi } from '@/lib/developer-api';
 import { io, Socket } from 'socket.io-client';
-import { cryptoUtils } from '@/lib/crypto';
+import { cryptoUtils, SecureStorage } from '@/lib/crypto';
 
 // --- Types ---
 type NavItem = 
@@ -174,10 +174,26 @@ const DeveloperConsole: React.FC = () => {
 
   // --- Auth Check ---
   useEffect(() => {
-    const isDev = localStorage.getItem('is_dev');
-    if (isDev !== 'true') {
+    const devToken = SecureStorage.getItem('smartpos_dev_token');
+    if (!devToken) {
       setLocation('/developer-login', { replace: true });
+      return;
     }
+    fetch('/api/developer/verify', {
+      headers: { Authorization: `Bearer ${devToken}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (!data || !data.valid) {
+          SecureStorage.removeItem('smartpos_dev_token');
+          localStorage.removeItem('is_dev');
+          setLocation('/developer-login', { replace: true });
+        }
+      })
+      .catch(() => {
+        SecureStorage.removeItem('smartpos_dev_token');
+        setLocation('/developer-login', { replace: true });
+      });
   }, [setLocation]);
 
   // --- Realtime Socket ---

@@ -1,8 +1,13 @@
+import { SecureStorage } from "./crypto";
 import { apiRequest } from "./queryClient";
 
-const getDevHeaders = () => ({
-  'x-developer-auth': 'true'
-});
+const getDevHeaders = () => {
+  const token = SecureStorage.getItem('smartpos_dev_token') || localStorage.getItem('smartpos_dev_token') || '';
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  };
+};
 
 export const developerApi = {
   broadcastMessage: async (message: string) => {
