@@ -736,9 +736,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: 'Invalid staff credentials' });
       }
 
-      // Create session — resolve tenant or default to default-tenant-id
-      const sessionTenantId = (tenant && tenant.id ? tenant.id : null)
-        ?? (staff.tenantId ? staff.tenantId : null)
+      // Create session — resolve tenant or fallback to single active store tenant
+      const sessionTenantId = (tenant && tenant.id && tenant.id !== 'default-tenant-id' ? tenant.id : null)
+        ?? (staff.tenantId && staff.tenantId !== 'default-tenant-id' ? staff.tenantId : null)
+        ?? (staff.tenant_id && staff.tenant_id !== 'default-tenant-id' ? staff.tenant_id : null)
+        ?? dbService.getDefaultOrOnlyTenantId()
         ?? 'default-tenant-id';
 
       const token = randomUUID();
@@ -931,18 +933,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // 2. Check X-Tenant-ID subdomain header
+      // 2. Check req.body.tenantId or req.body.tenant_id
+      if (!tenantId || tenantId === 'default-tenant-id') {
+        const bodyTenantId = req.body?.tenantId || req.body?.tenant_id;
+        if (bodyTenantId && bodyTenantId !== 'default-tenant-id' && bodyTenantId !== 'default') {
+          tenantId = bodyTenantId;
+        }
+      }
+
+      // 3. Check X-Tenant-ID subdomain or UUID header
       if (!tenantId || tenantId === 'default-tenant-id') {
         const subdomain = req.headers['x-tenant-id'] as string;
-        if (subdomain && subdomain !== 'default') {
-          const tenant = await getTenantFromHeader(req);
-          if (tenant && tenant.id) {
-            tenantId = tenant.id;
+        if (subdomain && subdomain !== 'default' && subdomain !== 'default-tenant-id') {
+          if (subdomain.length > 20) {
+            tenantId = subdomain;
+          } else {
+            const tenant = await getTenantFromHeader(req);
+            if (tenant && tenant.id) {
+              tenantId = tenant.id;
+            }
           }
         }
       }
 
-      // 3. Fallback: single active tenant ID in SQLite
+      // 4. Fallback: single active tenant ID in SQLite
       if (!tenantId || tenantId === 'default-tenant-id') {
         const fallbackTenantId = dbService.getDefaultOrOnlyTenantId();
         if (fallbackTenantId) {

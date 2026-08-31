@@ -358,7 +358,7 @@ export class DatabaseSyncService {
 
     try {
       onProgress?.(30, 'Fetching store data from server...');
-      const response: any = await api.post('/api/sync/pull-all-from-sqlite', {}).catch(err => {
+      const response: any = await api.post('/api/sync/pull-all-from-sqlite', { tenantId: tag }).catch(err => {
         console.error('[SYNC HYDRATION ERROR] Request failed for tenant_id=' + tag + ':', err?.message || String(err));
         throw err;
       });
