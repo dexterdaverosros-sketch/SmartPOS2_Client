@@ -471,9 +471,10 @@ const ScannerSales: React.FC = () => {
   };
 
   useEffect(() => {
-    const tenantId = user?.tenantId || (user as any)?.tenant_id || localStorage.getItem('smartpos_tenant') || '';
+    const tenantId = user?.tenantId || (user as any)?.tenant_id || localStorage.getItem('smartpos_tenant') || localStorage.getItem('smartpos_tenant_id') || '';
     if (tenantId) {
       localStorage.setItem('smartpos_tenant', tenantId);
+      localStorage.setItem('smartpos_tenant_id', tenantId);
     }
     loadProducts().then(async (prods) => {
       if (!prods || prods.length === 0) {
@@ -491,8 +492,6 @@ const ScannerSales: React.FC = () => {
     if (selectedCategory !== 'all') {
       result = result.filter(p => (p.category || 'Uncategorized') === selectedCategory);
     }
-    // Filter out products with 0 quantity
-    result = result.filter(p => p.isNonInventory || (p.quantity ?? 0) > 0);
     setFilteredProducts(result);
   }, [searchTerm, selectedCategory, products]);
 

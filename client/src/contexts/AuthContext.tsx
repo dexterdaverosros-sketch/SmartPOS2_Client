@@ -211,9 +211,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
 
     // Trigger Client Dexie Hydration from Server SQLite
-    const tenantId = (userData as any)?.tenantId || (userData as any)?.tenant_id;
+    const tenantId = (userData as any)?.tenantId || (userData as any)?.tenant_id || localStorage.getItem('smartpos_tenant') || localStorage.getItem('smartpos_tenant_id');
     if (tenantId && tenantId !== 'default-tenant-id') {
       localStorage.setItem('smartpos_tenant_id', tenantId);
+      localStorage.setItem('smartpos_tenant', tenantId);
       try {
         console.log('[AUTH HYDRATION] Hydrating Client Dexie for tenant:', tenantId);
         await databaseSyncService.pullAllFromServerIntoDexie(tenantId);

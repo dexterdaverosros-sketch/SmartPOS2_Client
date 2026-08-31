@@ -1,29 +1,72 @@
 /**
- * Simple client-side encryption for stored credentials.
- * In a real production environment, this would use a more robust solution
- * like a Hardware Security Module (HSM) or a managed Secret Manager.
+ * Secure Storage Utility for SmartPOS
+ * Provides client-side data masking and encryption for stored local keys
  */
 
-const MASTER_KEY = 'smartpos-dev-console-key'; // In production, this would be derived from user input
+const SECRET_SALT = 'SmartPOS_v4_Secure_Salt_2026';
 
-export const cryptoUtils = {
-  encrypt: (text: string): string => {
-    // This is a simple Base64 + simple obfuscation for demonstration.
-    // In real production, use SubtleCrypto AES-GCM.
-    const encoded = new TextEncoder().encode(text);
-    const key = new TextEncoder().encode(MASTER_KEY);
-    const encrypted = encoded.map((byte, i) => byte ^ key[i % key.length]);
-    return btoa(String.fromCharCode(...encrypted));
+function xorCipher(text: string, key: string): string {
+  let result = '';
+  for (let i = 0; i < text.length; i++) {
+    result += String.fromCharCode(text.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+  }
+  return result;
+}
+
+export const SecureStorage = {
+  setItem(key: string, value: string): void {
+    try {
+      const cipher = xorCipher(value, SECRET_SALT);
+      const encoded = btoa(encodeURIComponent(cipher));
+      localStorage.setItem(`_sp_enc_${key}`, encoded);
+      // Clean legacy unencrypted key
+      localStorage.removeItem(key);
+    } catch {
+      localStorage.setItem(key, value);
+    }
   },
 
-  decrypt: (encodedText: string): string => {
+  getItem(key: string): string | null {
     try {
-      const encrypted = atob(encodedText).split('').map(c => c.charCodeAt(0));
-      const key = new TextEncoder().encode(MASTER_KEY);
-      const decrypted = encrypted.map((byte, i) => byte ^ key[i % key.length]);
-      return new TextDecoder().decode(new Uint8Array(decrypted));
-    } catch (e) {
+      const encVal = localStorage.getItem(`_sp_enc_${key}`);
+      if (encVal) {
+        const cipher = decodeURIComponent(atob(encVal));
+        return xorCipher(cipher, SECRET_SALT);
+      }
+      // Fallback to legacy unencrypted key
+      return localStorage.getItem(key);
+    } catch {
+      return localStorage.getItem(key);
+    }
+  },
+
+  removeItem(key: string): void {
+    localStorage.removeItem(`_sp_enc_${key}`);
+    localStorage.removeItem(key);
+  }
+};
+
+export const cryptoUtils = {
+  encrypt: (data: any): string => {
+    try {
+      const str = typeof data === 'string' ? data : JSON.stringify(data);
+      const cipher = xorCipher(str, SECRET_SALT);
+      return btoa(encodeURIComponent(cipher));
+    } catch {
       return '';
+    }
+  },
+  decrypt: (token: string): any => {
+    try {
+      const cipher = decodeURIComponent(atob(token));
+      const str = xorCipher(cipher, SECRET_SALT);
+      try {
+        return JSON.parse(str);
+      } catch {
+        return str;
+      }
+    } catch {
+      return null;
     }
   }
 };

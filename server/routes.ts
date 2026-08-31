@@ -783,14 +783,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Return token and user info
+      // Return token and user info with tenantId
       res.status(200).json({
         token,
         user: {
           id: staff.id,
           name: staff.name,
           staffId: staff.staffId,
-          role: 'staff'
+          role: 'staff',
+          tenantId: sessionTenantId
         }
       });
     } catch (error) {
@@ -858,7 +859,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           id: String(data.id),
           name: String(data.name),
           staffId: String(data.staff_id),
-          role: 'staff'
+          role: 'staff',
+          tenantId: resolvedTenantId
         }
       });
     } catch (e) {
@@ -2170,11 +2172,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/cloud/staff', async (_req: Request, res: Response) => {
+  app.get('/api/cloud/staff', resolveSyncTenant, async (req: Request, res: Response) => {
     try {
+      const tenantId = (req as any).tenantId;
+      if (!tenantId || tenantId === 'default-tenant-id') {
+        return res.status(401).json({ error: 'Unauthorized: Valid store session required' });
+      }
       const supabase = getSupabase();
       if (!supabase) return res.status(500).json({ error: 'Cloud not configured' });
-      const { data, error } = await supabase.from('staff').select('*');
+      const { data, error } = await supabase.from('staff').select('*').eq('tenant_id', tenantId);
       if (error) return res.status(500).json({ error: 'Failed to fetch staff' });
       const mapped = (data || []).map((s: any) => ({
         id: String(s.id),
@@ -2208,11 +2214,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/cloud/admins', async (_req: Request, res: Response) => {
+  app.get('/api/cloud/admins', resolveSyncTenant, async (req: Request, res: Response) => {
     try {
+      const tenantId = (req as any).tenantId;
+      if (!tenantId || tenantId === 'default-tenant-id') {
+        return res.status(401).json({ error: 'Unauthorized: Valid store session required' });
+      }
       const supabase = getSupabase();
       if (!supabase) return res.status(500).json({ error: 'Cloud not configured' });
-      const { data, error } = await supabase.from('admins').select('*');
+      const { data, error } = await supabase.from('admins').select('id, name, email').eq('tenant_id', tenantId);
       if (error) return res.status(500).json({ error: 'Failed to fetch admins' });
       const mapped = (data || []).map((a: any) => ({
         id: String(a.id),
