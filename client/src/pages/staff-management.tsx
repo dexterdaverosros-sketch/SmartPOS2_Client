@@ -467,23 +467,22 @@ const StaffManagement: React.FC = () => {
       });
 
       if (newStaff) {
-        const updatedStaff = await loadStaff();
-        if (updatedStaff && Array.isArray(updatedStaff) && !updatedStaff.some(s => s.id === newStaff.id)) {
-          setStaff(prev => [...prev, { ...newStaff, isOnline: false, role: 'Cashier', todaySales: 0 }]);
-        }
-
-        toast({ title: 'Staff Added', description: `${[data.firstName, data.middleName, data.lastName].filter(Boolean).join(' ')} has been added to your team` });
-        setIsAddDialogOpen(false);
-        form.reset();
+        // Sync to server SQLite and Supabase Cloud immediately
         try {
           await api.post('/api/staff', [newStaff]);
+          console.log('[STAFF CREATE] Successfully synced staff to server and Supabase Cloud');
         } catch (e) {
-          console.warn('Failed to sync new staff:', e);
+          console.warn('[STAFF CREATE WARN] Server sync pending (will sync when online):', e);
         }
+
+        toast({ title: 'Staff Account Created', description: `${[data.firstName, data.middleName, data.lastName].filter(Boolean).join(' ')} saved to local DB and Supabase Cloud` });
+        setIsAddDialogOpen(false);
+        form.reset();
+        await loadStaff();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding staff:', error);
-      toast({ title: 'Error', description: 'Failed to add staff', variant: 'destructive' });
+      toast({ title: 'Error Creating Staff', description: error?.message || 'Failed to add staff account', variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }

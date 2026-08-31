@@ -1807,6 +1807,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Create / Save staff account (Saves to local SQLite & Supabase Cloud)
+  app.post('/api/staff', resolveSyncTenant, async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).tenantId || dbService.getDefaultOrOnlyTenantId();
+      if (!tenantId || tenantId === 'default-tenant-id') {
+        return res.status(400).json({ error: 'Tenant context required to create staff' });
+      }
+
+      const staffList = Array.isArray(req.body) ? req.body : [req.body];
+      if (staffList.length === 0) {
+        return res.status(400).json({ error: 'No staff data provided' });
+      }
+
+      await dbService.saveStaff(staffList, tenantId);
+      console.log(`[STAFF CREATE ROUTE] Saved ${staffList.length} staff member(s) to SQLite & Supabase Cloud for tenant: ${tenantId}`);
+
+      res.status(201).json({ success: true, count: staffList.length, message: 'Staff account saved to local SQLite and Supabase Cloud' });
+    } catch (error: any) {
+      console.error('Error creating staff:', error);
+      res.status(500).json({ error: error?.message || 'Failed to create staff' });
+    }
+  });
+
   // Get staff by ID with all details
   app.get('/api/staff/:id', resolveSyncTenant, async (req: Request, res: Response) => {
     try {
