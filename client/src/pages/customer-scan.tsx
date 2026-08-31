@@ -10,7 +10,7 @@ import { Moon, Sun, Keyboard, Camera, X, RefreshCw, Monitor, Lock, Unlock, Shiel
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
 import io from 'socket.io-client';
-import { ProductService, db } from '@/lib/db';
+import { ProductService, AuthService, db } from '@/lib/db';
 import { 
   BrowserMultiFormatReader, 
   DecodeHintType, 
@@ -72,13 +72,10 @@ const CustomerScan: React.FC = () => {
     }
     setIsVerifyingAdmin(true);
     try {
-      const res = await api.post('/api/auth/login', {
-        username: adminUsername.trim(),
-        password: adminPassword.trim()
-      });
+      const res = await AuthService.loginAdmin(adminUsername.trim(), adminPassword.trim());
 
       if (res && res.user) {
-        const tenantId = res.user.tenantId || res.user.tenant_id || (res as any).token || 'default-tenant-id';
+        const tenantId = res.user.tenantId || (res.user as any).tenant_id || 'default-tenant-id';
         const storeName = res.user.businessName || res.user.ownerName || res.user.username || 'SmartPOS+ Store';
 
         localStorage.setItem('customer_checker_tenant_id', tenantId);
@@ -116,7 +113,7 @@ const CustomerScan: React.FC = () => {
       for (const adminUser of admins) {
         if (adminUser.username) {
           try {
-            const response = await api.post('/api/auth/login', { username: adminUser.username, password: resetAdminPassword.trim() });
+            const response = await AuthService.loginAdmin(adminUser.username, resetAdminPassword.trim());
             if (response && response.user) {
               isValid = true;
               break;
