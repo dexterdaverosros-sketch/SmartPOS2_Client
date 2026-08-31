@@ -332,46 +332,19 @@ const CustomerScan: React.FC = () => {
           </CardHeader>
 
           <CardContent className="p-0 space-y-6">
-            {/* Live Camera vs Photo Selector */}
-            {deviceMode !== 'pc' && (
-              <div className="w-full max-w-md mx-auto flex bg-slate-950 p-1.5 rounded-2xl border border-slate-800">
-                <button
-                  onClick={() => setUseLiveScanner(false)}
-                  className={cn("flex-1 py-2.5 rounded-xl text-xs font-bold transition-all", !useLiveScanner ? "bg-blue-600 text-white shadow-lg" : "text-slate-400 hover:text-white")}
-                >
-                  Take Photo
-                </button>
-                <button
-                  onClick={() => setUseLiveScanner(true)}
-                  className={cn("flex-1 py-2.5 rounded-xl text-xs font-bold transition-all", useLiveScanner ? "bg-blue-600 text-white shadow-lg" : "text-slate-400 hover:text-white")}
-                >
-                  Live Camera
-                </button>
+            {/* External Scanner Kiosk Display Card */}
+            <div className="w-full max-w-md aspect-video bg-gradient-to-b from-slate-950/80 to-slate-950/40 rounded-3xl border-2 border-dashed border-slate-800 flex flex-col items-center justify-center p-6 text-center mx-auto space-y-3 relative group hover:border-[#BF953F]/40 transition-all shadow-inner">
+              <div className="w-16 h-16 bg-gradient-to-tr from-[#BF953F]/20 to-blue-500/20 rounded-3xl flex items-center justify-center border border-[#BF953F]/30 shadow-lg shadow-[#BF953F]/10 animate-pulse">
+                <Monitor className="w-8 h-8 text-[#BF953F]" />
               </div>
-            )}
-
-            {/* Scanner Display Box */}
-            {useLiveScanner && deviceMode !== 'pc' ? (
-              <div className="w-full max-w-md aspect-video bg-slate-950 rounded-3xl overflow-hidden border-2 border-blue-500/40 shadow-2xl mx-auto relative">
-                <Scanner onResult={(res) => lookupProduct(res)} onError={(err) => toast({ title: "Scanner Error", description: err.message, variant: "destructive" })} />
+              <div>
+                <h3 className="text-base font-black uppercase tracking-tight text-white">External Barcode Scanner Ready</h3>
+                <p className="text-xs text-slate-400 font-medium mt-1">Scan any product item using the connected barcode scanner</p>
               </div>
-            ) : (
-              <div className="w-full max-w-md aspect-video bg-slate-950/60 rounded-3xl border-2 border-dashed border-slate-800 flex flex-col items-center justify-center p-6 text-center mx-auto space-y-3 relative group hover:border-[#BF953F]/50 transition-all">
-                <div className="w-14 h-14 bg-[#BF953F]/10 rounded-2xl flex items-center justify-center">
-                  <Camera className="w-7 h-7 text-[#BF953F]" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black uppercase text-slate-200">Point Scanner at Barcode</h3>
-                  <p className="text-[10px] text-slate-400 font-medium">Ready for USB Barcode Reader or Photo Capture</p>
-                </div>
-                <label className="w-full max-w-xs cursor-pointer">
-                  <Input type="file" accept="image/*" capture="environment" onChange={handleImageCapture} className="hidden" />
-                  <div className="w-full py-3 bg-[#BF953F] hover:bg-[#B38728] text-white rounded-xl font-bold uppercase text-xs tracking-wider shadow-lg shadow-[#BF953F]/20 active:scale-95 transition-all">
-                    Scan With Camera
-                  </div>
-                </label>
+              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-extrabold uppercase tracking-widest mt-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" /> Kiosk Scanner Active
               </div>
-            )}
+            </div>
 
             {/* Manual Keypad Input */}
             <form onSubmit={handleManualSubmit} className="w-full max-w-md mx-auto flex gap-2">

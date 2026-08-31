@@ -463,7 +463,18 @@ export class DatabaseSyncService {
   async pushAllToCloud(tenantId: string) {
     try {
       console.log('[SYNC PUSH] Pushing offline data to cloud for tenant:', tenantId);
-      const res = await api.post('/api/sync/push-to-cloud', { tenantId });
+      const sales = await db.sales.toArray();
+      const saleItems = await db.saleItems.toArray();
+      const expenses = await db.expenses.toArray();
+      const creditors = await db.creditors.toArray();
+      const remittances = await db.remittances.toArray();
+
+      let res;
+      try {
+        res = await api.post('/api/sync/push-all', { tenantId, sales, saleItems, expenses, creditors, remittances });
+      } catch {
+        res = await api.post('/api/sync/push-to-cloud', { tenantId, sales, saleItems, expenses, creditors, remittances });
+      }
       return res;
     } catch (err) {
       console.warn('[SYNC PUSH FAILED]', err);

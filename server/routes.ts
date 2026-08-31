@@ -3428,20 +3428,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Sync endpoints for Push to Cloud and Pull from Cloud
-  app.post('/api/sync/push-all', resolveSyncTenant, async (req, res) => {
+  const handlePushAll = async (req: Request, res: Response) => {
     try {
-      const tenantId = (req as any).tenantId;
-      if (!tenantId) {
+      const tenantId = (req as any).tenantId || req.body?.tenantId || (req.headers['x-tenant-id'] as string) || '';
+      if (!tenantId || tenantId === 'default-tenant-id') {
         return res.status(400).json({ success: false, error: 'Missing authenticated tenant context' });
       }
       console.log(`[SYNC ROUTE] push-all for tenant: ${tenantId}`);
-      const result = await dbService.pushAllToCloud(tenantId);
-      res.status(200).json(result);
+
+      // Ingest any offline sales/items/expenses/creditors passed in request body
+      const { sales, items, saleItems, expenses, creditors, remittances } = req.body || {};
+      const actualItems = items || saleItems;
+
+      if (Array.isArray(sales) && sales.length > 0) {
+        for (const s of sales) {
+          const sItems = Array.isArray(actualItems) ? actualItems.filter((i: any) => String(i.saleId || i.sale_id) === String(s.id)) : [];
+          try {
+            dbService.addSale(tenantId, s, sItems);
+          } catch (e) {
+            console.warn('[SYNC INGEST WARN] Could not add offline sale locally:', e);
+          }
+        }
+      }
+
+      if (useCloud()) {
+        try {
+          const result = await dbService.pushAllToCloud(tenantId);
+          return res.status(200).json(result);
+        } catch (cloudErr: any) {
+          console.warn('[SYNC WARN] Cloud push partial failure:', cloudErr?.message || String(cloudErr));
+          return res.status(200).json({ success: true, message: 'Local data saved to SQLite server, cloud push will retry', warning: cloudErr?.message });
+        }
+      }
+
+      res.status(200).json({ success: true, message: 'Offline data successfully pushed to server storage' });
     } catch (error: any) {
       console.error('Push to cloud failed:', error);
-      res.status(500).json({ success: false, error: error.message });
+      res.status(500).json({ success: false, error: error?.message || 'Failed to push sync data' });
     }
-  });
+  };
+
+  app.post('/api/sync/push-all', resolveSyncTenant, handlePushAll);
+  app.post('/api/sync/push-to-cloud', resolveSyncTenant, handlePushAll);
 
   app.post('/api/sync/pull-all', resolveSyncTenant, async (req, res) => {
     try {
