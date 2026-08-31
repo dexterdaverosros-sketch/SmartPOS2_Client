@@ -917,6 +917,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
 
   const resolveSyncTenant = async (req: Request, res: Response, next: NextFunction) => {
+    // Developer endpoints are system-wide administrative routes, bypass store tenant requirement
+    if (req.path.startsWith('/api/developer')) {
+      return next();
+    }
     try {
       let tenantId = (req as any).tenantId;
 

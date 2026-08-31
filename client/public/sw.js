@@ -79,6 +79,9 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
         }
         return networkResponse;
+      }).catch((err) => {
+        console.log('[SW] Static asset fetch failed, serving cached fallback:', err);
+        return caches.match(request) || caches.match('/index.html') || caches.match('/');
       });
     })
   );
