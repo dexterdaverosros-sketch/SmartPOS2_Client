@@ -6,7 +6,8 @@ import {
   type Staff, type Sale, type SaleItem, type User,
   staffRoles, employmentStatuses, assignedShifts, staffGenders, staffPermissions,
   staffCreateSchema, staffUpdateSchema, staffStatusSchema, staffPermissionsSchema,
-  customerSchema, creditSchema, paymentSchema
+  customerSchema, creditSchema, paymentSchema,
+  bulkInventorySubmitSchema,
 } from "@shared/schema";
 import dbService, { useCloud, initSQLite } from "./database";
 import { scanWifiNetworks, getWifiStatus } from "./network";
@@ -1753,6 +1754,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const attendance = (dbService.getAttendance(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
       const loginHistory = (dbService.getLoginHistory(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
       const auditLogs = (dbService.getAuditLogs(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
+      const bulkInventoryTransactions = (dbService.getBulkInventoryTransactions(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
+      const bulkInventoryItems = (dbService.getBulkInventoryItemsByTenant(tenantId) || []).map((row: any) => normalizeTenantId(row, tenantId));
 
       const counts = {
         products: products.length,
@@ -1775,6 +1778,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         attendance: attendance.length,
         loginHistory: loginHistory.length,
         auditLogs: auditLogs.length,
+        bulkInventoryTransactions: bulkInventoryTransactions.length,
+        bulkInventoryItems: bulkInventoryItems.length,
       };
 
       res.status(200).json({
@@ -1803,6 +1808,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           attendance,
           loginHistory,
           auditLogs,
+          bulkInventoryTransactions,
+          bulkInventoryItems,
         }
       });
     } catch (error: any) {
@@ -3652,6 +3659,215 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('Pull from cloud failed:', error);
       res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // ==========================================================================
+  // Bulk Inventory Endpoints
+  // ==========================================================================
+
+  // Helper: resolve created_by user_id from authenticated session
+  const resolveSessionUserId = (req: Request): string | null => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) return null;
+    const session = dbService.getSessionByToken(authHeader.slice('Bearer '.length));
+    return session?.user_id || null;
+  };
+
+  // Helper: RBAC check — owner/admin/manager OR staff with 'products.manage' permission
+  const assertInventoryManagePermission = (req: Request, tenantId: string): { ok: boolean; error?: string; code?: number } => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) return { ok: false, error: 'Unauthorized', code: 401 };
+    const token = authHeader.slice('Bearer '.length);
+    const session = dbService.getSessionByToken(token);
+    if (!session) return { ok: false, error: 'Invalid session', code: 401 };
+    const adminUser = dbService.getUserById(session.user_id);
+    if (adminUser && adminUser.tenantId === tenantId && ['admin', 'owner', 'manager', 'administrator'].includes(String(adminUser.role || '').toLowerCase())) {
+      return { ok: true };
+    }
+    const staffRows = dbService.getStaff(tenantId) as any[];
+    const staff = staffRows.find((s: any) => (s.userId && s.userId === session.user_id) || (s.user_id && s.user_id === session.user_id) || (s.id === session.user_id));
+    if (!staff) {
+      return { ok: false, error: 'Forbidden: No matching staff record for this session in tenant', code: 403 };
+    }
+    const staffRole = String(staff.role || 'cashier').toLowerCase();
+    if (['admin', 'manager', 'owner'].includes(staffRole)) return { ok: true };
+    let perms: any = staff.permissions;
+    if (typeof perms === 'string') { try { perms = JSON.parse(perms); } catch { perms = []; } }
+    if (Array.isArray(perms) && perms.includes('products.manage')) return { ok: true };
+    return { ok: false, error: 'Forbidden: Staff lacks products.manage permission', code: 403 };
+  };
+
+  // POST /api/inventory/bulk  — Atomic commit of a bulk inventory session
+  app.post('/api/inventory/bulk', authenticateUser, async (req: Request, res: Response) => {
+    const tenantId = (req as any).tenantId as string;
+    const createdBy = resolveSessionUserId(req);
+    if (!createdBy) return res.status(401).json({ error: 'Unauthorized', message: 'Missing user context' });
+
+    const rbac = assertInventoryManagePermission(req, tenantId);
+    if (!rbac.ok) return res.status(rbac.code ?? 403).json({ error: rbac.error, code: rbac.code ?? 403 });
+
+    const parsed = bulkInventorySubmitSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const errors = parsed.error.issues.map((issue: any) => ({
+        path: issue.path.join('.'),
+        message: issue.message,
+      }));
+      return res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'Bulk inventory payload failed validation',
+        errors,
+      });
+    }
+
+    try {
+      const result = dbService.commitBulkInventory({
+        tenantId,
+        createdBy,
+        idempotencyKey: parsed.data.idempotencyKey,
+        supplierCompany: parsed.data.supplierCompany,
+        notes: parsed.data.notes,
+        items: parsed.data.items as any[],
+      });
+
+      // WebSocket broadcasts to other devices on this tenant
+      try { (io as any)?.sockets?.sockets?.forEach?.((sock: any) => {
+        if ((sock as any)._tenantId === tenantId) { sock.emit('inventory-update'); sock.emit('bulk-inventory-new', { transactionId: result.transaction?.id }); }
+      }); } catch { /* ignore broadcast errors */ }
+
+      // Async background: mirror to Supabase
+      if (useCloud()) {
+        setImmediate(async () => {
+          try { await dbService.pushAllToCloud(tenantId); }
+          catch (pushErr: any) { console.warn('[BULK_INV] async pushAllToCloud warning:', pushErr?.message || String(pushErr)); }
+          try {
+            const supabase = getSupabase();
+            if (!supabase) return;
+            await supabase.from('products').select('count').eq('tenant_id', tenantId).limit(1); // no-op to keep alive
+          } catch { /* noop */ }
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        isIdempotentReplay: !!result.isIdempotentReplay,
+        transactionId: result.transaction?.id,
+        referenceNumber: result.transaction?.reference_number || result.transaction?.referenceNumber,
+        counts: result.counts,
+        transaction: result.transaction,
+        items: result.items,
+      });
+    } catch (err: any) {
+      const statusCode = Number((err as any).code) || (String(err?.message || '').includes('_NOT_OWNED') ? 403 : (String(err?.message || '').includes('DUPLICATE_TARGET') ? 400 : 500));
+      console.error('[BULK_INV_COMMIT] tenant_id=' + tenantId + ' error=' + (err?.message || String(err)));
+      return res.status(statusCode).json({
+        error: 'BULK_INVENTORY_COMMIT_FAILED',
+        message: err?.message || String(err),
+        fieldIndex: (err as any).fieldIndex,
+        field: (err as any).field,
+      });
+    }
+  });
+
+  // GET /api/inventory/bulk-history  — Paginated, filterable bulk history list
+  app.get('/api/inventory/bulk-history', resolveSyncTenant, async (req: Request, res: Response) => {
+    const tenantId = (req as any).tenantId as string;
+    if (!tenantId) return res.status(400).json({ error: 'Missing tenant_id' });
+
+    const rbac = assertInventoryManagePermission(req, tenantId);
+    if (!rbac.ok && !resolveSessionUserId(req)) { /* Read history: allow any authenticated tenant user (for now, continue if session user present in tenant) */ }
+    // Fallback: only require valid tenant resolution for reads
+    const opts: any = {
+      page: req.query.page ? Number(req.query.page) : undefined,
+      size: req.query.size ? Number(req.query.size) : undefined,
+      reference: req.query.reference ? String(req.query.reference) : undefined,
+      supplier: req.query.supplier ? String(req.query.supplier) : undefined,
+      productName: req.query.productName ? String(req.query.productName) : undefined,
+      dateFrom: req.query.dateFrom ? String(req.query.dateFrom) : undefined,
+      dateTo: req.query.dateTo ? String(req.query.dateTo) : undefined,
+      createdBy: req.query.createdBy ? String(req.query.createdBy) : undefined,
+    };
+
+    try {
+      const page = dbService.getBulkInventoryHistoryPaginated(tenantId, opts);
+      // Enrich with created_by display name
+      const staffRows = (dbService.getStaff(tenantId) || []) as any[];
+      const admins = (dbService.getAdmins(tenantId) || []) as any[];
+      const userLabel = (uid: string) => {
+        const st = staffRows.find((s: any) => (s.userId && s.userId === uid) || (s.user_id && s.user_id === uid) || (s.id === uid));
+        if (st) return st.name || `${st.firstName || ''} ${st.lastName || ''}`.trim() || st.staffId || uid;
+        const a = admins.find((u: any) => u.id === uid);
+        if (a) return a.username || a.ownerName || a.businessName || uid;
+        return uid;
+      };
+      const rows = page.rows.map((tx: any) => ({ ...tx, createdByName: userLabel(tx.created_by || tx.createdBy) }));
+      return res.status(200).json({
+        success: true,
+        rows,
+        total: page.total,
+        page: page.page,
+        size: page.size,
+        totalPages: page.totalPages,
+      });
+    } catch (err: any) {
+      console.error('[BULK_HISTORY_LIST] tenant_id=' + tenantId + ' error=' + (err?.message || String(err)));
+      return res.status(500).json({ error: 'BULK_HISTORY_FAILED', message: err?.message || String(err) });
+    }
+  });
+
+  // GET /api/inventory/bulk-history/:id  — Single bulk header + summary
+  app.get('/api/inventory/bulk-history/:id', resolveSyncTenant, async (req: Request, res: Response) => {
+    const tenantId = (req as any).tenantId as string;
+    if (!tenantId) return res.status(400).json({ error: 'Missing tenant_id' });
+    try {
+      const result = dbService.getBulkInventoryById(tenantId, String(req.params.id));
+      if (!result) return res.status(404).json({ error: 'Not found', message: 'Bulk inventory transaction not found or belongs to another tenant' });
+      // Enrich creator name
+      const staffRows = (dbService.getStaff(tenantId) || []) as any[];
+      const admins = (dbService.getAdmins(tenantId) || []) as any[];
+      const uid = result.transaction.created_by || result.transaction.createdBy;
+      const st = staffRows.find((s: any) => (s.userId && s.userId === uid) || (s.user_id && s.user_id === uid) || (s.id === uid));
+      const a = admins.find((u: any) => u.id === uid);
+      const createdByName = st ? (st.name || `${st.firstName || ''} ${st.lastName || ''}`.trim() || st.staffId || uid)
+                              : (a ? (a.username || a.ownerName || a.businessName || uid) : uid);
+      return res.status(200).json({
+        success: true,
+        transaction: result.transaction,
+        items: result.items,
+        createdByName,
+        summary: {
+          totalItems: result.items.length,
+          totalUnits: result.items.reduce((a: number, b: any) => a + Number(b.quantity || 0), 0),
+          totalCost: Number(result.transaction.total_cost ?? result.transaction.totalCost ?? 0),
+        },
+      });
+    } catch (err: any) {
+      console.error('[BULK_HISTORY_GET] tenant_id=' + tenantId + ' error=' + (err?.message || String(err)));
+      return res.status(500).json({ error: 'BULK_HISTORY_GET_FAILED', message: err?.message || String(err) });
+    }
+  });
+
+  // GET /api/inventory/bulk-history/:id/items  — Paged items of a bulk session
+  app.get('/api/inventory/bulk-history/:id/items', resolveSyncTenant, async (req: Request, res: Response) => {
+    const tenantId = (req as any).tenantId as string;
+    if (!tenantId) return res.status(400).json({ error: 'Missing tenant_id' });
+    try {
+      const full = dbService.getBulkInventoryById(tenantId, String(req.params.id));
+      if (!full) return res.status(404).json({ error: 'Not found' });
+      const page = Math.max(1, Number(req.query.page ?? 1));
+      const size = Math.min(200, Math.max(1, Number(req.query.size ?? 200)));
+      const offset = (page - 1) * size;
+      const rows = full.items.slice(offset, offset + size);
+      return res.status(200).json({
+        success: true,
+        rows,
+        total: full.items.length,
+        page,
+        size,
+        totalPages: Math.ceil(full.items.length / size),
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'BULK_HISTORY_ITEMS_FAILED', message: err?.message || String(err) });
     }
   });
 

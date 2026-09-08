@@ -1,7 +1,8 @@
 import Dexie, { Table } from 'dexie';
 import bcrypt from 'bcryptjs';
 import type {
-    User, Product, Sale, Staff, CartItem, SaleItem, Expense, Purchase, Creditor, Variant, NonInventoryProduct, Remittance, Notification
+    User, Product, Sale, Staff, CartItem, SaleItem, Expense, Purchase, Creditor, Variant, NonInventoryProduct, Remittance, Notification,
+    BulkInventoryTransaction, BulkInventoryItem, BulkLineInput, BulkInventorySubmitInput
 } from '@shared/schema';
 import { getUnitMultiplier } from './utils';
 import api from './api';
@@ -55,6 +56,9 @@ export class SmartPOSDB extends Dexie {
   nonInventoryProducts!: Table<NonInventoryProduct>;
   remittances!: Table<Remittance>;
   notifications!: Table<Notification>;
+  bulkInventoryTransactions!: Table<any>;
+  bulkInventoryItems!: Table<any>;
+  pendingBulkSubmissions!: Table<any>;
 
   constructor() {
     super('SmartPOSDB');
@@ -121,6 +125,23 @@ export class SmartPOSDB extends Dexie {
       nonInventoryProducts: 'id, &barcode, name, category',
       remittances: 'id, staffId, status, createdAt',
       notifications: 'id, type, isRead, createdAt'
+    });
+    this.version(7).stores({
+      users: 'id, username, email, mobile, role, staffId',
+      products: 'id, &barcode, name, category',
+      sales: 'id, staffId, createdAt, remitted',
+      saleItems: 'id, saleId, productId',
+      staff: 'id, &staffId, name, firstName, lastName, role, employmentStatus, email, branch, createdBy',
+      expenses: 'id, description, category, date',
+      purchases: 'id, productName, date, supplier',
+      creditors: 'id, name, dueDate, isPaid',
+      variants: 'id, productId, name, barcode',
+      nonInventoryProducts: 'id, &barcode, name, category',
+      remittances: 'id, staffId, status, createdAt',
+      notifications: 'id, type, isRead, createdAt',
+      bulkInventoryTransactions: 'id, tenantId, referenceNumber, createdAt, status',
+      bulkInventoryItems: 'id, bulkInventoryId, tenantId, productId, barcode',
+      pendingBulkSubmissions: 'id, createdAt, tenantId, status',
     });
   }
 
@@ -1602,5 +1623,362 @@ export class CreditorService {
     
     await db.creditors.update(creditorId, { amount: newBalance, isPaid: isPaid, description: nextDesc });
     await SalesService.addIncome(pay, paymentType);
+  }
+}
+
+// Bulk Inventory Service (Dexie + Server sync + Offline queue)
+export class BulkInventoryService {
+  private static isSubmitting = false;
+
+  static async submitBulkInventory(payload: BulkInventorySubmitInput & { tenantId?: string }): Promise<{
+    success: boolean;
+    isIdempotentReplay?: boolean;
+    offlineQueued?: boolean;
+    transactionId?: string;
+    referenceNumber?: string;
+    counts?: any;
+    transaction?: any;
+    items?: any[];
+  }> {
+    if (this.isSubmitting) {
+      throw new Error('SUBMISSION_IN_PROGRESS: A bulk inventory submission is already processing. Please wait.');
+    }
+
+    this.isSubmitting = true;
+    try {
+      // 1. If online, try submitting to server API
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        try {
+          const res: any = await api.post('/api/inventory/bulk', {
+            idempotencyKey: payload.idempotencyKey,
+            supplierCompany: payload.supplierCompany,
+            notes: payload.notes,
+            items: payload.items,
+          });
+
+          if (res && res.success) {
+            // Apply updates to local Dexie database
+            await db.transaction('rw', [db.products, db.variants, db.bulkInventoryTransactions, db.bulkInventoryItems], async () => {
+              for (const item of payload.items) {
+                if (item.variantId) {
+                  const existingVar = await db.variants.get(item.variantId);
+                  if (existingVar) {
+                    const newQty = (existingVar.quantity || 0) + Number(item.quantity || 0);
+                    const updates: any = { quantity: newQty, updatedAt: new Date().toISOString() };
+                    if (item.updateProductPriceCost) {
+                      if (item.sellingPrice > 0) updates.price = item.sellingPrice;
+                      if (item.cost >= 0) updates.cost = item.cost;
+                    }
+                    await db.variants.update(item.variantId, updates);
+                  }
+                } else if (item.productId && !item.isNewProduct) {
+                  const existingProd = await db.products.get(item.productId);
+                  if (existingProd) {
+                    const newQty = (existingProd.quantity || 0) + Number(item.quantity || 0);
+                    const updates: any = { quantity: newQty, updatedAt: new Date() };
+                    if (item.updateProductPriceCost) {
+                      if (item.sellingPrice > 0) updates.price = item.sellingPrice;
+                      if (item.cost >= 0) updates.cost = item.cost;
+                    }
+                    await db.products.update(item.productId, updates);
+                  }
+                }
+              }
+
+              // Cache transaction and items locally
+              if (res.transaction) {
+                await db.bulkInventoryTransactions.put({
+                  id: res.transaction.id,
+                  tenantId: res.transaction.tenant_id || res.transaction.tenantId || payload.tenantId || '',
+                  referenceNumber: res.transaction.reference_number || res.transaction.referenceNumber || res.referenceNumber,
+                  supplierCompany: res.transaction.supplier_company || res.transaction.supplierCompany,
+                  totalItems: res.transaction.total_items || res.transaction.totalItems,
+                  totalUnits: res.transaction.total_units || res.transaction.totalUnits,
+                  totalCost: res.transaction.total_cost || res.transaction.totalCost,
+                  notes: res.transaction.notes,
+                  status: res.transaction.status || 'completed',
+                  createdAt: res.transaction.createdAt || res.transaction.created_at || new Date().toISOString()
+                });
+              }
+
+              if (Array.isArray(res.items)) {
+                for (const it of res.items) {
+                  await db.bulkInventoryItems.put({
+                    id: it.id,
+                    bulkInventoryId: it.bulk_inventory_id || it.bulkInventoryId || res.transaction?.id,
+                    tenantId: it.tenant_id || it.tenantId || payload.tenantId || '',
+                    productId: it.product_id || it.productId,
+                    variantId: it.variant_id || it.variantId,
+                    barcode: it.barcode,
+                    productNameSnapshot: it.product_name_snapshot || it.productNameSnapshot,
+                    descriptionSnapshot: it.description_snapshot || it.descriptionSnapshot,
+                    quantity: it.quantity,
+                    costSnapshot: it.cost_snapshot || it.costSnapshot,
+                    sellingPriceSnapshot: it.selling_price_snapshot || it.sellingPriceSnapshot,
+                    supplierCompanyOverride: it.supplier_company_override || it.supplierCompanyOverride,
+                    notes: it.notes,
+                    createdAt: it.createdAt || it.created_at || new Date().toISOString()
+                  });
+                }
+              }
+            });
+
+            return res;
+          }
+        } catch (netErr: any) {
+          console.warn('[BULK INVENTORY] Online submit failed or server unreachable, falling back to local offline Dexie queue:', netErr);
+        }
+      }
+
+      // 2. Offline / Local fallback: Apply stock increment in Dexie and queue for background sync
+      const fallbackTxId = generateUUID();
+      const nowStr = new Date().toISOString();
+      const year = new Date().getFullYear();
+      const existingOfflineCount = await db.bulkInventoryTransactions.count();
+      const offlineRef = `BI-${year}-OFFLINE-${String(existingOfflineCount + 1).padStart(4, '0')}`;
+
+      let totalUnits = 0;
+      let totalCost = 0;
+      const localItemsToInsert: any[] = [];
+
+      await db.transaction('rw', [db.products, db.variants, db.bulkInventoryTransactions, db.bulkInventoryItems, db.pendingBulkSubmissions], async () => {
+        for (const item of payload.items) {
+          totalUnits += Number(item.quantity || 0);
+          totalCost += Number(item.quantity || 0) * Number(item.cost || 0);
+
+          let resolvedProdId = item.productId || null;
+          let resolvedVarId = item.variantId || null;
+
+          if (item.variantId) {
+            const existingVar = await db.variants.get(item.variantId);
+            if (existingVar) {
+              const newQty = (existingVar.quantity || 0) + Number(item.quantity || 0);
+              const updates: any = { quantity: newQty, updatedAt: nowStr };
+              if (item.updateProductPriceCost) {
+                if (item.sellingPrice > 0) updates.price = item.sellingPrice;
+                if (item.cost >= 0) updates.cost = item.cost;
+              }
+              await db.variants.update(item.variantId, updates);
+            }
+          } else if (item.productId && !item.isNewProduct) {
+            const existingProd = await db.products.get(item.productId);
+            if (existingProd) {
+              const newQty = (existingProd.quantity || 0) + Number(item.quantity || 0);
+              const updates: any = { quantity: newQty, updatedAt: new Date() };
+              if (item.updateProductPriceCost) {
+                if (item.sellingPrice > 0) updates.price = item.sellingPrice;
+                if (item.cost >= 0) updates.cost = item.cost;
+              }
+              await db.products.update(item.productId, updates);
+            }
+          } else if (item.isNewProduct) {
+            resolvedProdId = generateUUID();
+            const newProd: Product = {
+              id: resolvedProdId,
+              tenantId: payload.tenantId || '',
+              name: item.productName,
+              barcode: item.barcode || null,
+              price: item.sellingPrice,
+              cost: item.cost,
+              quantity: item.quantity,
+              category: 'general',
+              description: item.description || null,
+              image: null,
+              createdAt: new Date(),
+              updatedAt: new Date()
+            };
+            await db.products.add(newProd);
+          }
+
+          const itemId = generateUUID();
+          const itemRecord = {
+            id: itemId,
+            bulkInventoryId: fallbackTxId,
+            tenantId: payload.tenantId || '',
+            productId: resolvedProdId,
+            variantId: resolvedVarId,
+            barcode: item.barcode,
+            productNameSnapshot: item.productName,
+            descriptionSnapshot: item.description || null,
+            quantity: item.quantity,
+            costSnapshot: item.cost,
+            sellingPriceSnapshot: item.sellingPrice,
+            supplierCompanyOverride: item.supplierCompanyOverride || null,
+            notes: item.notes || null,
+            priceCostUpdateConfirmed: item.updateProductPriceCost ? 1 : 0,
+            createdAt: nowStr
+          };
+          localItemsToInsert.push(itemRecord);
+          await db.bulkInventoryItems.add(itemRecord);
+        }
+
+        const txRecord = {
+          id: fallbackTxId,
+          tenantId: payload.tenantId || '',
+          referenceNumber: offlineRef,
+          createdBy: 'offline_user',
+          supplierCompany: payload.supplierCompany || null,
+          totalItems: payload.items.length,
+          totalUnits,
+          totalCost,
+          notes: payload.notes || null,
+          status: 'completed',
+          idempotencyKey: payload.idempotencyKey,
+          createdAt: nowStr,
+          updatedAt: nowStr
+        };
+        await db.bulkInventoryTransactions.add(txRecord);
+
+        // Queue in pending submissions for background push
+        await db.pendingBulkSubmissions.put({
+          id: fallbackTxId,
+          tenantId: payload.tenantId || '',
+          idempotencyKey: payload.idempotencyKey,
+          payload,
+          status: 'pending',
+          createdAt: nowStr
+        });
+      });
+
+      return {
+        success: true,
+        offlineQueued: true,
+        transactionId: fallbackTxId,
+        referenceNumber: offlineRef,
+        counts: {
+          items: payload.items.length,
+          units: totalUnits,
+          totalCost
+        }
+      };
+    } finally {
+      this.isSubmitting = false;
+    }
+  }
+
+  static async getBulkInventoryHistory(opts?: {
+    page?: number;
+    size?: number;
+    reference?: string;
+    supplier?: string;
+    productName?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  }): Promise<{
+    rows: any[];
+    total: number;
+    page: number;
+    size: number;
+    totalPages: number;
+  }> {
+    // 1. Try server API if online
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      try {
+        const params = new URLSearchParams();
+        if (opts?.page) params.set('page', String(opts.page));
+        if (opts?.size) params.set('size', String(opts.size));
+        if (opts?.reference) params.set('reference', opts.reference);
+        if (opts?.supplier) params.set('supplier', opts.supplier);
+        if (opts?.productName) params.set('productName', opts.productName);
+        if (opts?.dateFrom) params.set('dateFrom', opts.dateFrom);
+        if (opts?.dateTo) params.set('dateTo', opts.dateTo);
+
+        const res: any = await api.get(`/api/inventory/bulk-history?${params.toString()}`);
+        if (res && Array.isArray(res.rows)) {
+          return res;
+        }
+      } catch (err) {
+        console.warn('[BULK HISTORY] Server query failed, falling back to local Dexie history:', err);
+      }
+    }
+
+    // 2. Local Dexie Fallback
+    let localRows = await db.bulkInventoryTransactions.orderBy('createdAt').reverse().toArray();
+
+    if (opts?.reference && opts.reference.trim()) {
+      const q = opts.reference.trim().toLowerCase();
+      localRows = localRows.filter((r: any) => String(r.referenceNumber || r.reference_number || '').toLowerCase().includes(q));
+    }
+    if (opts?.supplier && opts.supplier.trim()) {
+      const q = opts.supplier.trim().toLowerCase();
+      localRows = localRows.filter((r: any) => String(r.supplierCompany || r.supplier_company || '').toLowerCase().includes(q));
+    }
+    if (opts?.dateFrom && opts.dateFrom.trim()) {
+      localRows = localRows.filter((r: any) => new Date(r.createdAt || r.created_at) >= new Date(opts.dateFrom!));
+    }
+    if (opts?.dateTo && opts.dateTo.trim()) {
+      localRows = localRows.filter((r: any) => new Date(r.createdAt || r.created_at) <= new Date(opts.dateTo! + 'T23:59:59.999Z'));
+    }
+
+    const total = localRows.length;
+    const page = Math.max(1, opts?.page || 1);
+    const size = Math.min(100, Math.max(1, opts?.size || 20));
+    const offset = (page - 1) * size;
+    const paged = localRows.slice(offset, offset + size);
+
+    return {
+      rows: paged,
+      total,
+      page,
+      size,
+      totalPages: Math.ceil(total / size)
+    };
+  }
+
+  static async getBulkInventoryById(id: string): Promise<{ transaction: any; items: any[]; createdByName?: string; summary?: any } | null> {
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      try {
+        const res: any = await api.get(`/api/inventory/bulk-history/${id}`);
+        if (res && res.transaction) return res;
+      } catch (err) {
+        console.warn('[BULK DETAIL] Server detail fetch failed, falling back to Dexie:', err);
+      }
+    }
+
+    const tx = await db.bulkInventoryTransactions.get(id);
+    if (!tx) return null;
+    const items = await db.bulkInventoryItems.where('bulkInventoryId').equals(id).toArray();
+    return {
+      transaction: tx,
+      items,
+      createdByName: (tx as any).created_by || 'Admin',
+      summary: {
+        totalItems: items.length,
+        totalUnits: items.reduce((sum: number, it: any) => sum + Number(it.quantity || 0), 0),
+        totalCost: Number((tx as any).totalCost || (tx as any).total_cost || 0)
+      }
+    };
+  }
+
+  static async flushPendingSubmissions(tenantId?: string): Promise<{ synced: number; failed: number }> {
+    const pending = await db.pendingBulkSubmissions.where('status').equals('pending').toArray();
+    if (pending.length === 0) return { synced: 0, failed: 0 };
+
+    let synced = 0;
+    let failed = 0;
+
+    for (const item of pending) {
+      try {
+        const payload = item.payload;
+        const res: any = await api.post('/api/inventory/bulk', {
+          idempotencyKey: payload.idempotencyKey,
+          supplierCompany: payload.supplierCompany,
+          notes: payload.notes,
+          items: payload.items
+        });
+
+        if (res && res.success) {
+          await db.pendingBulkSubmissions.delete(item.id);
+          synced++;
+        } else {
+          failed++;
+        }
+      } catch (err) {
+        console.warn(`[SYNC FLUSH] Failed to flush pending bulk submission ${item.id}:`, err);
+        failed++;
+      }
+    }
+
+    return { synced, failed };
   }
 }

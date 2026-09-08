@@ -243,7 +243,7 @@ const TransactionHistory: React.FC = () => {
           <Tabs defaultValue="cash" className="w-full">
             <TabsList className="grid w-full grid-cols-3 mb-4">
               <TabsTrigger value="cash">Cash</TabsTrigger>
-              <TabsTrigger value="ewallet">E-Wallet</TabsTrigger>
+              <TabsTrigger value="ewallet">Cashless</TabsTrigger>
               <TabsTrigger value="credits">Credits</TabsTrigger>
             </TabsList>
             
@@ -307,7 +307,7 @@ const TransactionHistory: React.FC = () => {
                 </div>
               ) : getFilteredTransactions('ewallet').length === 0 ? (
                 <div className="text-center py-8">
-                  <p className="text-gray-600 dark:text-gray-400">No e-wallet transactions found for this period.</p>
+                  <p className="text-gray-600 dark:text-gray-400">No cashless transactions found for this period.</p>
                 </div>
               ) : (
                 getFilteredTransactions('ewallet').map(transaction => (
@@ -337,7 +337,7 @@ const TransactionHistory: React.FC = () => {
                           ₱{transaction.amount.toFixed(2)}
                         </div>
                         <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          E-Wallet Payment
+                          Cashless Payment
                         </div>
                         <Button size="sm" variant="outline" className="mt-2" onClick={() => handleViewDetails(transaction)}>
                           View Details

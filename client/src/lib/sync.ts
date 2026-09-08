@@ -387,7 +387,9 @@ export class DatabaseSyncService {
           db.creditors,
           db.nonInventoryProducts,
           db.remittances,
-          db.notifications
+          db.notifications,
+          db.bulkInventoryTransactions,
+          db.bulkInventoryItems
         ],
         async () => {
           // Clear all tables first to enforce strict data isolation across store accounts
@@ -403,7 +405,9 @@ export class DatabaseSyncService {
             db.creditors.clear(),
             db.nonInventoryProducts.clear(),
             db.remittances.clear(),
-            db.notifications.clear()
+            db.notifications.clear(),
+            db.bulkInventoryTransactions.clear(),
+            db.bulkInventoryItems.clear()
           ]);
 
           if (Array.isArray(data.products) && data.products.length > 0) {
@@ -442,6 +446,12 @@ export class DatabaseSyncService {
           if (Array.isArray(data.notifications) && data.notifications.length > 0) {
             await db.notifications.bulkPut(data.notifications);
           }
+          if (Array.isArray(data.bulkInventoryTransactions) && data.bulkInventoryTransactions.length > 0) {
+            await db.bulkInventoryTransactions.bulkPut(data.bulkInventoryTransactions);
+          }
+          if (Array.isArray(data.bulkInventoryItems) && data.bulkInventoryItems.length > 0) {
+            await db.bulkInventoryItems.bulkPut(data.bulkInventoryItems);
+          }
         }
       );
 
@@ -463,6 +473,15 @@ export class DatabaseSyncService {
   async pushAllToCloud(tenantId: string) {
     try {
       console.log('[SYNC PUSH] Pushing offline data to cloud for tenant:', tenantId);
+      
+      // 1. Drain pending bulk inventory submissions first
+      try {
+        const { BulkInventoryService } = await import('./db');
+        await BulkInventoryService.flushPendingSubmissions(tenantId);
+      } catch (flushErr) {
+        console.warn('[SYNC PUSH] Bulk inventory queue flush warning:', flushErr);
+      }
+
       const sales = await db.sales.toArray();
       const saleItems = await db.saleItems.toArray();
       const expenses = await db.expenses.toArray();

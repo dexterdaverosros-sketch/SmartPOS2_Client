@@ -126,6 +126,38 @@ const CANONICAL_SCHEMAS: Record<string, CanonicalColumn[]> = {
     { name: 'productName',    def: 'TEXT' },
     { name: 'isNonInventory', def: 'INTEGER DEFAULT 0' },
   ],
+  bulk_inventory_transactions: [
+    { name: 'id',                def: 'TEXT PRIMARY KEY' },
+    { name: 'tenant_id',         def: 'TEXT' },
+    { name: 'reference_number',  def: 'TEXT NOT NULL UNIQUE' },
+    { name: 'created_by',        def: 'TEXT NOT NULL' },
+    { name: 'supplier_company',  def: 'TEXT' },
+    { name: 'total_items',       def: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'total_units',       def: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'total_cost',        def: 'REAL NOT NULL DEFAULT 0' },
+    { name: 'notes',             def: 'TEXT' },
+    { name: 'status',            def: 'TEXT NOT NULL DEFAULT \'completed\'' },
+    { name: 'idempotency_key',   def: 'TEXT UNIQUE' },
+    { name: 'createdAt',         def: 'TEXT' },
+    { name: 'updatedAt',         def: 'TEXT' },
+  ],
+  bulk_inventory_items: [
+    { name: 'id',                         def: 'TEXT PRIMARY KEY' },
+    { name: 'tenant_id',                  def: 'TEXT' },
+    { name: 'bulk_inventory_id',          def: 'TEXT NOT NULL' },
+    { name: 'product_id',                 def: 'TEXT' },
+    { name: 'variant_id',                 def: 'TEXT' },
+    { name: 'barcode',                    def: 'TEXT' },
+    { name: 'product_name_snapshot',      def: 'TEXT NOT NULL' },
+    { name: 'description_snapshot',       def: 'TEXT' },
+    { name: 'quantity',                   def: 'INTEGER NOT NULL' },
+    { name: 'cost_snapshot',              def: 'REAL NOT NULL DEFAULT 0' },
+    { name: 'selling_price_snapshot',     def: 'REAL DEFAULT 0' },
+    { name: 'supplier_company_override',  def: 'TEXT' },
+    { name: 'notes',                      def: 'TEXT' },
+    { name: 'price_cost_update_confirmed',def: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'createdAt',                  def: 'TEXT' },
+  ],
 };
 
 const STAFF_COLUMN_NAMES = CANONICAL_SCHEMAS.staff.map(c => c.name);
@@ -133,6 +165,8 @@ const PRODUCTS_COLUMN_NAMES = CANONICAL_SCHEMAS.products.map(c => c.name);
 const VARIANTS_COLUMN_NAMES = CANONICAL_SCHEMAS.variants.map(c => c.name);
 const SALES_COLUMN_NAMES = CANONICAL_SCHEMAS.sales.map(c => c.name);
 const SALE_ITEMS_COLUMN_NAMES = CANONICAL_SCHEMAS.sale_items.map(c => c.name);
+const BULK_INV_TX_COLUMN_NAMES = CANONICAL_SCHEMAS.bulk_inventory_transactions.map(c => c.name);
+const BULK_INV_ITEMS_COLUMN_NAMES = CANONICAL_SCHEMAS.bulk_inventory_items.map(c => c.name);
 
 // Database service
 export const dbService = {
@@ -165,15 +199,13 @@ export const dbService = {
     const getCols = (table: string) =>
       sqlite.prepare(`PRAGMA table_info(${table})`).all() as { cid: number; name: string; type: string; notnull: number; dflt_value: any; pk: number }[];
 
-    const criticalTables = ['staff', 'products', 'variants', 'sales', 'sale_items'];
+    const criticalTables = ['staff', 'products', 'variants', 'sales', 'sale_items', 'bulk_inventory_transactions', 'bulk_inventory_items'];
     const preMigration: Record<string, string[]> = {};
     for (const t of criticalTables) {
       const cols = getCols(t);
       preMigration[t] = cols.map(c => `${c.name}(${c.type})`);
       console.log(`[DB DIAG] PRE-MIGRATION PRAGMA table_info(${t}): columns = [${cols.map(c => c.name + ':' + c.type).join(', ')}]`);
     }
-
-    runMigrations(sqlite);
 
     // ---------------- TASK 2: DETERMINISTIC MIGRATIONS ----------------
     const migrateTable = (tableName: string, canonical: CanonicalColumn[]) => {
@@ -499,7 +531,20 @@ export const dbService = {
       CREATE INDEX IF NOT EXISTS idx_remittances_tenant_status ON remittances(tenant_id, status);
       CREATE INDEX IF NOT EXISTS idx_notifications_tenant_user ON notifications(tenant_id, user_id);
       CREATE INDEX IF NOT EXISTS idx_users_tenant_username ON users(tenant_id, username);
+      CREATE INDEX IF NOT EXISTS idx_bulk_inv_tx_tenant ON bulk_inventory_transactions(tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_bulk_inv_tx_ref ON bulk_inventory_transactions(reference_number);
+      CREATE INDEX IF NOT EXISTS idx_bulk_inv_tx_idem ON bulk_inventory_transactions(idempotency_key);
+      CREATE INDEX IF NOT EXISTS idx_bulk_inv_items_parent ON bulk_inventory_items(bulk_inventory_id);
+      CREATE INDEX IF NOT EXISTS idx_bulk_inv_items_tenant ON bulk_inventory_items(tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_bulk_inv_items_product ON bulk_inventory_items(product_id);
     `);
+
+    // Run modular SQL migrations (e.g. backfills, composite constraints)
+    try {
+      runMigrations(sqlite);
+    } catch (migErr: any) {
+      console.warn('[MIGRATIONS] Migration step encountered warning/error:', migErr?.message);
+    }
 
     // ---------------- TASK 9: POST-MIGRATION VERIFICATION ----------------
     console.log('--------------------------------------------------------');
@@ -519,6 +564,8 @@ export const dbService = {
     schemaResults.variants = verifyRequired('variants', VARIANTS_COLUMN_NAMES);
     schemaResults.sales = verifyRequired('sales', SALES_COLUMN_NAMES);
     schemaResults.sale_items = verifyRequired('sale_items', SALE_ITEMS_COLUMN_NAMES);
+    schemaResults.bulk_inventory_transactions = verifyRequired('bulk_inventory_transactions', BULK_INV_TX_COLUMN_NAMES);
+    schemaResults.bulk_inventory_items = verifyRequired('bulk_inventory_items', BULK_INV_ITEMS_COLUMN_NAMES);
 
     const postMigration: Record<string, string[]> = {};
     for (const t of criticalTables) {
@@ -3087,6 +3134,54 @@ export const dbService = {
       console.log(`Synced ${settings.length} settings`);
     }
 
+    // 14e. Sync bulk inventory transactions
+    const biTx = db.prepare('SELECT * FROM bulk_inventory_transactions WHERE tenant_id = ?').all(tenantId) as any[];
+    if (biTx.length > 0) {
+      const cloudBITx = biTx.map(t => ({
+        id: t.id,
+        tenant_id: tenantId,
+        reference_number: t.reference_number,
+        created_by: t.created_by,
+        supplier_company: t.supplier_company,
+        total_items: t.total_items ?? 0,
+        total_units: t.total_units ?? 0,
+        total_cost: t.total_cost ?? 0,
+        notes: t.notes,
+        status: t.status ?? 'completed',
+        idempotency_key: t.idempotency_key,
+        created_at: t.createdAt || t.created_at || new Date().toISOString(),
+        updated_at: t.updatedAt || t.updated_at || new Date().toISOString()
+      }));
+      const { error: bitErr } = await supabase.from('bulk_inventory_transactions').upsert(cloudBITx, { onConflict: 'id' });
+      if (bitErr) throw bitErr;
+      console.log(`Synced ${biTx.length} bulk inventory transactions`);
+    }
+
+    // 14f. Sync bulk inventory items
+    const biItems = db.prepare('SELECT * FROM bulk_inventory_items WHERE tenant_id = ?').all(tenantId) as any[];
+    if (biItems.length > 0) {
+      const cloudBIItems = biItems.map(i => ({
+        id: i.id,
+        tenant_id: tenantId,
+        bulk_inventory_id: i.bulk_inventory_id,
+        product_id: i.product_id,
+        variant_id: i.variant_id,
+        barcode: i.barcode,
+        product_name_snapshot: i.product_name_snapshot,
+        description_snapshot: i.description_snapshot,
+        quantity: i.quantity,
+        cost_snapshot: i.cost_snapshot ?? 0,
+        selling_price_snapshot: i.selling_price_snapshot ?? 0,
+        supplier_company_override: i.supplier_company_override,
+        notes: i.notes,
+        price_cost_update_confirmed: i.price_cost_update_confirmed ?? 0,
+        created_at: i.createdAt || i.created_at || new Date().toISOString()
+      }));
+      const { error: biiErr } = await supabase.from('bulk_inventory_items').upsert(cloudBIItems, { onConflict: 'id' });
+      if (biiErr) throw biiErr;
+      console.log(`Synced ${biItems.length} bulk inventory items`);
+    }
+
     console.log('=== Full sync to Supabase complete ===');
     return { success: true, message: 'All data pushed to Supabase' };
   },
@@ -3612,6 +3707,86 @@ export const dbService = {
       throw e;
     }
 
+    // 15. Pull Bulk Inventory Transactions
+    try {
+      const { data: cloudBITx, error: bitErr } = await supabase.from('bulk_inventory_transactions').select('*').eq('tenant_id', tenantId);
+      if (bitErr) throw bitErr;
+      const _n = cloudBITx?.length ?? 0;
+      console.log('[PULL BULK_INV_TX] rows=' + _n);
+      if (_n > 0) {
+        const insert = db.prepare(`
+          INSERT OR REPLACE INTO bulk_inventory_transactions
+          (id, tenant_id, reference_number, created_by, supplier_company, total_items, total_units, total_cost, notes, status, idempotency_key, createdAt, updatedAt)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        db.transaction((rows: any[]) => {
+          for (const r of rows) {
+            insert.run(
+              r.id,
+              tenantId,
+              r.reference_number,
+              r.created_by,
+              r.supplier_company,
+              r.total_items ?? 0,
+              r.total_units ?? 0,
+              r.total_cost ?? 0,
+              r.notes,
+              r.status ?? 'completed',
+              r.idempotency_key,
+              r.created_at,
+              r.updated_at
+            );
+          }
+        })(cloudBITx);
+        console.log('[LOCAL SYNC] entity=bulk_inventory_transactions rows_received=' + _n + ' rows_saved=' + _n);
+        console.log(`Pulled ${_n} bulk inventory transactions`);
+      }
+    } catch (e: any) {
+      console.error('[PULL ERROR] entity=bulk_inventory_transactions tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+      throw e;
+    }
+
+    // 16. Pull Bulk Inventory Items
+    try {
+      const { data: cloudBIItems, error: biiErr } = await supabase.from('bulk_inventory_items').select('*').eq('tenant_id', tenantId);
+      if (biiErr) throw biiErr;
+      const _n = cloudBIItems?.length ?? 0;
+      console.log('[PULL BULK_INV_ITEMS] rows=' + _n);
+      if (_n > 0) {
+        const insert = db.prepare(`
+          INSERT OR REPLACE INTO bulk_inventory_items
+          (id, tenant_id, bulk_inventory_id, product_id, variant_id, barcode, product_name_snapshot, description_snapshot, quantity, cost_snapshot, selling_price_snapshot, supplier_company_override, notes, price_cost_update_confirmed, createdAt)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        db.transaction((rows: any[]) => {
+          for (const r of rows) {
+            insert.run(
+              r.id,
+              tenantId,
+              r.bulk_inventory_id,
+              r.product_id,
+              r.variant_id,
+              r.barcode,
+              r.product_name_snapshot,
+              r.description_snapshot,
+              r.quantity,
+              r.cost_snapshot ?? 0,
+              r.selling_price_snapshot ?? 0,
+              r.supplier_company_override,
+              r.notes,
+              r.price_cost_update_confirmed ?? 0,
+              r.created_at
+            );
+          }
+        })(cloudBIItems);
+        console.log('[LOCAL SYNC] entity=bulk_inventory_items rows_received=' + _n + ' rows_saved=' + _n);
+        console.log(`Pulled ${_n} bulk inventory items`);
+      }
+    } catch (e: any) {
+      console.error('[PULL ERROR] entity=bulk_inventory_items tenant_id=' + tenantId + ' error=' + (e?.message || String(e)));
+      throw e;
+    }
+
     const _pullDur = Date.now() - _pullStart;
     console.log('[PULL COMPLETE] tenant_id=' + tenantId + ' duration_ms=' + _pullDur);
     console.log('=== Full sync from Supabase complete ===');
@@ -3672,6 +3847,395 @@ export const dbService = {
     } catch (e) {
       console.error('Failed to clear bound tenant ID:', e);
     }
+  },
+
+  // ================================================================
+  // Bulk Inventory — Getters
+  // ================================================================
+  getBulkInventoryTransactions: (tenantId: string) =>
+    db.prepare('SELECT * FROM bulk_inventory_transactions WHERE tenant_id = ? ORDER BY createdAt DESC').all(tenantId),
+
+  getBulkInventoryItemsByTenant: (tenantId: string) =>
+    db.prepare('SELECT * FROM bulk_inventory_items WHERE tenant_id = ?').all(tenantId),
+
+  getBulkInventoryHistoryPaginated: (
+    tenantId: string,
+    opts: { page?: number; size?: number; reference?: string; supplier?: string; productName?: string; dateFrom?: string; dateTo?: string; createdBy?: string }
+  ) => {
+    const page = Math.max(1, opts.page ?? 1);
+    const size = Math.min(200, Math.max(1, opts.size ?? 50));
+    const offset = (page - 1) * size;
+    const whereClauses: string[] = ['tenant_id = ?'];
+    const params: any[] = [tenantId];
+
+    if (opts.reference && opts.reference.trim()) {
+      whereClauses.push('reference_number LIKE ?');
+      params.push('%' + opts.reference.trim() + '%');
+    }
+    if (opts.supplier && opts.supplier.trim()) {
+      whereClauses.push('supplier_company LIKE ?');
+      params.push('%' + opts.supplier.trim() + '%');
+    }
+    if (opts.createdBy && opts.createdBy.trim()) {
+      whereClauses.push('created_by = ?');
+      params.push(opts.createdBy.trim());
+    }
+    if (opts.dateFrom && opts.dateFrom.trim()) {
+      whereClauses.push('createdAt >= ?');
+      params.push(opts.dateFrom.trim());
+    }
+    if (opts.dateTo && opts.dateTo.trim()) {
+      whereClauses.push('createdAt <= ?');
+      params.push(opts.dateTo.trim());
+    }
+
+    let productNameJoin = '';
+    if (opts.productName && opts.productName.trim()) {
+      productNameJoin = `
+        AND id IN (
+          SELECT bulk_inventory_id FROM bulk_inventory_items
+          WHERE tenant_id = ? AND product_name_snapshot LIKE ?
+        )`;
+      params.push(tenantId, '%' + opts.productName.trim() + '%');
+    }
+
+    const sqlWhere = 'WHERE ' + whereClauses.join(' AND ') + productNameJoin;
+    const countSql = 'SELECT COUNT(*) as c FROM bulk_inventory_transactions ' + sqlWhere;
+    const totalRow: any = db.prepare(countSql).get(...params);
+    const total = Number(totalRow?.c ?? 0);
+
+    const rowsSql =
+      'SELECT * FROM bulk_inventory_transactions ' +
+      sqlWhere +
+      ' ORDER BY createdAt DESC LIMIT ? OFFSET ?';
+    const rows = db.prepare(rowsSql).all(...params, size, offset);
+
+    return {
+      rows,
+      total,
+      page,
+      size,
+      totalPages: Math.ceil(total / size),
+    };
+  },
+
+  getBulkInventoryById: (tenantId: string, id: string) => {
+    const row: any = db.prepare(
+      'SELECT * FROM bulk_inventory_transactions WHERE id = ? AND tenant_id = ?'
+    ).get(id, tenantId);
+    if (!row) return null;
+    const items = db.prepare(
+      'SELECT * FROM bulk_inventory_items WHERE bulk_inventory_id = ? AND tenant_id = ? ORDER BY createdAt ASC'
+    ).all(id, tenantId);
+    return { transaction: row, items };
+  },
+
+  // Idempotency lookup — return existing tx if already committed
+  getBulkInventoryByIdempotencyKey: (tenantId: string, key: string) => {
+    const row: any = db.prepare(
+      'SELECT * FROM bulk_inventory_transactions WHERE idempotency_key = ? AND tenant_id = ?'
+    ).get(key, tenantId);
+    if (!row) return null;
+    const items = db.prepare(
+      'SELECT * FROM bulk_inventory_items WHERE bulk_inventory_id = ? AND tenant_id = ?'
+    ).all(row.id, tenantId);
+    return { transaction: row, items };
+  },
+
+  // ================================================================
+  // Bulk Inventory — Atomic commit
+  // ================================================================
+  // Returns { success, isIdempotentReplay, transaction, items, counts } OR throws
+  commitBulkInventory: (args: {
+    tenantId: string;
+    createdBy: string;
+    idempotencyKey: string;
+    supplierCompany: string | null | undefined;
+    notes: string | null | undefined;
+    items: Array<{
+      productId: string | null | undefined;
+      variantId: string | null | undefined;
+      barcode: string;
+      productName: string;
+      description: string | null | undefined;
+      sellingPrice: number;
+      cost: number;
+      quantity: number;
+      supplierCompanyOverride: string | null | undefined;
+      notes: string | null | undefined;
+      isVariant: boolean;
+      isNewProduct: boolean;
+      updateProductPriceCost: boolean;
+    }>;
+  }) => {
+    const { tenantId, createdBy, idempotencyKey, supplierCompany, notes, items: inputItems } = args;
+
+    // 1. Fast-fail idempotency check (outside TX to save work)
+    const replay = dbService.getBulkInventoryByIdempotencyKey(tenantId, idempotencyKey);
+    if (replay) {
+      return {
+        success: true,
+        isIdempotentReplay: true,
+        transaction: replay.transaction,
+        items: replay.items,
+        counts: {
+          items: replay.items.length,
+          units: (replay.items as any[]).reduce((a, b) => a + Number(b.quantity || 0), 0),
+          newProducts: 0,
+          updatedProducts: 0,
+          totalCost: Number(replay.transaction.total_cost || 0),
+        }
+      };
+    }
+
+    // 2. Cross-tenant ownership validation BEFORE transaction (fail fast)
+    for (let i = 0; i < inputItems.length; i++) {
+      const line = inputItems[i];
+      if (line.productId && !line.isNewProduct) {
+        const p: any = db.prepare(
+          'SELECT id, name, quantity, price, cost FROM products WHERE id = ? AND tenant_id = ?'
+        ).get(line.productId, tenantId);
+        if (!p) {
+          throw Object.assign(
+            new Error('PRODUCT_NOT_OWNED: product_id ' + line.productId + ' not owned by tenant at line ' + (i + 1)),
+            { code: 403, fieldIndex: i, field: 'productId' }
+          );
+        }
+      }
+      if (line.variantId) {
+        const v: any = db.prepare(
+          'SELECT id, product_id, quantity, price, cost FROM variants WHERE id = ? AND tenant_id = ?'
+        ).get(line.variantId, tenantId);
+        if (!v) {
+          throw Object.assign(
+            new Error('VARIANT_NOT_OWNED: variant_id ' + line.variantId + ' not owned by tenant at line ' + (i + 1)),
+            { code: 403, fieldIndex: i, field: 'variantId' }
+          );
+        }
+      }
+    }
+
+    // 3. Internal duplicate detection: same product/variant targeted twice in same batch
+    const seenTargets = new Map<string, number>();
+    for (let i = 0; i < inputItems.length; i++) {
+      const line = inputItems[i];
+      let key = null;
+      if (line.isVariant && line.variantId) key = 'v:' + line.variantId;
+      else if (line.productId && !line.isNewProduct) key = 'p:' + line.productId;
+      if (key) {
+        if (seenTargets.has(key)) {
+          throw Object.assign(
+            new Error('DUPLICATE_TARGET: Line ' + (i + 1) + ' targets same ' + (line.isVariant ? 'variant' : 'product') + ' as line ' + (seenTargets.get(key)! + 1) + '. Merge quantities manually.'),
+            { code: 400, fieldIndex: i, field: 'productId' }
+          );
+        }
+        seenTargets.set(key, i);
+      }
+    }
+
+    // 4. Reference number generation (tenant-scoped sequential per calendar year)
+    const now = new Date();
+    const year = now.getFullYear();
+    const seqRow: any = db.prepare(
+      `SELECT CAST(COALESCE(MAX(CAST(SUBSTR(reference_number, INSTR(reference_number, '-', 4) + 1) AS INTEGER)), 0) AS INTEGER) AS maxSeq
+       FROM bulk_inventory_transactions
+       WHERE tenant_id = ? AND reference_number LIKE ?`
+    ).get(tenantId, `BI-${year}-%`);
+    const nextSeq = Number(seqRow?.maxSeq || 0) + 1;
+    const referenceNumber = `BI-${year}-${String(nextSeq).padStart(5, '0')}`;
+
+    const transactionId = crypto.randomUUID ? crypto.randomUUID() : randomUUID();
+    const createdAt = now.toISOString();
+
+    // Compute totals
+    let totalUnits = 0;
+    let totalCost = 0;
+    for (const l of inputItems) {
+      totalUnits += Number(l.quantity || 0);
+      totalCost += Number(l.quantity || 0) * Number(l.cost || 0);
+    }
+
+    const txInsert = db.prepare(`
+      INSERT INTO bulk_inventory_transactions
+      (id, tenant_id, reference_number, created_by, supplier_company, total_items, total_units, total_cost, notes, status, idempotency_key, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?)
+    `);
+    const itemInsert = db.prepare(`
+      INSERT INTO bulk_inventory_items
+      (id, tenant_id, bulk_inventory_id, product_id, variant_id, barcode, product_name_snapshot, description_snapshot, quantity, cost_snapshot, selling_price_snapshot, supplier_company_override, notes, price_cost_update_confirmed, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const updateProductQty = db.prepare(
+      'UPDATE products SET quantity = quantity + ?, updatedAt = ? WHERE id = ? AND tenant_id = ?'
+    );
+    const updateProductQtyAndPrice = db.prepare(
+      'UPDATE products SET quantity = quantity + ?, price = ?, cost = ?, updatedAt = ? WHERE id = ? AND tenant_id = ?'
+    );
+    const updateVariantQty = db.prepare(
+      'UPDATE variants SET quantity = quantity + ?, updated_at = ? WHERE id = ? AND tenant_id = ?'
+    );
+    const updateVariantQtyAndPrice = db.prepare(
+      'UPDATE variants SET quantity = quantity + ?, price = ?, cost = ?, updated_at = ? WHERE id = ? AND tenant_id = ?'
+    );
+    const insertProduct = db.prepare(`
+      INSERT INTO products (id, tenant_id, name, barcode, price, cost, description, quantity, category, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Uncategorized', ?, ?)
+    `);
+
+    // 5. Atomic transaction
+    let newProducts = 0;
+    let updatedProducts = 0;
+    const finalItems: any[] = [];
+
+    const doCommit = db.transaction(() => {
+      txInsert.run(
+        transactionId, tenantId, referenceNumber, createdBy,
+        supplierCompany || null, inputItems.length, totalUnits, totalCost,
+        notes || null, idempotencyKey, createdAt, createdAt
+      );
+
+      for (let i = 0; i < inputItems.length; i++) {
+        const line = inputItems[i];
+        let finalProductId = line.productId || null;
+        let finalVariantId = line.variantId || null;
+
+        // (a) Brand new product creation
+        if (line.isNewProduct && !line.productId) {
+          const newId = crypto.randomUUID ? crypto.randomUUID() : randomUUID();
+          insertProduct.run(
+            newId, tenantId,
+            line.productName,
+            line.barcode || null,
+            Number(line.sellingPrice || 0),
+            Number(line.cost || 0),
+            line.description || null,
+            Number(line.quantity || 0),
+            createdAt, createdAt
+          );
+          finalProductId = newId;
+          newProducts++;
+          updatedProducts++;
+        } else if (line.isVariant && finalVariantId) {
+          // (b) Existing variant: increment quantity, optionally price/cost
+          if (line.updateProductPriceCost) {
+            updateVariantQtyAndPrice.run(
+              Number(line.quantity || 0),
+              Number(line.sellingPrice || 0),
+              Number(line.cost || 0),
+              createdAt,
+              finalVariantId, tenantId
+            );
+          } else {
+            updateVariantQty.run(
+              Number(line.quantity || 0),
+              createdAt,
+              finalVariantId, tenantId
+            );
+          }
+          updatedProducts++;
+        } else if (finalProductId) {
+          // (c) Existing product: increment quantity, optionally price/cost
+          if (line.updateProductPriceCost) {
+            updateProductQtyAndPrice.run(
+              Number(line.quantity || 0),
+              Number(line.sellingPrice || 0),
+              Number(line.cost || 0),
+              createdAt,
+              finalProductId, tenantId
+            );
+          } else {
+            updateProductQty.run(
+              Number(line.quantity || 0),
+              createdAt,
+              finalProductId, tenantId
+            );
+          }
+          updatedProducts++;
+        }
+
+        // (d) Immutable snapshot item row
+        const itemId = crypto.randomUUID ? crypto.randomUUID() : randomUUID();
+        const finalSupplierOverride = line.supplierCompanyOverride && line.supplierCompanyOverride.trim()
+          ? line.supplierCompanyOverride.trim()
+          : (supplierCompany || null);
+        itemInsert.run(
+          itemId, tenantId, transactionId,
+          finalProductId, finalVariantId,
+          line.barcode || null,
+          line.productName,
+          line.description || null,
+          Number(line.quantity || 0),
+          Number(line.cost || 0),
+          Number(line.sellingPrice || 0),
+          finalSupplierOverride,
+          line.notes || null,
+          line.updateProductPriceCost ? 1 : 0,
+          createdAt
+        );
+
+        finalItems.push({
+          id: itemId,
+          tenantId,
+          bulkInventoryId: transactionId,
+          productId: finalProductId,
+          variantId: finalVariantId,
+          barcode: line.barcode || null,
+          productNameSnapshot: line.productName,
+          descriptionSnapshot: line.description || null,
+          quantity: Number(line.quantity || 0),
+          costSnapshot: Number(line.cost || 0),
+          sellingPriceSnapshot: Number(line.sellingPrice || 0),
+          supplierCompanyOverride: finalSupplierOverride,
+          notes: line.notes || null,
+          priceCostUpdateConfirmed: line.updateProductPriceCost ? 1 : 0,
+          createdAt,
+        });
+      }
+    });
+
+    try {
+      doCommit();
+    } catch (txErr: any) {
+      // SQLite UNIQUE constraint on idempotency_key = racing concurrent submit
+      if (txErr && String(txErr.message || '').includes('UNIQUE constraint failed: bulk_inventory_transactions.idempotency_key')) {
+        const existing = dbService.getBulkInventoryByIdempotencyKey(tenantId, idempotencyKey);
+        if (existing) {
+          return {
+            success: true,
+            isIdempotentReplay: true,
+            transaction: existing.transaction,
+            items: existing.items,
+            counts: {
+              items: existing.items.length,
+              units: (existing.items as any[]).reduce((a, b) => a + Number(b.quantity || 0), 0),
+              newProducts: 0,
+              updatedProducts: 0,
+              totalCost: Number(existing.transaction.total_cost || 0),
+            }
+          };
+        }
+      }
+      throw txErr;
+    }
+
+    // 6. Re-read committed header
+    const committedTx = db.prepare(
+      'SELECT * FROM bulk_inventory_transactions WHERE id = ? AND tenant_id = ?'
+    ).get(transactionId, tenantId);
+
+    return {
+      success: true,
+      isIdempotentReplay: false,
+      transaction: committedTx,
+      items: finalItems,
+      counts: {
+        items: inputItems.length,
+        units: totalUnits,
+        newProducts,
+        updatedProducts,
+        totalCost,
+      }
+    };
   },
 
   setBoundTenantId: (tenantId: string) => {

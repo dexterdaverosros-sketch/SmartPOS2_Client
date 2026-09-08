@@ -1198,7 +1198,7 @@ const ScannerSales: React.FC = () => {
                               paymentType === 'ewallet' ? "bg-blue-600 text-white border-blue-600 shadow-md" : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
                             )}
                           >
-                            <CreditCard className="w-4 h-4" /> E-Wallet
+                            <CreditCard className="w-4 h-4" /> Cashless
                           </button>
                           <button
                             type="button"
@@ -1216,7 +1216,7 @@ const ScannerSales: React.FC = () => {
                       {paymentType === 'ewallet' && (
                         <div className="p-3 bg-blue-50 border border-blue-100 rounded-2xl text-[10px] text-blue-700 font-bold flex items-center gap-2">
                           <AlertCircle className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                          <span>E-Wallet payment is verified out-of-system by staff (GCash, Maya, QR Ph, etc.).</span>
+                          <span>Cashless payment is verified out-of-system by staff (GCash, Maya, QR Ph, etc.).</span>
                         </div>
                       )}
 

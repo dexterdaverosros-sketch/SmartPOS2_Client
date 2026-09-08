@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Search, Filter, Plus, Edit, Trash2, Package, Image as ImageIcon, PlusCircle, Tag, X, AlertTriangle, Upload, Download, FileSpreadsheet } from 'lucide-react';
+import { ArrowLeft, Search, Filter, Plus, Edit, Trash2, Package, Image as ImageIcon, PlusCircle, Tag, X, AlertTriangle, Upload, Download, FileSpreadsheet, Boxes, History } from 'lucide-react';
 import { useLocation } from 'wouter';
 import Layout from '@/components/Layout';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import NonInventoryProducts from '@/components/NonInventoryProducts';
+import { BulkInventoryWorkspace } from '@/components/BulkInventoryWorkspace';
+import { BulkInventoryHistory } from '@/components/BulkInventoryHistory';
 import type { Product } from '@shared/schema';
 
 const productSchema = z.object({
@@ -78,6 +80,8 @@ const InventoryManagement: React.FC = () => {
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [editModeTimerId, setEditModeTimerId] = useState<number | null>(null);
   const [pcsPerBox, setPcsPerBox] = useState(1);
+  const [isBulkInventoryOpen, setIsBulkInventoryOpen] = useState(false);
+  const [isBulkHistoryOpen, setIsBulkHistoryOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -702,6 +706,28 @@ const InventoryManagement: React.FC = () => {
                     </span>
                   </Button>
                 </div>
+
+                {/* Bulk Inventory Management Action Buttons */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="whitespace-nowrap text-xs px-2.5 sm:px-3 bg-[#BF953F]/10 border-[#BF953F]/30 hover:bg-[#BF953F] hover:text-black text-[#BF953F] font-bold transition-all flex items-center gap-1.5"
+                  onClick={() => setIsBulkInventoryOpen(true)}
+                  title="Open Continuous Bulk Inventory Workspace"
+                >
+                  <Boxes className="w-3.5 h-3.5" />
+                  <span>Bulk Inventory</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="whitespace-nowrap text-xs px-2.5 sm:px-3 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-slate-100 text-gray-700 dark:text-gray-200 font-bold transition-all flex items-center gap-1.5"
+                  onClick={() => setIsBulkHistoryOpen(true)}
+                  title="View Bulk Inventory History and Delivery Logs"
+                >
+                  <History className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Bulk History</span>
+                </Button>
 
                 {/* Import & Export Action Buttons */}
                 <input
@@ -1442,6 +1468,19 @@ const InventoryManagement: React.FC = () => {
             </Form>
           </DialogContent>
         </Dialog>
+
+        {/* Bulk Inventory Workspace Modal */}
+        <BulkInventoryWorkspace
+          isOpen={isBulkInventoryOpen}
+          onClose={() => setIsBulkInventoryOpen(false)}
+          onSuccess={loadProducts}
+        />
+
+        {/* Bulk Inventory History Modal */}
+        <BulkInventoryHistory
+          isOpen={isBulkHistoryOpen}
+          onClose={() => setIsBulkHistoryOpen(false)}
+        />
       </motion.div>
     </Layout>
   );

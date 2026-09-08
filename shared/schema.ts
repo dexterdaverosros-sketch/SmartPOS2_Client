@@ -658,3 +658,80 @@ export type CartItem = {
   isNonInventory?: boolean;
 };
 
+// Bulk Inventory Transactions (one per delivery session)
+export const bulkInventoryTransactions = sqliteTable("bulk_inventory_transactions", {
+  id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  referenceNumber: text("reference_number").notNull(),
+  createdBy: text("created_by").notNull(),
+  supplierCompany: text("supplier_company"),
+  totalItems: integer("total_items").notNull().default(0),
+  totalUnits: integer("total_units").notNull().default(0),
+  totalCost: real("total_cost").notNull().default(0),
+  notes: text("notes"),
+  status: text("status").notNull().default("completed"),
+  idempotencyKey: text("idempotency_key").unique(),
+  createdAt: integer("created_at", { mode: 'timestamp' }).default(new Date()),
+  updatedAt: integer("updated_at", { mode: 'timestamp' }).default(new Date()),
+});
+
+// Bulk Inventory Items (N per transaction)
+export const bulkInventoryItems = sqliteTable("bulk_inventory_items", {
+  id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  bulkInventoryId: text("bulk_inventory_id").notNull().references(() => bulkInventoryTransactions.id, { onDelete: 'cascade' }),
+  productId: text("product_id"),
+  variantId: text("variant_id"),
+  barcode: text("barcode"),
+  productNameSnapshot: text("product_name_snapshot").notNull(),
+  descriptionSnapshot: text("description_snapshot"),
+  quantity: integer("quantity").notNull(),
+  costSnapshot: real("cost_snapshot").notNull().default(0),
+  sellingPriceSnapshot: real("selling_price_snapshot").default(0),
+  supplierCompanyOverride: text("supplier_company_override"),
+  notes: text("notes"),
+  priceCostUpdateConfirmed: integer("price_cost_update_confirmed").notNull().default(0),
+  createdAt: integer("created_at", { mode: 'timestamp' }).default(new Date()),
+});
+
+export const insertBulkInventoryTransactionSchema = createInsertSchema(bulkInventoryTransactions);
+export const updateBulkInventoryTransactionSchema = insertBulkInventoryTransactionSchema.partial();
+export const insertBulkInventoryItemSchema = createInsertSchema(bulkInventoryItems);
+export const updateBulkInventoryItemSchema = insertBulkInventoryItemSchema.partial();
+
+// Bulk line item sent from the client per scan
+export const bulkLineSchema = z.object({
+  productId: z.string().uuid().optional().nullable(),
+  variantId: z.string().uuid().optional().nullable(),
+  barcode: z.string().trim().min(1),
+  productName: z.string().trim().min(1),
+  description: z.string().trim().optional().nullable(),
+  sellingPrice: z.coerce.number().min(0),
+  cost: z.coerce.number().min(0),
+  quantity: z.coerce.number().int().min(1),
+  supplierCompanyOverride: z.string().trim().optional().nullable(),
+  notes: z.string().trim().optional().nullable(),
+  isVariant: z.boolean().default(false),
+  isNewProduct: z.boolean().default(false),
+  updateProductPriceCost: z.boolean().default(false),
+});
+
+export type BulkLineInput = z.infer<typeof bulkLineSchema>;
+
+export const bulkInventorySubmitSchema = z.object({
+  idempotencyKey: z.string().uuid(),
+  supplierCompany: z.string().trim().optional().nullable(),
+  notes: z.string().trim().optional().nullable(),
+  items: z.array(bulkLineSchema).min(1, "At least one inventory item is required"),
+});
+
+export type BulkInventorySubmitInput = z.infer<typeof bulkInventorySubmitSchema>;
+
+export type BulkInventoryTransaction = typeof bulkInventoryTransactions.$inferSelect;
+export type InsertBulkInventoryTransaction = z.infer<typeof insertBulkInventoryTransactionSchema>;
+export type UpdateBulkInventoryTransaction = z.infer<typeof updateBulkInventoryTransactionSchema>;
+
+export type BulkInventoryItem = typeof bulkInventoryItems.$inferSelect;
+export type InsertBulkInventoryItem = z.infer<typeof insertBulkInventoryItemSchema>;
+export type UpdateBulkInventoryItem = z.infer<typeof updateBulkInventoryItemSchema>;
+
