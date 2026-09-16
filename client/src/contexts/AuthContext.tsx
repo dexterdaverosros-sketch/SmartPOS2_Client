@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import type { User } from '@shared/schema';
 import { io, Socket } from 'socket.io-client';
 import { toast } from '@/hooks/use-toast';
@@ -10,9 +10,12 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   socket: Socket | null;
-  login: (user: User, token?: string) => Promise<void>;
+  isOnline: boolean;
+  offlineMode: boolean;
+  login: (user: User, token?: string, opts?: { staleData?: boolean }) => Promise<void>;
   loginStaff: (staffId: string, passkey: string) => Promise<void>;
   logout: () => void;
+  unbindDevice: (creds?: { adminUsername?: string; adminPassword?: string }) => Promise<{ success: boolean; error?: string }>;
   isAuthenticated: boolean;
   isAdmin: boolean;
   isStaff: boolean;
@@ -38,6 +41,30 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [token, setToken] = useState<string | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isGuest, setIsGuest] = useState<boolean>(false);
+  const [isOnline, setIsOnline] = useState<boolean>(
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+  const [offlineMode, setOfflineMode] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      setOfflineMode(false);
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     // Check for guest mode expiry
@@ -146,28 +173,41 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       })
       .catch((error) => {
-        // Token invalid - don't log scary error for 401
-        if (error && error.message && !error.message.includes('401')) {
-          console.error('Session verification failed:', error);
+        const is401 = error && (
+          (error.message && String(error.message).includes('401')) ||
+          (error.status === 401) ||
+          (error.response && error.response.status === 401)
+        );
+        const isNetworkError = !is401;
+        if (!is401 && error && error.message) {
+          console.warn('[SESSION RESTORE] Network error on /api/auth/session (non-fatal):', error);
         }
-        // Token invalid - clear it
-        localStorage.removeItem('smartpos_token');
-        setToken(null);
-        // If we have storedUser (local admin), maybe keep it?
+        if (is401) {
+          console.warn('[SESSION RESTORE] Server refused token (401). Clearing token.');
+          localStorage.removeItem('smartpos_token');
+          setToken(null);
+        }
         if (storedUser) {
            try {
              const u = JSON.parse(storedUser);
              if (u.role === 'staff') {
                localStorage.removeItem('smartpos_user');
                setUser(null);
+             } else if (u.role === 'admin' && isNetworkError) {
+               console.log('[SESSION RESTORE] Graceful offline: network unreachable + local admin stored. Entering offlineMode=true.');
+               setUser(u);
+               setOfflineMode(true);
              } else {
-               // Admin or local user
                setUser(u);
              }
            } catch (e) {
              localStorage.removeItem('smartpos_user');
              setUser(null);
            }
+        }
+        if (is401 && !storedUser) {
+          setToken(null);
+          setUser(null);
         }
       });
     } else if (storedUser) {
@@ -201,13 +241,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, [socket, user]);
 
-  const login = async (userData: User, authToken?: string) => {
+  const login = async (userData: User, authToken?: string, opts?: { staleData?: boolean }) => {
     setUser(userData);
     localStorage.setItem('smartpos_user', JSON.stringify(userData));
     if (authToken) {
       setToken(authToken);
       localStorage.setItem('smartpos_token', authToken);
       console.log('AuthContext: Token set in localStorage:', authToken);
+    }
+    if (opts?.staleData) {
+      toast({
+        title: 'Data May Be Stale',
+        description: 'Some data could not be synced from cloud. Transactions will be saved locally and re-sent when connectivity is restored.',
+        variant: 'default'
+      });
     }
 
     // Trigger Client Dexie Hydration from Server SQLite
@@ -285,13 +332,55 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     localStorage.removeItem('smartpos_guest_expiry');
   };
 
+  const unbindDevice = useCallback(async (creds?: { adminUsername?: string; adminPassword?: string }): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const body: any = {};
+      if (creds?.adminUsername) body.adminUsername = creds.adminUsername;
+      if (creds?.adminPassword) body.adminPassword = creds.adminPassword;
+      const resp = await api.post('/api/tenants/unbind-device', body);
+      if (resp && resp.clientPurge) {
+        const keys = resp.clientPurge.localStorageKeys;
+        if (Array.isArray(keys) && typeof localStorage !== 'undefined') {
+          keys.forEach((k: string) => localStorage.removeItem(k));
+        }
+        if (resp.clientPurge.purgeDexieTables) {
+          await AuthService.purgeLocalState({ skipApiCall: true });
+        }
+      } else {
+        await AuthService.purgeLocalState({ skipApiCall: true });
+      }
+
+      if (socket) {
+        try { socket.disconnect(); } catch (_e) { /* ignore */ }
+      }
+
+      setUser(null);
+      setToken(null);
+      setIsGuest(false);
+      setOfflineMode(false);
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('device-unbound', { detail: { timestamp: Date.now() } }));
+      }
+
+      return { success: true };
+    } catch (e: any) {
+      console.error('[UNBIND DEVICE] Error:', e);
+      const msg = e?.message || e?.error || (e && String(e)) || 'Unknown unbind error';
+      return { success: false, error: msg };
+    }
+  }, [socket]);
+
   const value = {
     user,
     token,
     socket,
+    isOnline,
+    offlineMode,
     login,
     loginStaff,
     logout,
+    unbindDevice,
     isAuthenticated: !!user,
     isAdmin: user?.role === 'admin',
     isStaff: user?.role === 'staff',

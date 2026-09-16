@@ -347,18 +347,76 @@ export const RemittanceService = {
 
 // Auth service
 export class AuthService {
+  static async purgeLocalState(opts?: { skipApiCall?: boolean }): Promise<{ purged: boolean }> {
+    const preserveKeys = new Set(['smartpos_device_mode']);
+    if (typeof localStorage !== 'undefined') {
+      const removeKeys = Object.keys(localStorage).filter((k: string) =>
+        k.startsWith('smartpos_') && !preserveKeys.has(k)
+      ).concat([
+        'admin_username',
+        'admin_password',
+        'admin_remember_me',
+        'customer_checker_tenant_id',
+        'customer_checker_store_name'
+      ]);
+      removeKeys.forEach((k: string) => localStorage.removeItem(k));
+    }
+
+    const tablesToWipe = [
+      'users', 'staff', 'products', 'variants', 'sales', 'saleItems',
+      'expenses', 'purchases', 'creditors', 'nonInventoryProducts',
+      'remittances', 'notifications', 'bulkInventoryTransactions',
+      'bulkInventoryItems', 'pendingBulkSubmissions'
+    ];
+    try {
+      const validTables = tablesToWipe.filter(t => typeof (db as any)[t] !== 'undefined');
+      if (validTables.length > 0) {
+        await db.transaction('rw', validTables as any, async () => {
+          for (const t of validTables) {
+            try { await (db as any)[t].clear(); } catch (_e) { /* per-table silent */ }
+          }
+        });
+      }
+    } catch (e) {
+      console.error('[purgeLocalState] Dexie wipe error, falling back to db.resetDatabase():', e);
+      try { await db.resetDatabase(); } catch (e2) { console.error('[purgeLocalState] resetDatabase fallback failed:', e2); }
+    }
+
+    if (!opts?.skipApiCall) {
+      try {
+        await api.post('/api/tenants/unbind-device', {});
+      } catch (apiErr) {
+        console.warn('[purgeLocalState] Server unbind API call failed; client state already clean:', apiErr);
+      }
+    }
+
+    return { purged: true };
+  }
+
   static async createAdmin(userData: {
     businessName: string;
     ownerName: string;
     mobile: string;
     password: string;
   }): Promise<{ user: User, token?: string }> {
+    if (typeof localStorage !== 'undefined' && !localStorage.getItem('smartpos_token')) {
+      try {
+        const localAdminCount = await db.users.where('role').equals('admin').count();
+        if (localAdminCount > 0) {
+          console.log('[AuthService.createAdmin] Pre-purging stale Dexie admins (post-unbind state detected).');
+          await AuthService.purgeLocalState({ skipApiCall: true });
+        }
+      } catch (purgeErr) {
+        console.warn('[AuthService.createAdmin] Pre-purge guard error, continuing:', purgeErr);
+      }
+    }
+
     // Check if mobile number is already used
     const existingUser = await db.users.where('mobile').equals(userData.mobile).first();
     if (existingUser) {
       throw new Error('Mobile number already registered');
     }
-    
+
     // Check if username (mobile) is already used
     const existingUsername = await db.users.where('username').equals(userData.mobile).first();
     if (existingUsername) {
@@ -408,29 +466,58 @@ export class AuthService {
     return { user, token };
   }
 
-  static async loginAdmin(username: string, password: string): Promise<{ user: User, token?: string } | null> {
-    // 1. Try SERVER login FIRST (multi-tenant support)
-    try {
-      console.log('Attempting server login first...');
-      const response = await api.post('/api/auth/admin-login', { username, password });
-      if (response && response.user) {
-        // Save to local DB for offline access next time
-        await db.users.put(response.user);
-        return { user: response.user, token: response.token };
+  static async loginAdmin(username: string, password: string): Promise<{ user: User, token?: string, offlineMode?: boolean, staleData?: boolean } | null> {
+    const onlineFromNavigator = typeof navigator !== 'undefined' && navigator.onLine;
+    let serverReachable = false;
+    if (onlineFromNavigator) {
+      try {
+        const ctrl = new AbortController();
+        const timeoutId = setTimeout(() => ctrl.abort(), 3000);
+        const getOrigin = () => (typeof window !== 'undefined' ? window.location.origin : '');
+        const healthResp = await fetch(getOrigin() + '/api/health', {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          signal: ctrl.signal
+        });
+        clearTimeout(timeoutId);
+        serverReachable = !!healthResp && healthResp.ok;
+      } catch (healthErr) {
+        serverReachable = false;
       }
-    } catch (e) {
-      console.warn('Server login failed or unreachable, trying local...', e);
     }
-    
-    // 2. Fall back to local login if server fails
-    const user = await db.users.where('username').equals(username).first() ||
-                await db.users.where('mobile').equals(username).first();
-    
-    if (user && user.role === 'admin') {
-      const isValid = await verifyPassword(password, user.password);
-      if (isValid) return { user };
+    const isOnline = onlineFromNavigator && serverReachable;
+
+    if (isOnline) {
+      console.log('[loginAdmin] ONLINE mode: verifying against server + cloud gate...');
+      try {
+        const response = await api.post('/api/auth/admin-login', { username, password, verifyAgainstCloud: true });
+        if (response && response.user) {
+          await db.users.put(response.user);
+          return { user: response.user, token: response.token, staleData: !!response.staleData };
+        }
+        return null;
+      } catch (e: any) {
+        if (e && (e.code === 'ADMIN_NOT_IN_CLOUD' || (e.message || '').includes('ADMIN_NOT_IN_CLOUD') || (e.error || '').includes('ADMIN_NOT_IN_CLOUD'))) {
+          throw new Error('This local admin account is not registered in Supabase Cloud. Please unbind the device first, or connect to the correct tenant.');
+        }
+        if (e && String(e.status || '') === '401') {
+          throw e;
+        }
+        console.warn('[loginAdmin] ONLINE server login errored (non-denial), falling back to OFFLINE Dexie bcrypt...', e);
+      }
+    } else {
+      console.log('[loginAdmin] OFFLINE mode detected (navigator.onLine=' + onlineFromNavigator + ' health=' + serverReachable + '). Proceeding with local Dexie verify only.');
     }
 
+    const user = await db.users.where('username').equals(username).first() ||
+                await db.users.where('mobile').equals(username).first();
+
+    if (user && user.role === 'admin') {
+      const isValid = await verifyPassword(password, user.password);
+      if (isValid) return { user, offlineMode: true };
+    }
+
+    if (!isOnline) return null;
     return null;
   }
 

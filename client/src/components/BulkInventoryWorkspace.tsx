@@ -55,6 +55,7 @@ export const BulkInventoryWorkspace: React.FC<BulkInventoryWorkspaceProps> = ({
   // Editing Modal State
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editLine, setEditLine] = useState<BulkLineInput | null>(null);
+  const [isNewlyScannedPlaceholder, setIsNewlyScannedPlaceholder] = useState(false);
   
   // Confirmations
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -156,12 +157,12 @@ export const BulkInventoryWorkspace: React.FC<BulkInventoryWorkspaceProps> = ({
           setItems(prev => [newLine, ...prev]);
         }
       } else {
-        // Brand new product scan
+        // Brand new product scan - require name entry before next scan
         const newLine: BulkLineInput = {
           productId: null,
           variantId: null,
           barcode: barcodeTrimmed,
-          productName: `New Item (${barcodeTrimmed})`,
+          productName: '',
           description: null,
           sellingPrice: 0,
           cost: 0,
@@ -173,16 +174,21 @@ export const BulkInventoryWorkspace: React.FC<BulkInventoryWorkspaceProps> = ({
           updateProductPriceCost: true
         };
         setItems(prev => [newLine, ...prev]);
+        setEditingIndex(0);
+        setEditLine(newLine);
+        setIsNewlyScannedPlaceholder(true);
         toast({
-          title: "New Product Scanned",
-          description: `Barcode ${barcodeTrimmed} not found in catalog. Created new entry card.`,
+          title: "New Product — Name Required",
+          description: `Enter product name for barcode ${barcodeTrimmed} before scanning next item.`,
         });
       }
     } catch (err) {
       console.error('Scan handling error:', err);
     } finally {
       setScanValue('');
-      setTimeout(() => scanInputRef.current?.focus(), 50);
+      if (editingIndex === null) {
+        setTimeout(() => scanInputRef.current?.focus(), 50);
+      }
     }
   };
 
@@ -218,6 +224,7 @@ export const BulkInventoryWorkspace: React.FC<BulkInventoryWorkspaceProps> = ({
   const handleOpenEdit = (index: number) => {
     setEditingIndex(index);
     setEditLine({ ...items[index] });
+    setIsNewlyScannedPlaceholder(false);
   };
 
   const handleSaveEdit = () => {
@@ -238,6 +245,21 @@ export const BulkInventoryWorkspace: React.FC<BulkInventoryWorkspaceProps> = ({
     });
     setEditingIndex(null);
     setEditLine(null);
+    setIsNewlyScannedPlaceholder(false);
+    setTimeout(() => scanInputRef.current?.focus(), 50);
+  };
+
+  const handleCancelEdit = () => {
+    if (isNewlyScannedPlaceholder && editingIndex !== null) {
+      setItems(prev => prev.filter((_, i) => i !== editingIndex));
+      toast({
+        title: "Item Removed",
+        description: "New unnamed product was removed since no name was provided.",
+      });
+    }
+    setEditingIndex(null);
+    setEditLine(null);
+    setIsNewlyScannedPlaceholder(false);
     setTimeout(() => scanInputRef.current?.focus(), 50);
   };
 
@@ -365,18 +387,29 @@ export const BulkInventoryWorkspace: React.FC<BulkInventoryWorkspaceProps> = ({
         <div className="p-4 sm:px-8 bg-slate-900/90 border-b border-white/10 flex items-center gap-3">
           <form onSubmit={handleScanSubmit} className="flex-1 flex items-center gap-2">
             <div className="relative flex-1">
-              <ScanLine className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#BF953F] animate-pulse" />
+              <ScanLine className={cn(
+                "absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#BF953F]",
+                editingIndex === null ? "animate-pulse" : "opacity-40"
+              )} />
               <Input
                 ref={scanInputRef}
                 value={scanValue}
                 onChange={e => setScanValue(e.target.value)}
-                placeholder="Scan Barcode with hardware scanner or press Enter..."
-                className="h-13 pl-12 bg-white/5 border-white/15 rounded-2xl text-sm font-black text-white tracking-wider placeholder:text-slate-500 focus:border-[#BF953F] focus:ring-2 focus:ring-[#BF953F]/20"
+                disabled={editingIndex !== null}
+                placeholder={editingIndex !== null ? "⚠ Complete product name entry above first..." : "Scan Barcode with hardware scanner or press Enter..."}
+                className={cn(
+                  "h-13 pl-12 bg-white/5 border-white/15 rounded-2xl text-sm font-black text-white tracking-wider placeholder:text-slate-500 focus:border-[#BF953F] focus:ring-2 focus:ring-[#BF953F]/20",
+                  editingIndex !== null && "opacity-50 cursor-not-allowed border-red-500/40 placeholder:text-red-400/60"
+                )}
               />
             </div>
             <Button
               type="submit"
-              className="h-13 px-6 rounded-2xl bg-gradient-to-r from-[#BF953F] to-[#AA771C] text-black font-black uppercase text-xs tracking-wider shadow-lg shadow-[#BF953F]/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
+              disabled={editingIndex !== null}
+              className={cn(
+                "h-13 px-6 rounded-2xl bg-gradient-to-r from-[#BF953F] to-[#AA771C] text-black font-black uppercase text-xs tracking-wider shadow-lg shadow-[#BF953F]/20 hover:scale-[1.02] active:scale-[0.98] transition-all",
+                editingIndex !== null && "opacity-50 cursor-not-allowed hover:scale-100"
+              )}
             >
               Add Item
             </Button>
@@ -385,7 +418,11 @@ export const BulkInventoryWorkspace: React.FC<BulkInventoryWorkspaceProps> = ({
             type="button"
             variant="outline"
             onClick={handleAddManualLine}
-            className="h-13 px-4 rounded-2xl border-white/15 bg-white/5 text-slate-300 hover:text-white hover:bg-white/10 font-bold text-xs flex items-center gap-1.5"
+            disabled={editingIndex !== null}
+            className={cn(
+              "h-13 px-4 rounded-2xl border-white/15 bg-white/5 text-slate-300 hover:text-white hover:bg-white/10 font-bold text-xs flex items-center gap-1.5",
+              editingIndex !== null && "opacity-50 cursor-not-allowed hover:bg-white/5"
+            )}
           >
             <Plus className="w-4 h-4" />
             <span>Manual Line</span>
@@ -547,20 +584,38 @@ export const BulkInventoryWorkspace: React.FC<BulkInventoryWorkspaceProps> = ({
         </div>
 
         {/* Edit Line Dialog */}
-        <Dialog open={editingIndex !== null} onOpenChange={(open) => { if (!open) setEditingIndex(null); }}>
+        <Dialog open={editingIndex !== null} onOpenChange={(open) => { if (!open) handleCancelEdit(); }}>
           <DialogContent className="rounded-[2.5rem] p-8 max-w-md bg-slate-900 border border-white/15 text-white">
             <DialogHeader className="mb-4">
-              <DialogTitle className="text-xl font-black uppercase tracking-tight">Edit Item Details</DialogTitle>
+              <DialogTitle className="text-xl font-black uppercase tracking-tight">
+                {isNewlyScannedPlaceholder ? "Enter Product Name — Required" : "Edit Item Details"}
+              </DialogTitle>
             </DialogHeader>
 
             {editLine && (
               <div className="space-y-4">
+                {isNewlyScannedPlaceholder && (
+                  <div className="flex items-start gap-3 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30">
+                    <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-black uppercase text-amber-300 tracking-wider">Name Required Before Next Scan</p>
+                      <p className="text-xs text-amber-200/80 leading-relaxed">
+                        Scanner is locked. Enter the product name below and click <strong>Save Changes</strong> to continue scanning.
+                      </p>
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Product Name</Label>
+                  <Label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Product Name {isNewlyScannedPlaceholder && <span className="text-red-400">*</span>}</Label>
                   <Input
                     value={editLine.productName}
                     onChange={e => setEditLine({ ...editLine, productName: e.target.value })}
-                    className="h-11 bg-white/5 border-white/10 rounded-xl text-white font-bold"
+                    autoFocus={isNewlyScannedPlaceholder}
+                    className={cn(
+                      "h-11 bg-white/5 border-white/10 rounded-xl text-white font-bold",
+                      isNewlyScannedPlaceholder && "border-amber-500/50 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20"
+                    )}
+                    placeholder={isNewlyScannedPlaceholder ? "e.g. Coca-Cola 500ml Bottle" : undefined}
                   />
                 </div>
 
@@ -637,17 +692,23 @@ export const BulkInventoryWorkspace: React.FC<BulkInventoryWorkspaceProps> = ({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setEditingIndex(null)}
-                className="flex-1 h-12 rounded-xl border-white/15 bg-white/5 text-slate-300"
+                onClick={handleCancelEdit}
+                className={cn(
+                  "flex-1 h-12 rounded-xl border-white/15 bg-white/5 text-slate-300",
+                  isNewlyScannedPlaceholder && "hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-300"
+                )}
               >
-                Cancel
+                {isNewlyScannedPlaceholder ? "Discard Item" : "Cancel"}
               </Button>
               <Button
                 type="button"
                 onClick={handleSaveEdit}
-                className="flex-1 h-12 rounded-xl bg-[#BF953F] text-black font-black uppercase text-xs"
+                className={cn(
+                  "flex-1 h-12 rounded-xl bg-[#BF953F] text-black font-black uppercase text-xs",
+                  isNewlyScannedPlaceholder && "ring-2 ring-amber-400/50 shadow-lg shadow-amber-500/20"
+                )}
               >
-                Save Changes
+                {isNewlyScannedPlaceholder ? "Save & Unlock Scanner" : "Save Changes"}
               </Button>
             </DialogFooter>
           </DialogContent>

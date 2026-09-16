@@ -991,8 +991,62 @@ export const dbService = {
     }
   },
 
-  getUserByUsername: (username: string) => {
-    return db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  getUserByUsername: (username: string, tenantId?: string) => {
+    const clean = String(username || '').trim();
+    if (!clean) return undefined;
+
+    if (tenantId && tenantId !== 'default-tenant-id') {
+      const match = db.prepare(`
+        SELECT * FROM users 
+        WHERE tenant_id = ? AND (
+          LOWER(TRIM(username)) = LOWER(TRIM(?))
+          OR LOWER(TRIM(mobile)) = LOWER(TRIM(?))
+          OR LOWER(TRIM(email)) = LOWER(TRIM(?))
+          OR LOWER(TRIM(ownerName)) = LOWER(TRIM(?))
+        )
+      `).get(tenantId, clean, clean, clean, clean);
+      if (match) return match;
+    }
+
+    return db.prepare(`
+      SELECT * FROM users 
+      WHERE LOWER(TRIM(username)) = LOWER(TRIM(?))
+         OR LOWER(TRIM(mobile)) = LOWER(TRIM(?))
+         OR LOWER(TRIM(email)) = LOWER(TRIM(?))
+         OR LOWER(TRIM(ownerName)) = LOWER(TRIM(?))
+      LIMIT 1
+    `).get(clean, clean, clean, clean);
+  },
+
+  saveOrUpdateUser: (userData: any) => {
+    const stmt = db.prepare(`
+      INSERT INTO users (id, tenant_id, username, password, role, businessName, ownerName, mobile, email, profileImage, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        tenant_id = COALESCE(excluded.tenant_id, users.tenant_id),
+        username = COALESCE(excluded.username, users.username),
+        password = COALESCE(excluded.password, users.password),
+        role = COALESCE(excluded.role, users.role),
+        businessName = COALESCE(excluded.businessName, users.businessName),
+        ownerName = COALESCE(excluded.ownerName, users.ownerName),
+        mobile = COALESCE(excluded.mobile, users.mobile),
+        email = COALESCE(excluded.email, users.email),
+        profileImage = COALESCE(excluded.profileImage, users.profileImage)
+    `);
+    stmt.run(
+      userData.id,
+      userData.tenant_id || userData.tenantId || null,
+      userData.username,
+      userData.password,
+      userData.role || 'admin',
+      userData.businessName || userData.business_name || null,
+      userData.ownerName || userData.owner_name || null,
+      userData.mobile || null,
+      userData.email || null,
+      userData.profileImage || userData.profile_image || null,
+      userData.createdAt || userData.created_at || new Date().toISOString()
+    );
+    return db.prepare('SELECT * FROM users WHERE id = ?').get(userData.id);
   },
 
   getUserById: (id: string) => {
@@ -3839,13 +3893,133 @@ export const dbService = {
   },
 
   clearBoundTenantId: () => {
+    interface UnbindDiagnostics {
+      purgedTables: string[];
+      skippedTables: string[];
+      rowsDeletedPerTable: Record<string, number>;
+      tenantScopeId: string | null;
+    }
+
+    const diagnostics: UnbindDiagnostics = {
+      purgedTables: [],
+      skippedTables: [],
+      rowsDeletedPerTable: {},
+      tenantScopeId: null,
+    };
+
     try {
+      const boundRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('device_bound_tenant_id') as any;
+      const boundTenantId: string | null = boundRow?.value ? String(boundRow.value) : null;
+      diagnostics.tenantScopeId = boundTenantId;
+
+      const businessTables = [
+        'products', 'variants', 'staff', 'sales', 'sale_items', 'expenses', 'purchases',
+        'creditors', 'non_inventory_products', 'remittances', 'notifications', 'customers',
+        'credits', 'payments', 'reminders', 'bulk_inventory_transactions',
+        'bulk_inventory_items', 'pending_bulk_submissions'
+      ];
+
+      for (const table of businessTables) {
+        try {
+          let info;
+          if (boundTenantId) {
+            info = db.prepare(`DELETE FROM ${table} WHERE tenant_id = ?`).run(boundTenantId);
+          } else {
+            info = db.prepare(`DELETE FROM ${table}`).run();
+          }
+          diagnostics.purgedTables.push(table);
+          diagnostics.rowsDeletedPerTable[table] = Number(info?.changes ?? 0);
+        } catch (tblErr: any) {
+          diagnostics.skippedTables.push(table);
+          console.warn(`[DEVICE UNBIND WARN] Could not purge table ${table}:`, tblErr?.message || String(tblErr));
+        }
+      }
+
       db.prepare('DELETE FROM settings WHERE key = ?').run('device_bound_tenant_id');
       db.prepare('DELETE FROM users').run();
       db.prepare('DELETE FROM sessions').run();
-      console.log('[DEVICE UNBIND SUCCESS] Unbound device and cleared stale local settings, users, and sessions.');
-    } catch (e) {
+
+      console.log(
+        `[DEVICE UNBIND SUCCESS] purgedTables=[${diagnostics.purgedTables.join(', ')}] ` +
+        `skippedTables=[${diagnostics.skippedTables.join(', ')}] ` +
+        `rowsDeletedPerTable=${JSON.stringify(diagnostics.rowsDeletedPerTable)} ` +
+        `tenantScopeId=${diagnostics.tenantScopeId}`
+      );
+
+      return diagnostics;
+    } catch (e: any) {
       console.error('Failed to clear bound tenant ID:', e);
+      throw e;
+    }
+  },
+
+  verifyAdminLocalAndCloud: async (username: string, localAdmin: any): Promise<{ matched: boolean; cloudAdmin?: any }> => {
+    if (!useCloud()) {
+      return { matched: true, cloudAdmin: null };
+    }
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      return { matched: true, cloudAdmin: null };
+    }
+
+    try {
+      const clean = String(username || '').trim().toLowerCase();
+      const cleanDigits = clean.replace(/\D/g, '');
+      const localTenantId = localAdmin?.tenant_id || localAdmin?.tenantId;
+
+      let query = supabase.from('users').select('*');
+      if (localTenantId && localTenantId !== 'default-tenant-id') {
+        query = query.eq('tenant_id', localTenantId);
+      }
+      const { data: allUsers, error } = await query;
+
+      if (error) {
+        console.warn('[verifyAdminLocalAndCloud] Supabase query error:', error);
+        return { matched: true, cloudAdmin: null };
+      }
+
+      if (!Array.isArray(allUsers) || allUsers.length === 0) {
+        return { matched: false, cloudAdmin: undefined };
+      }
+
+      const matched = allUsers.find((u: any) => {
+        const uName = String(u.username || '').toLowerCase().trim();
+        const uMobile = String(u.mobile || '').replace(/\D/g, '');
+        const uEmail = String(u.email || '').toLowerCase().trim();
+        const uOwner = String(u.owner_name || u.ownerName || '').toLowerCase().trim();
+        const uBiz = String(u.business_name || u.businessName || '').toLowerCase().trim();
+        return (
+          uName === clean ||
+          (cleanDigits && uMobile && uMobile === cleanDigits) ||
+          (uEmail && uEmail === clean) ||
+          (uOwner && uOwner === clean) ||
+          (uBiz && uBiz === clean)
+        );
+      });
+
+      if (!matched) {
+        return { matched: false, cloudAdmin: undefined };
+      }
+
+      const cloudAdmin = {
+        id: String(matched.id),
+        tenant_id: matched.tenant_id || matched.tenantId,
+        username: matched.username,
+        password: matched.password,
+        role: matched.role || 'admin',
+        businessName: matched.business_name || matched.businessName,
+        ownerName: matched.owner_name || matched.ownerName,
+        mobile: matched.mobile,
+        email: matched.email,
+        profileImage: matched.profile_image || matched.profileImage,
+        createdAt: matched.created_at || matched.createdAt || new Date().toISOString()
+      };
+
+      return { matched: true, cloudAdmin };
+    } catch (e: any) {
+      console.warn('[verifyAdminLocalAndCloud] Unexpected error, treating as matched (fail-open for offline):', e?.message || String(e));
+      return { matched: true, cloudAdmin: null };
     }
   },
 

@@ -356,15 +356,44 @@ export class DatabaseSyncService {
     console.log('[SYNC HYDRATION] Starting Dexie hydration for tenant_id=' + tag);
     onProgress?.(10, 'Connecting to server...');
 
-    try {
-      onProgress?.(30, 'Fetching store data from server...');
-      const response: any = await api.post('/api/sync/pull-all-from-sqlite', { tenantId: tag }).catch(err => {
-        console.error('[SYNC HYDRATION ERROR] Request failed for tenant_id=' + tag + ':', err?.message || String(err));
-        throw err;
-      });
+    const maxAttempts = 2;
+    let lastErr: any = null;
+    let response: any = null;
+    let requestOk = false;
 
-      if (!response || !response.data) {
-        throw new Error('Invalid response structure from /api/sync/pull-all-from-sqlite');
+    try {
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          onProgress?.(30, attempt > 1 ? `Retrying (attempt ${attempt}/${maxAttempts})...` : 'Fetching store data from server...');
+          const attemptResponse: any = await api.post('/api/sync/pull-all-from-sqlite', { tenantId: tag });
+          if (!attemptResponse || !attemptResponse.data) {
+            throw new Error('Invalid response structure from /api/sync/pull-all-from-sqlite');
+          }
+          response = attemptResponse;
+          requestOk = true;
+          break;
+        } catch (attemptErr: any) {
+          lastErr = attemptErr;
+          console.warn(`[SYNC HYDRATION ATTEMPT ${attempt}/${maxAttempts} FAILED] tenant_id=${tag}:`, attemptErr?.message || String(attemptErr));
+          if (attempt < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 600 + attempt * 400));
+          }
+        }
+      }
+
+      if (!requestOk) {
+        throw lastErr || new Error('All pullAllFromServerIntoDexie attempts failed');
+      }
+
+      if (response.staleData === true) {
+        console.warn('[SYNC HYDRATION] Server envelope returned staleData=true. Dispatching dexie-data-stale event.');
+        try {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('dexie-data-stale', { detail: { tenantId: tag, staleAt: Date.now() } }));
+          }
+        } catch (evErr) {
+          console.warn('[SYNC HYDRATION] Failed to dispatch dexie-data-stale event:', evErr);
+        }
       }
 
       const data = response.data;

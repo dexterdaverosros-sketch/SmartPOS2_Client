@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useLocation } from 'wouter';
 import { Building2, Globe, User, Lock, Eye, EyeOff, Sparkles, CheckCircle2, AlertCircle, ArrowRight, ShieldCheck, Store } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { AuthService } from '@/lib/db';
+import { useToast } from '@/hooks/use-toast';
 
 const RegisterTenant: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -14,6 +16,7 @@ const RegisterTenant: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string; tenantUrl?: string } | null>(null);
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
 
   const handleStoreNameChange = (val: string) => {
     const slug = val.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -30,10 +33,26 @@ const RegisterTenant: React.FC = () => {
       const res = await fetch('/api/tenants/unbind-device', { method: 'POST' });
       const d = await res.json();
       if (res.ok) {
-        setResult({
-          success: true,
-          message: 'Device lock successfully reset! You can now register your store.'
+        const clientPurge = d && d.clientPurge;
+        if (clientPurge && Array.isArray(clientPurge.localStorageKeys) && typeof localStorage !== 'undefined') {
+          clientPurge.localStorageKeys.forEach((k: string) => localStorage.removeItem(k));
+        }
+        if (clientPurge && clientPurge.purgeDexieTables) {
+          await AuthService.purgeLocalState({ skipApiCall: true });
+        } else {
+          await AuthService.purgeLocalState({ skipApiCall: true });
+        }
+
+        setFormData({ storeName: '', subdomain: '', username: '', password: '' });
+        setResult(null);
+        toast({
+          title: 'Device Unbound',
+          description: 'Device state reset. Reloading workspace...',
+          variant: 'default'
         });
+        if (typeof window !== 'undefined' && typeof window.location !== 'undefined') {
+          setTimeout(() => window.location.reload(), 600);
+        }
       } else {
         setResult({
           success: false,

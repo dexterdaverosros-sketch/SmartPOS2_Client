@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'wouter';
 import { motion } from 'framer-motion';
-import { Store, ArrowLeft, Lock } from 'lucide-react';
+import { Store, ArrowLeft, Lock, X, Unlock, Loader2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -26,22 +26,64 @@ const AdminSignup: React.FC = () => {
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
-  const { login } = useAuth();
+  const [showUnbindDialog, setShowUnbindDialog] = useState(false);
+  const [unbindUsername, setUnbindUsername] = useState('');
+  const [unbindPassword, setUnbindPassword] = useState('');
+  const [unbindLoading, setUnbindLoading] = useState(false);
+  const [unbindError, setUnbindError] = useState<string | null>(null);
+  const { login, unbindDevice } = useAuth();
   const { toast } = useToast();
 
   useEffect(() => {
-    const checkStatus = async () => {
-      try {
-        const data = await api.get('/api/auth/status');
-        if (data.configured) {
-          setIsLocked(true);
-        }
-      } catch (e) {
-        console.warn('Failed to check system status');
-      }
-    };
-    checkStatus();
+    const hasToken = typeof localStorage !== 'undefined' && !!localStorage.getItem('smartpos_token');
+    const hasUser = typeof localStorage !== 'undefined' && !!localStorage.getItem('smartpos_user');
+    if (!hasToken && !hasUser) {
+      AuthService.purgeLocalState({ skipApiCall: true }).catch(e =>
+        console.warn('[admin-signup] Mount purge error (non-fatal):', e)
+      );
+    }
   }, []);
+
+  const checkStatus = useCallback(async () => {
+    try {
+      const data = await api.get('/api/auth/status');
+      if (data.configured || data.adminExists) {
+        setIsLocked(true);
+      } else {
+        setIsLocked(false);
+      }
+    } catch (e) {
+      console.warn('Failed to check system status');
+    }
+  }, []);
+
+  useEffect(() => {
+    checkStatus();
+  }, [checkStatus]);
+
+  const handleSubmitUnbind = async () => {
+    setUnbindError(null);
+    setUnbindLoading(true);
+    try {
+      const r = await unbindDevice({
+        adminUsername: unbindUsername.trim() || undefined,
+        adminPassword: unbindPassword || undefined,
+      });
+      if (!r.success) {
+        setUnbindError(r.error || 'Unbind failed. Please verify credentials.');
+        return;
+      }
+      toast({ title: 'Device Unbound', description: 'You can now register a new admin on this device.' });
+      setShowUnbindDialog(false);
+      setUnbindUsername('');
+      setUnbindPassword('');
+      await checkStatus();
+    } catch (e: any) {
+      setUnbindError(e?.message || String(e) || 'Unbind failed');
+    } finally {
+      setUnbindLoading(false);
+    }
+  };
 
   const form = useForm<SignupFormData>({
     resolver: zodResolver(signupSchema),
@@ -77,21 +119,102 @@ const AdminSignup: React.FC = () => {
 
   if (isLocked) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-6">
-          <Lock className="w-10 h-10 text-red-500" />
+      <>
+        <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 text-center">
+          <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-6">
+            <Lock className="w-10 h-10 text-red-500" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Registration Locked</h2>
+          <p className="text-gray-600 mb-8 max-w-xs">
+            This SmartPOS+ system is already configured for another business. Please login instead.
+          </p>
+          <div className="w-full max-w-xs space-y-3">
+            <Button
+              onClick={() => setLocation('/admin-login')}
+              className="w-full bg-[#FF8882] hover:bg-[#D89D9D] rounded-xl py-5 font-bold shadow-lg"
+            >
+              Go to Login
+            </Button>
+            <Button
+              onClick={() => setShowUnbindDialog(true)}
+              variant="outline"
+              className="w-full rounded-xl py-5 font-semibold border-gray-300 text-gray-700 hover:bg-gray-100"
+            >
+              <Unlock className="w-4 h-4 mr-2" />
+              Unbind This Device
+            </Button>
+          </div>
         </div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Registration Locked</h2>
-        <p className="text-gray-600 mb-8 max-w-xs">
-          This SmartPOS+ system is already configured for another business. Please login instead.
-        </p>
-        <Button 
-          onClick={() => setLocation('/admin-login')}
-          className="w-full max-w-xs bg-[#FF8882] hover:bg-[#D89D9D] rounded-xl py-6 font-bold shadow-lg"
-        >
-          Go to Login
-        </Button>
-      </div>
+
+        {showUnbindDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
+            <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6 relative">
+              <button
+                onClick={() => { setShowUnbindDialog(false); setUnbindError(null); }}
+                className="absolute top-3 right-3 text-gray-400 hover:text-gray-700"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
+                  <Unlock className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg text-gray-900">Unbind This Device</h3>
+                  <p className="text-xs text-gray-500">Confirm admin credentials to unbind.</p>
+                </div>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1">Admin Username</label>
+                  <Input
+                    value={unbindUsername}
+                    onChange={(e) => setUnbindUsername(e.target.value)}
+                    placeholder="e.g. admin"
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1">Admin Password</label>
+                  <Input
+                    type="password"
+                    value={unbindPassword}
+                    onChange={(e) => setUnbindPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full"
+                  />
+                </div>
+                {unbindError && (
+                  <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg p-2">
+                    {unbindError}
+                  </div>
+                )}
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => { setShowUnbindDialog(false); setUnbindError(null); }}
+                    className="flex-1 rounded-xl"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleSubmitUnbind}
+                    disabled={unbindLoading}
+                    className="flex-1 rounded-xl bg-[#FF8882] hover:bg-[#D89D9D] text-white"
+                  >
+                    {unbindLoading ? (
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Unbinding...</>
+                    ) : 'Unbind Device'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 

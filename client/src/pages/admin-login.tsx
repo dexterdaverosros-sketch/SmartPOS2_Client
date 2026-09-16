@@ -64,12 +64,28 @@ const AdminLogin: React.FC = () => {
           localStorage.removeItem('admin_password');
           localStorage.removeItem('admin_remember_me');
         }
-        
-        await login(response.user, response.token);
-        toast({
-          title: 'Welcome back!',
-          description: `Logged in as ${response.user.businessName || 'Admin'}`,
-        });
+
+        if (response.offlineMode) {
+          toast({
+            title: 'Offline Mode',
+            description: 'Device offline. Logging you in with locally cached credentials. Data sync will resume when connection returns.',
+          });
+        }
+
+        await login(response.user, response.token, { staleData: !!response.staleData });
+
+        if (!response.offlineMode && !response.staleData) {
+          toast({
+            title: 'Welcome back!',
+            description: `Logged in as ${response.user.businessName || 'Admin'}`,
+          });
+        } else if (response.staleData) {
+          toast({
+            title: 'Data May Be Stale',
+            description: 'Partial cloud sync failure. Local data is being used; re-sync will occur in the background automatically.',
+          });
+        }
+
         setLocation('/admin-dashboard');
       } else {
         toast({
