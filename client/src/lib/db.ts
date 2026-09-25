@@ -143,6 +143,23 @@ export class SmartPOSDB extends Dexie {
       bulkInventoryItems: 'id, bulkInventoryId, tenantId, productId, barcode',
       pendingBulkSubmissions: 'id, createdAt, tenantId, status',
     });
+    this.version(8).stores({
+      users: 'id, username, email, mobile, role, staffId',
+      products: 'id, &barcode, boxBarcode, name, category',
+      sales: 'id, staffId, createdAt, remitted',
+      saleItems: 'id, saleId, productId',
+      staff: 'id, &staffId, name, firstName, lastName, role, employmentStatus, email, branch, createdBy',
+      expenses: 'id, description, category, date',
+      purchases: 'id, productName, date, supplier',
+      creditors: 'id, name, dueDate, isPaid',
+      variants: 'id, productId, name, barcode, boxBarcode',
+      nonInventoryProducts: 'id, &barcode, name, category',
+      remittances: 'id, staffId, status, createdAt',
+      notifications: 'id, type, isRead, createdAt',
+      bulkInventoryTransactions: 'id, tenantId, referenceNumber, createdAt, status',
+      bulkInventoryItems: 'id, bulkInventoryId, tenantId, productId, barcode, boxBarcode, pieceBarcode',
+      pendingBulkSubmissions: 'id, createdAt, tenantId, status',
+    });
   }
 
   async resetDatabase() {
@@ -868,6 +885,9 @@ export class ProductService {
       tenantId: (productData as any).tenantId || (productData as any).tenant_id || '',
       name: productData.name.trim(),
       barcode: productData.barcode.trim(),
+      boxBarcode: (productData as any).boxBarcode || (productData as any).box_barcode || null,
+      unitsPerBox: Number((productData as any).unitsPerBox || (productData as any).units_per_box || 1),
+      boxCost: Number((productData as any).boxCost || (productData as any).box_cost || 0),
       price: Math.round(productData.price * 100) / 100, // Round to 2 decimal places
       cost: productData.cost ? Math.round(productData.cost * 100) / 100 : 0,
       quantity: Math.floor(productData.quantity), // Ensure integer
@@ -1867,6 +1887,11 @@ export class BulkInventoryService {
                     productId: it.product_id || it.productId,
                     variantId: it.variant_id || it.variantId,
                     barcode: it.barcode,
+                    boxBarcode: it.box_barcode || it.boxBarcode || null,
+                    pieceBarcode: it.piece_barcode || it.pieceBarcode || null,
+                    boxCount: Number(it.box_count ?? it.boxCount ?? 0),
+                    unitsPerBox: Number(it.units_per_box ?? it.unitsPerBox ?? 1),
+                    costPerBox: Number(it.cost_per_box ?? it.costPerBox ?? 0),
                     productNameSnapshot: it.product_name_snapshot || it.productNameSnapshot,
                     descriptionSnapshot: it.description_snapshot || it.descriptionSnapshot,
                     quantity: it.quantity,
@@ -1911,6 +1936,11 @@ export class BulkInventoryService {
             if (existingVar) {
               const newQty = (existingVar.quantity || 0) + Number(item.quantity || 0);
               const updates: any = { quantity: newQty, updatedAt: nowStr };
+              if (item.boxBarcode) {
+                updates.boxBarcode = item.boxBarcode;
+                updates.unitsPerBox = item.unitsPerBox || 1;
+                updates.boxCost = item.costPerBox || 0;
+              }
               if (item.updateProductPriceCost) {
                 if (item.sellingPrice > 0) updates.price = item.sellingPrice;
                 if (item.cost >= 0) updates.cost = item.cost;
@@ -1922,6 +1952,11 @@ export class BulkInventoryService {
             if (existingProd) {
               const newQty = (existingProd.quantity || 0) + Number(item.quantity || 0);
               const updates: any = { quantity: newQty, updatedAt: new Date() };
+              if (item.boxBarcode) {
+                updates.boxBarcode = item.boxBarcode;
+                updates.unitsPerBox = item.unitsPerBox || 1;
+                updates.boxCost = item.costPerBox || 0;
+              }
               if (item.updateProductPriceCost) {
                 if (item.sellingPrice > 0) updates.price = item.sellingPrice;
                 if (item.cost >= 0) updates.cost = item.cost;
@@ -1934,7 +1969,10 @@ export class BulkInventoryService {
               id: resolvedProdId,
               tenantId: payload.tenantId || '',
               name: item.productName,
-              barcode: item.barcode || null,
+              barcode: item.pieceBarcode || item.barcode || null,
+              boxBarcode: item.boxBarcode || null,
+              unitsPerBox: item.unitsPerBox || 1,
+              boxCost: item.costPerBox || 0,
               price: item.sellingPrice,
               cost: item.cost,
               quantity: item.quantity,
@@ -1955,6 +1993,11 @@ export class BulkInventoryService {
             productId: resolvedProdId,
             variantId: resolvedVarId,
             barcode: item.barcode,
+            boxBarcode: item.boxBarcode || null,
+            pieceBarcode: item.pieceBarcode || item.barcode || null,
+            boxCount: Number(item.boxCount || 0),
+            unitsPerBox: Number(item.unitsPerBox || 1),
+            costPerBox: Number(item.costPerBox || 0),
             productNameSnapshot: item.productName,
             descriptionSnapshot: item.description || null,
             quantity: item.quantity,

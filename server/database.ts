@@ -79,31 +79,37 @@ const CANONICAL_SCHEMAS: Record<string, CanonicalColumn[]> = {
     { name: 'updatedAt',         def: 'TEXT' },
   ],
   products: [
-    { name: 'id',         def: 'TEXT PRIMARY KEY' },
-    { name: 'tenant_id',  def: 'TEXT' },
-    { name: 'name',       def: 'TEXT NOT NULL DEFAULT \'\'' },
-    { name: 'price',      def: 'REAL NOT NULL DEFAULT 0' },
-    { name: 'cost',       def: 'REAL DEFAULT 0' },
-    { name: 'category',   def: 'TEXT' },
-    { name: 'description',def: 'TEXT' },
-    { name: 'image',      def: 'TEXT' },
-    { name: 'quantity',   def: 'INTEGER DEFAULT 0' },
-    { name: 'barcode',    def: 'TEXT UNIQUE' },
-    { name: 'createdAt',  def: 'TEXT' },
-    { name: 'updatedAt',  def: 'TEXT' },
+    { name: 'id',           def: 'TEXT PRIMARY KEY' },
+    { name: 'tenant_id',    def: 'TEXT' },
+    { name: 'name',         def: 'TEXT NOT NULL DEFAULT \'\'' },
+    { name: 'price',        def: 'REAL NOT NULL DEFAULT 0' },
+    { name: 'cost',         def: 'REAL DEFAULT 0' },
+    { name: 'category',     def: 'TEXT' },
+    { name: 'description',  def: 'TEXT' },
+    { name: 'image',        def: 'TEXT' },
+    { name: 'quantity',     def: 'INTEGER DEFAULT 0' },
+    { name: 'barcode',      def: 'TEXT UNIQUE' },
+    { name: 'box_barcode',  def: 'TEXT' },
+    { name: 'units_per_box',def: 'INTEGER DEFAULT 1' },
+    { name: 'box_cost',     def: 'REAL DEFAULT 0' },
+    { name: 'createdAt',    def: 'TEXT' },
+    { name: 'updatedAt',    def: 'TEXT' },
   ],
   variants: [
-    { name: 'id',         def: 'TEXT PRIMARY KEY' },
-    { name: 'tenant_id',  def: 'TEXT' },
-    { name: 'product_id', def: 'TEXT NOT NULL' },
-    { name: 'name',       def: 'TEXT NOT NULL DEFAULT \'\'' },
-    { name: 'barcode',    def: 'TEXT' },
-    { name: 'price',      def: 'REAL NOT NULL DEFAULT 0' },
-    { name: 'cost',       def: 'REAL NOT NULL DEFAULT 0' },
-    { name: 'image',      def: 'TEXT' },
-    { name: 'quantity',   def: 'INTEGER DEFAULT 0' },
-    { name: 'created_at', def: 'TEXT' },
-    { name: 'updated_at', def: 'TEXT' },
+    { name: 'id',           def: 'TEXT PRIMARY KEY' },
+    { name: 'tenant_id',    def: 'TEXT' },
+    { name: 'product_id',   def: 'TEXT NOT NULL' },
+    { name: 'name',         def: 'TEXT NOT NULL DEFAULT \'\'' },
+    { name: 'barcode',      def: 'TEXT' },
+    { name: 'box_barcode',  def: 'TEXT' },
+    { name: 'units_per_box',def: 'INTEGER DEFAULT 1' },
+    { name: 'box_cost',     def: 'REAL DEFAULT 0' },
+    { name: 'price',        def: 'REAL NOT NULL DEFAULT 0' },
+    { name: 'cost',         def: 'REAL NOT NULL DEFAULT 0' },
+    { name: 'image',        def: 'TEXT' },
+    { name: 'quantity',     def: 'INTEGER DEFAULT 0' },
+    { name: 'created_at',   def: 'TEXT' },
+    { name: 'updated_at',   def: 'TEXT' },
   ],
   sales: [
     { name: 'id',            def: 'TEXT PRIMARY KEY' },
@@ -148,6 +154,11 @@ const CANONICAL_SCHEMAS: Record<string, CanonicalColumn[]> = {
     { name: 'product_id',                 def: 'TEXT' },
     { name: 'variant_id',                 def: 'TEXT' },
     { name: 'barcode',                    def: 'TEXT' },
+    { name: 'box_barcode',                def: 'TEXT' },
+    { name: 'piece_barcode',              def: 'TEXT' },
+    { name: 'box_count',                  def: 'INTEGER DEFAULT 0' },
+    { name: 'units_per_box',              def: 'INTEGER DEFAULT 1' },
+    { name: 'cost_per_box',               def: 'REAL DEFAULT 0' },
     { name: 'product_name_snapshot',      def: 'TEXT NOT NULL' },
     { name: 'description_snapshot',       def: 'TEXT' },
     { name: 'quantity',                   def: 'INTEGER NOT NULL' },
@@ -1347,8 +1358,8 @@ export const dbService = {
   saveProducts: (products: any[], tenantId: string) => {
     const insert = db.prepare(`
       INSERT OR REPLACE INTO products 
-      (id, tenant_id, name, price, cost, description, barcode, category, image, quantity, createdAt, updatedAt) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, tenant_id, name, price, cost, description, barcode, box_barcode, units_per_box, box_cost, category, image, quantity, createdAt, updatedAt) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const insertMany = db.transaction((products: any[]) => {
@@ -1359,7 +1370,10 @@ export const dbService = {
           const price = Number(product.price ?? 0);
           const cost = Number(product.cost ?? 0);
           const description = product.description != null ? String(product.description) : null;
-          const barcode = String(product.barcode ?? '').trim();
+          const barcode = String(product.barcode ?? '').trim() || null;
+          const boxBarcode = product.box_barcode || product.boxBarcode || null;
+          const unitsPerBox = Number(product.units_per_box ?? product.unitsPerBox ?? 1);
+          const boxCost = Number(product.box_cost ?? product.boxCost ?? 0);
           const category = product.category != null ? String(product.category) : null;
           const image = product.image != null ? String(product.image) : null;
           const quantity = Number(product.quantity ?? 0);
@@ -1374,6 +1388,9 @@ export const dbService = {
             cost,
             description,
             barcode,
+            boxBarcode,
+            unitsPerBox,
+            boxCost,
             category,
             image,
             quantity,
@@ -1423,6 +1440,9 @@ export const dbService = {
                   cost: p.cost,
                   description: p.description != null ? String(p.description) : null,
                   barcode: p.barcode,
+                  box_barcode: p.box_barcode || p.boxBarcode || null,
+                  units_per_box: Number(p.units_per_box ?? p.unitsPerBox ?? 1),
+                  box_cost: Number(p.box_cost ?? p.boxCost ?? 0),
                   category: p.category,
                   image: p.image,
                   quantity: p.quantity,
@@ -4374,6 +4394,12 @@ export const dbService = {
       productId: string | null | undefined;
       variantId: string | null | undefined;
       barcode: string;
+      boxBarcode?: string | null | undefined;
+      pieceBarcode?: string | null | undefined;
+      boxCount?: number;
+      unitsPerBox?: number;
+      costPerBox?: number;
+      isIntakeByBox?: boolean;
       productName: string;
       description: string | null | undefined;
       sellingPrice: number;
@@ -4480,8 +4506,8 @@ export const dbService = {
     `);
     const itemInsert = db.prepare(`
       INSERT INTO bulk_inventory_items
-      (id, tenant_id, bulk_inventory_id, product_id, variant_id, barcode, product_name_snapshot, description_snapshot, quantity, cost_snapshot, selling_price_snapshot, supplier_company_override, notes, price_cost_update_confirmed, createdAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, tenant_id, bulk_inventory_id, product_id, variant_id, barcode, box_barcode, piece_barcode, box_count, units_per_box, cost_per_box, product_name_snapshot, description_snapshot, quantity, cost_snapshot, selling_price_snapshot, supplier_company_override, notes, price_cost_update_confirmed, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const updateProductQty = db.prepare(
       'UPDATE products SET quantity = quantity + ?, updatedAt = ? WHERE id = ? AND tenant_id = ?'
@@ -4496,8 +4522,8 @@ export const dbService = {
       'UPDATE variants SET quantity = quantity + ?, price = ?, cost = ?, updated_at = ? WHERE id = ? AND tenant_id = ?'
     );
     const insertProduct = db.prepare(`
-      INSERT INTO products (id, tenant_id, name, barcode, price, cost, description, quantity, category, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Uncategorized', ?, ?)
+      INSERT INTO products (id, tenant_id, name, barcode, box_barcode, units_per_box, box_cost, price, cost, description, quantity, category, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Uncategorized', ?, ?)
     `);
 
     // 5. Atomic transaction
@@ -4516,6 +4542,11 @@ export const dbService = {
         const line = inputItems[i];
         let finalProductId = line.productId || null;
         let finalVariantId = line.variantId || null;
+        const pieceBarcode = line.pieceBarcode || line.barcode || null;
+        const boxBarcode = line.boxBarcode || null;
+        const unitsPerBox = Number(line.unitsPerBox || 1);
+        const costPerBox = Number(line.costPerBox || 0);
+        const boxCount = Number(line.boxCount || 0);
 
         // (a) Brand new product creation
         if (line.isNewProduct && !line.productId) {
@@ -4523,7 +4554,10 @@ export const dbService = {
           insertProduct.run(
             newId, tenantId,
             line.productName,
-            line.barcode || null,
+            pieceBarcode,
+            boxBarcode,
+            unitsPerBox,
+            costPerBox,
             Number(line.sellingPrice || 0),
             Number(line.cost || 0),
             line.description || null,
@@ -4534,8 +4568,25 @@ export const dbService = {
           newProducts++;
           updatedProducts++;
         } else if (line.isVariant && finalVariantId) {
-          // (b) Existing variant: increment quantity, optionally price/cost
-          if (line.updateProductPriceCost) {
+          // (b) Existing variant: increment quantity, optionally price/cost/box fields
+          if (boxBarcode) {
+            db.prepare(`
+              UPDATE variants 
+              SET quantity = quantity + ?, price = CASE WHEN ? = 1 THEN ? ELSE price END, cost = CASE WHEN ? = 1 THEN ? ELSE cost END, box_barcode = ?, units_per_box = ?, box_cost = ?, updated_at = ?
+              WHERE id = ? AND tenant_id = ?
+            `).run(
+              Number(line.quantity || 0),
+              line.updateProductPriceCost ? 1 : 0,
+              Number(line.sellingPrice || 0),
+              line.updateProductPriceCost ? 1 : 0,
+              Number(line.cost || 0),
+              boxBarcode,
+              unitsPerBox,
+              costPerBox,
+              createdAt,
+              finalVariantId, tenantId
+            );
+          } else if (line.updateProductPriceCost) {
             updateVariantQtyAndPrice.run(
               Number(line.quantity || 0),
               Number(line.sellingPrice || 0),
@@ -4552,8 +4603,25 @@ export const dbService = {
           }
           updatedProducts++;
         } else if (finalProductId) {
-          // (c) Existing product: increment quantity, optionally price/cost
-          if (line.updateProductPriceCost) {
+          // (c) Existing product: increment quantity, optionally price/cost/box fields
+          if (boxBarcode) {
+            db.prepare(`
+              UPDATE products 
+              SET quantity = quantity + ?, price = CASE WHEN ? = 1 THEN ? ELSE price END, cost = CASE WHEN ? = 1 THEN ? ELSE cost END, box_barcode = ?, units_per_box = ?, box_cost = ?, updatedAt = ?
+              WHERE id = ? AND tenant_id = ?
+            `).run(
+              Number(line.quantity || 0),
+              line.updateProductPriceCost ? 1 : 0,
+              Number(line.sellingPrice || 0),
+              line.updateProductPriceCost ? 1 : 0,
+              Number(line.cost || 0),
+              boxBarcode,
+              unitsPerBox,
+              costPerBox,
+              createdAt,
+              finalProductId, tenantId
+            );
+          } else if (line.updateProductPriceCost) {
             updateProductQtyAndPrice.run(
               Number(line.quantity || 0),
               Number(line.sellingPrice || 0),
@@ -4580,6 +4648,11 @@ export const dbService = {
           itemId, tenantId, transactionId,
           finalProductId, finalVariantId,
           line.barcode || null,
+          boxBarcode,
+          pieceBarcode,
+          boxCount,
+          unitsPerBox,
+          costPerBox,
           line.productName,
           line.description || null,
           Number(line.quantity || 0),
@@ -4598,6 +4671,11 @@ export const dbService = {
           productId: finalProductId,
           variantId: finalVariantId,
           barcode: line.barcode || null,
+          boxBarcode,
+          pieceBarcode,
+          boxCount,
+          unitsPerBox,
+          costPerBox,
           productNameSnapshot: line.productName,
           descriptionSnapshot: line.description || null,
           quantity: Number(line.quantity || 0),

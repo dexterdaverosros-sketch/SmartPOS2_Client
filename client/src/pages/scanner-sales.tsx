@@ -24,7 +24,10 @@ import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 // UI-specific product type that combines inventory and non-inventory properties
-interface UIProduct extends Omit<Product, 'createdAt' | 'updatedAt'> {
+interface UIProduct extends Omit<Product, 'createdAt' | 'updatedAt' | 'boxBarcode' | 'unitsPerBox' | 'boxCost'> {
+  boxBarcode?: string | null;
+  unitsPerBox?: number | null;
+  boxCost?: number | null;
   isNonInventory?: boolean;
   inStock?: boolean;
   createdAt?: Date | string | null;

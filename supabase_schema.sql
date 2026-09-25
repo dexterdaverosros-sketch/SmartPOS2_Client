@@ -18,7 +18,10 @@ CREATE TABLE IF NOT EXISTS products (
   name TEXT NOT NULL,
   price NUMERIC NOT NULL,
   cost NUMERIC DEFAULT 0,
-  barcode TEXT UNIQUE NOT NULL,
+  barcode TEXT UNIQUE,
+  box_barcode TEXT,
+  units_per_box INTEGER DEFAULT 1,
+  box_cost NUMERIC DEFAULT 0,
   category TEXT,
   image TEXT,
   quantity INTEGER DEFAULT 0,
@@ -34,6 +37,9 @@ CREATE TABLE IF NOT EXISTS variants (
   product_id TEXT NOT NULL,
   name TEXT NOT NULL,
   barcode TEXT,
+  box_barcode TEXT,
+  units_per_box INTEGER DEFAULT 1,
+  box_cost NUMERIC DEFAULT 0,
   price NUMERIC NOT NULL,
   cost NUMERIC NOT NULL,
   image TEXT,
@@ -218,6 +224,50 @@ CREATE TABLE IF NOT EXISTS settings (
   FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
 );
 
+-- 16. Bulk Inventory Transactions Table
+CREATE TABLE IF NOT EXISTS bulk_inventory_transactions (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  reference_number TEXT NOT NULL UNIQUE,
+  created_by TEXT NOT NULL,
+  supplier_company TEXT,
+  total_items INTEGER NOT NULL DEFAULT 0,
+  total_units INTEGER NOT NULL DEFAULT 0,
+  total_cost NUMERIC NOT NULL DEFAULT 0,
+  notes TEXT,
+  status TEXT NOT NULL DEFAULT 'completed',
+  idempotency_key TEXT UNIQUE,
+  created_at TEXT,
+  updated_at TEXT,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+-- 17. Bulk Inventory Items Table
+CREATE TABLE IF NOT EXISTS bulk_inventory_items (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  bulk_inventory_id TEXT NOT NULL,
+  product_id TEXT,
+  variant_id TEXT,
+  barcode TEXT,
+  box_barcode TEXT,
+  piece_barcode TEXT,
+  box_count INTEGER DEFAULT 0,
+  units_per_box INTEGER DEFAULT 1,
+  cost_per_box NUMERIC DEFAULT 0,
+  product_name_snapshot TEXT NOT NULL,
+  description_snapshot TEXT,
+  quantity INTEGER NOT NULL,
+  cost_snapshot NUMERIC NOT NULL DEFAULT 0,
+  selling_price_snapshot NUMERIC DEFAULT 0,
+  supplier_company_override TEXT,
+  notes TEXT,
+  price_cost_update_confirmed INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (bulk_inventory_id) REFERENCES bulk_inventory_transactions(id) ON DELETE CASCADE
+);
+
 -- ==============================================
 -- Enable Row Level Security (optional but recommended)
 -- ==============================================
@@ -237,6 +287,14 @@ ALTER TABLE sale_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE remittances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bulk_inventory_transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bulk_inventory_items ENABLE ROW LEVEL SECURITY;
+
+-- Create policy to allow service role full access (your backend uses service role key)
+CREATE POLICY "Enable all for service role" ON bulk_inventory_transactions
+  FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Enable all for service role" ON bulk_inventory_items
+  FOR ALL USING (true) WITH CHECK (true);
 
 -- Create policy to allow service role full access (your backend uses service role key)
 CREATE POLICY "Enable all for service role" ON tenants
