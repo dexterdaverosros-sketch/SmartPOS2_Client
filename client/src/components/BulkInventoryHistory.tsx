@@ -156,17 +156,11 @@ export const BulkInventoryHistory: React.FC<BulkInventoryHistoryProps> = ({
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Audit records and item snapshots for all receiving deliveries</p>
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
           </div>
 
           {/* Filter Bar */}
-          <form onSubmit={handleApplyFilter} className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-            <div>
+          <form onSubmit={handleApplyFilter} className="mt-4 flex flex-col md:flex-row gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800 flex-wrap items-stretch md:items-center">
+            <div className="flex-1 min-w-[140px]">
               <Input
                 value={reference}
                 onChange={e => setReference(e.target.value)}
@@ -174,7 +168,7 @@ export const BulkInventoryHistory: React.FC<BulkInventoryHistoryProps> = ({
                 className="h-9 bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-[#FF8882]"
               />
             </div>
-            <div>
+            <div className="flex-1 min-w-[140px]">
               <Input
                 value={supplier}
                 onChange={e => setSupplier(e.target.value)}
@@ -182,7 +176,7 @@ export const BulkInventoryHistory: React.FC<BulkInventoryHistoryProps> = ({
                 className="h-9 bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-[#FF8882]"
               />
             </div>
-            <div>
+            <div className="flex-1 min-w-[140px]">
               <Input
                 value={productName}
                 onChange={e => setProductName(e.target.value)}
@@ -190,27 +184,27 @@ export const BulkInventoryHistory: React.FC<BulkInventoryHistoryProps> = ({
                 className="h-9 bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-[#FF8882]"
               />
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5 min-w-[220px]">
               <Input
                 type="date"
                 value={dateFrom}
                 onChange={e => setDateFrom(e.target.value)}
-                className="h-9 bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 rounded-lg text-[11px] text-slate-900 dark:text-white px-2 focus:border-[#FF8882]"
+                className="h-9 bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-white px-2 focus:border-[#FF8882] flex-1"
                 title="From Date"
               />
-              <span className="text-xs text-slate-400">-</span>
+              <span className="text-xs text-slate-400 px-0.5">-</span>
               <Input
                 type="date"
                 value={dateTo}
                 onChange={e => setDateTo(e.target.value)}
-                className="h-9 bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 rounded-lg text-[11px] text-slate-900 dark:text-white px-2 focus:border-[#FF8882]"
+                className="h-9 bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-white px-2 focus:border-[#FF8882] flex-1"
                 title="To Date"
               />
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-none">
               <Button
                 type="submit"
-                className="flex-1 h-9 bg-[#FF8882] hover:bg-[#ff7770] text-white text-xs font-medium rounded-lg shadow-sm transition-all"
+                className="h-9 px-4 bg-[#FF8882] hover:bg-[#ff7770] text-white text-xs font-semibold rounded-lg shadow-sm transition-all"
               >
                 Filter
               </Button>
@@ -218,7 +212,7 @@ export const BulkInventoryHistory: React.FC<BulkInventoryHistoryProps> = ({
                 type="button"
                 variant="outline"
                 onClick={handleClearFilters}
-                className="h-9 px-3 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg text-xs"
+                className="h-9 px-3 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg text-xs font-medium"
                 title="Reset Filters"
               >
                 Reset
@@ -364,12 +358,6 @@ export const BulkInventoryHistory: React.FC<BulkInventoryHistoryProps> = ({
                     Bulk Receiving Session Details
                   </DialogTitle>
                 </div>
-                <button
-                  onClick={() => { setSelectedTxId(null); setDetailData(null); }}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
               </div>
 
               {/* Transaction Meta Card */}

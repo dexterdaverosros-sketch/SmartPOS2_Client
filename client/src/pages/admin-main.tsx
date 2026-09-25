@@ -914,7 +914,7 @@ const AdminMain: React.FC = () => {
               "modern-card p-4 flex flex-col",
               (deviceMode === 'pc' || deviceMode === 'tablet') ? "lg:col-span-4" : ""
             )}>
-              <h2 className="text-[10px] font-black uppercase tracking-widest text-gray-900 mb-3">{t('executiveTools')}</h2>
+              <h2 className="text-xs font-black uppercase tracking-widest text-gray-900 mb-3">{t('executiveTools')}</h2>
               <div className="grid grid-cols-2 gap-2 overflow-y-auto pr-1 flex-1">
                 {[
                   { title: t('inventory'), icon: Package, path: '/inventory', color: 'pink' },
@@ -927,11 +927,14 @@ const AdminMain: React.FC = () => {
                   <Button
                     key={tool.title}
                     variant="outline"
-                    className={cn("h-auto py-3 flex flex-col items-center gap-1.5 border-gray-100 hover:border-[#BF953F]/20 hover:bg-[#BF953F]/5 transition-all group", `bg-${tool.color}-50`)}
+                    className={cn(
+                      "h-auto py-3.5 flex flex-col items-center gap-2 border border-slate-200/90 shadow-xs hover:border-[#BF953F]/40 hover:bg-[#BF953F]/5 hover:shadow-sm transition-all group rounded-xl",
+                      `bg-${tool.color}-50/60`
+                    )}
                     onClick={() => setLocation(tool.path)}
                   >
-                    <tool.icon className={cn("w-4 h-4", `text-${tool.color}-500`)} />
-                    <span className="text-[9px] font-bold text-gray-700">{tool.title}</span>
+                    <tool.icon className={cn("w-5 h-5", `text-${tool.color}-500 group-hover:scale-110 transition-transform`)} />
+                    <span className="text-xs font-bold text-gray-800">{tool.title}</span>
                   </Button>
                 ))}
               </div>

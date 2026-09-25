@@ -359,15 +359,6 @@ export const BulkInventoryWorkspace: React.FC<BulkInventoryWorkspaceProps> = ({
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Scan barcodes or add items manually to update stock levels</p>
               </div>
             </div>
-            <button
-              onClick={() => {
-                if (items.length > 0) setShowCancelConfirm(true);
-                else onClose();
-              }}
-              className="p-2 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
           </div>
 
           {/* Supplier & Delivery Info Inputs */}

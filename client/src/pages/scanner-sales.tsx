@@ -1124,22 +1124,42 @@ const ScannerSales: React.FC = () => {
             )}>
               {/* Desktop Header */}
               {isDesktop && (
-                <div className="flex justify-between items-center mb-6">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-[#BF953F]/10 rounded-2xl flex items-center justify-center">
-                      <ShoppingCart className="w-5 h-5 text-[#BF953F]" />
+                <div className="flex justify-between items-center mb-6 flex-none">
+                  {isPayModalOpen ? (
+                    <div className="flex items-center gap-3">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setIsPayModalOpen(false)}
+                        className="w-10 h-10 p-0 rounded-2xl bg-gray-50 hover:bg-gray-100 flex items-center justify-center transition-all border border-gray-200 cursor-pointer shadow-xs"
+                        title="Back to Customer Cart"
+                      >
+                        <ArrowLeft className="w-5 h-5 text-gray-700" />
+                      </Button>
+                      <div>
+                        <h3 className="font-black text-lg tracking-tighter uppercase text-slate-900">FINALIZE SALE</h3>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{cart.length} Items • Checkout</p>
+                      </div>
                     </div>
-                    <div>
-                       <h3 className="font-black text-lg tracking-tighter uppercase">CUSTOMER CART</h3>
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{cart.length} Items</p>
-                    </div>
-                  </div>
-                  <Button 
-                    className="h-9 px-4 rounded-xl bg-gradient-to-r from-[#BF953F] to-[#B38728] text-white text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] transition-all shadow-md"
-                    onClick={() => setIsNonInventoryOpen(true)}
-                  >
-                    + Non-Inv
-                  </Button>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-[#BF953F]/10 rounded-2xl flex items-center justify-center">
+                          <ShoppingCart className="w-5 h-5 text-[#BF953F]" />
+                        </div>
+                        <div>
+                          <h3 className="font-black text-lg tracking-tighter uppercase text-slate-900">CUSTOMER CART</h3>
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{cart.length} Items</p>
+                        </div>
+                      </div>
+                      <Button 
+                        className="h-9 px-4 rounded-xl bg-gradient-to-r from-[#BF953F] to-[#B38728] text-white text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] transition-all shadow-md"
+                        onClick={() => setIsNonInventoryOpen(true)}
+                      >
+                        + Non-Inv
+                      </Button>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -1152,12 +1172,6 @@ const ScannerSales: React.FC = () => {
                     exit={{ opacity: 0, x: -20 }}
                     className="flex flex-col h-full"
                   >
-                    <div className="flex items-center gap-2 mb-6 flex-none">
-                      <Button variant="ghost" size="sm" onClick={() => setIsPayModalOpen(false)} className="w-10 h-10 p-0 rounded-xl hover:bg-gray-50 transition-all">
-                        <ArrowLeft className="w-5 h-5 text-gray-400" />
-                      </Button>
-                      <h2 className="font-black text-xl tracking-tighter uppercase">Finalize Sale</h2>
-                    </div>
                     
                     <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-1 mb-6">
                       {cart.map(item => (
@@ -1634,22 +1648,22 @@ const ScannerSales: React.FC = () => {
         {/* Mobile Pay Modal */}
         <Dialog open={isPayModalOpen && !isDesktop} onOpenChange={setIsPayModalOpen}>
           <DialogContent className="max-w-3xl h-[85vh] flex flex-col p-0 overflow-hidden rounded-t-[3rem] border-none">
-            <DialogHeader className="p-8 border-b border-gray-50 flex-none relative">
+            <DialogHeader className="p-6 border-b border-gray-50 flex-none relative">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-[#FF8882]/10 rounded-[1.25rem] flex items-center justify-center">
-                  <ShoppingCart className="w-6 h-6 text-[#FF8882]" />
-                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsPayModalOpen(false)}
+                  className="w-10 h-10 p-0 rounded-2xl bg-gray-50 hover:bg-gray-100 flex items-center justify-center transition-all border border-gray-200 cursor-pointer shadow-xs"
+                  title="Back to Cart"
+                >
+                  <ArrowLeft className="w-5 h-5 text-gray-700" />
+                </Button>
                 <div>
-                  <DialogTitle className="text-2xl font-black tracking-tighter uppercase">Checkout</DialogTitle>
+                  <DialogTitle className="text-xl font-black tracking-tighter uppercase text-slate-900">FINALIZE SALE</DialogTitle>
                   <DialogDescription className="text-[10px] font-black uppercase tracking-widest text-gray-400">{cart.length} Items to Process</DialogDescription>
                 </div>
               </div>
-              <button 
-                onClick={() => setIsPayModalOpen(false)}
-                className="absolute right-8 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-2xl bg-gray-50 text-gray-400"
-              >
-                <X className="w-5 h-5" />
-              </button>
             </DialogHeader>
             
             <div className="flex-1 overflow-y-auto p-8 space-y-4 bg-gray-50/30 custom-scrollbar">
