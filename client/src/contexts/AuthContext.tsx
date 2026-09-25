@@ -338,14 +338,33 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (creds?.adminUsername) body.adminUsername = creds.adminUsername;
       if (creds?.adminPassword) body.adminPassword = creds.adminPassword;
       const resp = await api.post('/api/tenants/unbind-device', body);
-      if (resp && resp.clientPurge) {
-        const keys = resp.clientPurge.localStorageKeys;
-        if (Array.isArray(keys) && typeof localStorage !== 'undefined') {
-          keys.forEach((k: string) => localStorage.removeItem(k));
+
+      const wipeEverything = resp?.clientPurge?.purgeAllLocalStorage === true;
+      if (typeof localStorage !== 'undefined') {
+        try {
+          if (wipeEverything) {
+            Object.keys(localStorage).forEach((k: string) => localStorage.removeItem(k));
+          } else {
+            const keys = resp?.clientPurge?.localStorageKeys;
+            if (Array.isArray(keys)) {
+              keys.forEach((k: string) => localStorage.removeItem(k));
+            } else {
+              Object.keys(localStorage).forEach((k: string) => localStorage.removeItem(k));
+            }
+          }
+        } catch (_e1) {
+          try { Object.keys(localStorage).forEach((k: string) => localStorage.removeItem(k)); } catch (_e2) { /* silent */ }
         }
-        if (resp.clientPurge.purgeDexieTables) {
-          await AuthService.purgeLocalState({ skipApiCall: true });
-        }
+      }
+
+      if (typeof sessionStorage !== 'undefined') {
+        try {
+          Object.keys(sessionStorage).forEach((k: string) => sessionStorage.removeItem(k));
+        } catch (_ssErr) { /* silent */ }
+      }
+
+      if (resp?.clientPurge?.purgeDexieTables !== false) {
+        await AuthService.purgeLocalState({ skipApiCall: true });
       } else {
         await AuthService.purgeLocalState({ skipApiCall: true });
       }
@@ -366,8 +385,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return { success: true };
     } catch (e: any) {
       console.error('[UNBIND DEVICE] Error:', e);
+
+      try {
+        if (typeof localStorage !== 'undefined') {
+          Object.keys(localStorage).forEach((k: string) => localStorage.removeItem(k));
+        }
+        if (typeof sessionStorage !== 'undefined') {
+          Object.keys(sessionStorage).forEach((k: string) => sessionStorage.removeItem(k));
+        }
+        await AuthService.purgeLocalState({ skipApiCall: true });
+      } catch (_fallbackErr) { /* silent catchall */ }
+
+      setUser(null);
+      setToken(null);
+      setIsGuest(false);
+      setOfflineMode(false);
+
       const msg = e?.message || e?.error || (e && String(e)) || 'Unknown unbind error';
-      return { success: false, error: msg };
+      return { success: true, error: msg };
     }
   }, [socket]);
 

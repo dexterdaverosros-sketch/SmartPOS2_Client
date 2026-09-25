@@ -2318,6 +2318,7 @@ export const dbService = {
 
   recordStaffLogin: (entry: { id: string; staffId: string; tenantId: string; deviceInfo?: string; ipAddress?: string; loginTime?: string }) => {
     const now = new Date().toISOString();
+    const loginTime = entry.loginTime || now;
     db.prepare(`
       INSERT INTO login_history
       (id, tenant_id, staff_id, device_info, ip_address, login_time, created_at)
@@ -2328,9 +2329,223 @@ export const dbService = {
       entry.staffId,
       entry.deviceInfo || null,
       entry.ipAddress || null,
-      entry.loginTime || now,
+      loginTime,
       now
     );
+
+    try {
+      const supabase = getSupabase();
+      if (supabase && entry.tenantId && entry.tenantId !== 'default-tenant-id') {
+        (async () => {
+          try {
+            await supabase.from('login_history').upsert({
+              id: entry.id,
+              tenant_id: entry.tenantId,
+              staff_id: entry.staffId,
+              device_info: entry.deviceInfo || null,
+              ip_address: entry.ipAddress || null,
+              login_time: loginTime,
+              created_at: now
+            }, { onConflict: 'id' });
+          } catch (err: any) {
+            console.warn('Supabase login_history sync error:', err?.message);
+          }
+        })();
+      }
+    } catch (_) {}
+  },
+
+  recordStaffClockIn: (entry: { id: string; staffId: string; tenantId: string; clockIn?: string }) => {
+    try {
+      const now = entry.clockIn || new Date().toISOString();
+      const todayDate = now.split('T')[0];
+      const existing = db.prepare(`
+        SELECT * FROM attendance 
+        WHERE staff_id = ? AND tenant_id = ? AND date = ? AND (clock_out IS NULL OR clock_out = '')
+      `).get(entry.staffId, entry.tenantId, todayDate) as any;
+
+      if (!existing) {
+        db.prepare(`
+          INSERT INTO attendance (id, tenant_id, staff_id, date, clock_in, clock_out, hours_worked, is_late, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, NULL, NULL, 0, ?, ?)
+        `).run(entry.id, entry.tenantId, entry.staffId, todayDate, now, now, now);
+
+        try {
+          const supabase = getSupabase();
+          if (supabase && entry.tenantId && entry.tenantId !== 'default-tenant-id') {
+            (async () => {
+              try {
+                await supabase.from('attendance').upsert({
+                  id: entry.id,
+                  tenant_id: entry.tenantId,
+                  staff_id: entry.staffId,
+                  date: todayDate,
+                  clock_in: now,
+                  clock_out: null,
+                  hours_worked: null,
+                  is_late: 0,
+                  created_at: now,
+                  updated_at: now
+                }, { onConflict: 'id' });
+              } catch (err: any) {
+                console.warn('Supabase attendance clock-in sync error:', err?.message);
+              }
+            })();
+          }
+        } catch (_) {}
+      }
+    } catch (e) {
+      console.error('Error in recordStaffClockIn:', e);
+    }
+  },
+
+  recordStaffLogout: (staffId: string, tenantId: string) => {
+    try {
+      const now = new Date().toISOString();
+      // 1. Update login_history open record
+      const openLogin = db.prepare(`
+        SELECT id, login_time FROM login_history 
+        WHERE staff_id = ? AND tenant_id = ? AND (logout_time IS NULL OR logout_time = '')
+        ORDER BY datetime(login_time) DESC LIMIT 1
+      `).get(staffId, tenantId) as any;
+
+      if (openLogin) {
+        db.prepare(`
+          UPDATE login_history SET logout_time = ? WHERE id = ?
+        `).run(now, openLogin.id);
+
+        try {
+          const supabase = getSupabase();
+          if (supabase && tenantId && tenantId !== 'default-tenant-id') {
+            (async () => {
+              try {
+                await supabase.from('login_history').update({ logout_time: now }).eq('id', openLogin.id);
+              } catch (_) {}
+            })();
+          }
+        } catch (_) {}
+      }
+
+      // 2. Update attendance open record
+      const openAttendance = db.prepare(`
+        SELECT id, clock_in FROM attendance 
+        WHERE staff_id = ? AND tenant_id = ? AND (clock_out IS NULL OR clock_out = '')
+        ORDER BY datetime(created_at) DESC LIMIT 1
+      `).get(staffId, tenantId) as any;
+
+      if (openAttendance) {
+        let hoursWorked = null;
+        if (openAttendance.clock_in) {
+          const inTime = new Date(openAttendance.clock_in).getTime();
+          const outTime = new Date(now).getTime();
+          if (!isNaN(inTime) && !isNaN(outTime) && outTime > inTime) {
+            hoursWorked = Math.round(((outTime - inTime) / (1000 * 60 * 60)) * 100) / 100;
+          }
+        }
+        db.prepare(`
+          UPDATE attendance SET clock_out = ?, hours_worked = ?, updated_at = ? WHERE id = ?
+        `).run(now, hoursWorked, now, openAttendance.id);
+
+        try {
+          const supabase = getSupabase();
+          if (supabase && tenantId && tenantId !== 'default-tenant-id') {
+            (async () => {
+              try {
+                await supabase.from('attendance').update({
+                  clock_out: now,
+                  hours_worked: hoursWorked,
+                  updated_at: now
+                }).eq('id', openAttendance.id);
+              } catch (_) {}
+            })();
+          }
+        } catch (_) {}
+      }
+    } catch (e) {
+      console.error('Error in recordStaffLogout:', e);
+    }
+  },
+
+  getStaffTimestamps: (staffId: string, tenantId: string) => {
+    try {
+      const historyRows = db.prepare(`
+        SELECT * FROM login_history 
+        WHERE staff_id = ? AND tenant_id = ?
+        ORDER BY datetime(login_time) DESC
+      `).all(staffId, tenantId) as any[];
+
+      const attendanceRows = db.prepare(`
+        SELECT * FROM attendance 
+        WHERE staff_id = ? AND tenant_id = ?
+        ORDER BY datetime(created_at) DESC
+      `).all(staffId, tenantId) as any[];
+
+      const results: any[] = [];
+      const seenTimes = new Set<string>();
+
+      for (const row of historyRows) {
+        const timeIn = row.login_time || row.created_at;
+        const timeOut = row.logout_time || null;
+        const dateStr = timeIn ? timeIn.split('T')[0] : (row.created_at ? row.created_at.split('T')[0] : new Date().toISOString().split('T')[0]);
+        let hoursWorked: number | null = null;
+        if (timeIn && timeOut) {
+          const t1 = new Date(timeIn).getTime();
+          const t2 = new Date(timeOut).getTime();
+          if (!isNaN(t1) && !isNaN(t2) && t2 > t1) {
+            hoursWorked = Math.round(((t2 - t1) / (1000 * 60 * 60)) * 100) / 100;
+          }
+        }
+        const timeKey = `${dateStr}_${timeIn}`;
+        seenTimes.add(timeKey);
+
+        results.push({
+          id: row.id,
+          staffId: row.staff_id,
+          date: dateStr,
+          timeIn,
+          timeOut,
+          hoursWorked,
+          status: timeOut ? 'Completed' : 'Active',
+          deviceInfo: row.device_info || 'Standard Terminal',
+          ipAddress: row.ip_address || '',
+          source: 'login_history',
+          createdAt: row.created_at || timeIn
+        });
+      }
+
+      for (const att of attendanceRows) {
+        const timeIn = att.clock_in || att.created_at;
+        const dateStr = att.date || (timeIn ? timeIn.split('T')[0] : '');
+        const timeKey = `${dateStr}_${timeIn}`;
+        if (!seenTimes.has(timeKey)) {
+          const timeOut = att.clock_out || null;
+          results.push({
+            id: att.id,
+            staffId: att.staff_id,
+            date: dateStr,
+            timeIn,
+            timeOut,
+            hoursWorked: att.hours_worked ?? null,
+            status: timeOut ? 'Completed' : 'Active',
+            deviceInfo: 'POS Attendance',
+            ipAddress: '',
+            source: 'attendance',
+            createdAt: att.created_at || timeIn
+          });
+        }
+      }
+
+      results.sort((a, b) => {
+        const tA = new Date(a.timeIn || a.createdAt).getTime();
+        const tB = new Date(b.timeIn || b.createdAt).getTime();
+        return tB - tA;
+      });
+
+      return results;
+    } catch (e) {
+      console.error('Error fetching staff timestamps:', e);
+      return [];
+    }
   },
 
 
@@ -3898,6 +4113,7 @@ export const dbService = {
       skippedTables: string[];
       rowsDeletedPerTable: Record<string, number>;
       tenantScopeId: string | null;
+      totalRowsDeleted: number;
     }
 
     const diagnostics: UnbindDiagnostics = {
@@ -3905,6 +4121,7 @@ export const dbService = {
       skippedTables: [],
       rowsDeletedPerTable: {},
       tenantScopeId: null,
+      totalRowsDeleted: 0,
     };
 
     try {
@@ -3916,39 +4133,66 @@ export const dbService = {
         'products', 'variants', 'staff', 'sales', 'sale_items', 'expenses', 'purchases',
         'creditors', 'non_inventory_products', 'remittances', 'notifications', 'customers',
         'credits', 'payments', 'reminders', 'bulk_inventory_transactions',
-        'bulk_inventory_items', 'pending_bulk_submissions'
+        'bulk_inventory_items', 'pending_bulk_submissions', 'staff_logins',
+        'security_questions'
       ];
 
       for (const table of businessTables) {
         try {
-          let info;
-          if (boundTenantId) {
-            info = db.prepare(`DELETE FROM ${table} WHERE tenant_id = ?`).run(boundTenantId);
-          } else {
-            info = db.prepare(`DELETE FROM ${table}`).run();
-          }
+          const info = db.prepare(`DELETE FROM ${table}`).run();
           diagnostics.purgedTables.push(table);
-          diagnostics.rowsDeletedPerTable[table] = Number(info?.changes ?? 0);
+          const rows = Number(info?.changes ?? 0);
+          diagnostics.rowsDeletedPerTable[table] = rows;
+          diagnostics.totalRowsDeleted += rows;
         } catch (tblErr: any) {
           diagnostics.skippedTables.push(table);
           console.warn(`[DEVICE UNBIND WARN] Could not purge table ${table}:`, tblErr?.message || String(tblErr));
         }
       }
 
-      db.prepare('DELETE FROM settings WHERE key = ?').run('device_bound_tenant_id');
-      db.prepare('DELETE FROM users').run();
-      db.prepare('DELETE FROM sessions').run();
+      try {
+        const settingsInfo = db.prepare('DELETE FROM settings').run();
+        diagnostics.purgedTables.push('settings');
+        const rows = Number(settingsInfo?.changes ?? 0);
+        diagnostics.rowsDeletedPerTable['settings'] = rows;
+        diagnostics.totalRowsDeleted += rows;
+      } catch (sErr: any) {
+        diagnostics.skippedTables.push('settings');
+        console.warn('[DEVICE UNBIND WARN] Could not purge settings table:', sErr?.message || String(sErr));
+      }
+
+      try {
+        const usersInfo = db.prepare('DELETE FROM users').run();
+        diagnostics.purgedTables.push('users');
+        const rows = Number(usersInfo?.changes ?? 0);
+        diagnostics.rowsDeletedPerTable['users'] = rows;
+        diagnostics.totalRowsDeleted += rows;
+      } catch (uErr: any) {
+        diagnostics.skippedTables.push('users');
+        console.warn('[DEVICE UNBIND WARN] Could not purge users table:', uErr?.message || String(uErr));
+      }
+
+      try {
+        const sessionsInfo = db.prepare('DELETE FROM sessions').run();
+        diagnostics.purgedTables.push('sessions');
+        const rows = Number(sessionsInfo?.changes ?? 0);
+        diagnostics.rowsDeletedPerTable['sessions'] = rows;
+        diagnostics.totalRowsDeleted += rows;
+      } catch (sessErr: any) {
+        diagnostics.skippedTables.push('sessions');
+        console.warn('[DEVICE UNBIND WARN] Could not purge sessions table:', sessErr?.message || String(sessErr));
+      }
 
       console.log(
-        `[DEVICE UNBIND SUCCESS] purgedTables=[${diagnostics.purgedTables.join(', ')}] ` +
+        `[DEVICE UNBIND SUCCESS - FULL WIPE] purgedTables=[${diagnostics.purgedTables.join(', ')}] ` +
         `skippedTables=[${diagnostics.skippedTables.join(', ')}] ` +
-        `rowsDeletedPerTable=${JSON.stringify(diagnostics.rowsDeletedPerTable)} ` +
+        `totalRowsDeleted=${diagnostics.totalRowsDeleted} ` +
         `tenantScopeId=${diagnostics.tenantScopeId}`
       );
 
       return diagnostics;
     } catch (e: any) {
-      console.error('Failed to clear bound tenant ID:', e);
+      console.error('Failed to clear bound tenant ID (full wipe):', e);
       throw e;
     }
   },

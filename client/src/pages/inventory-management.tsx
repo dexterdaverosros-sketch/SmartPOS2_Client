@@ -711,17 +711,17 @@ const InventoryManagement: React.FC = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="whitespace-nowrap text-xs px-2.5 sm:px-3 bg-[#BF953F]/10 border-[#BF953F]/30 hover:bg-[#BF953F] hover:text-black text-[#BF953F] font-bold transition-all flex items-center gap-1.5"
+                  className="whitespace-nowrap text-xs px-2.5 sm:px-3 bg-[#FF8882]/10 border-[#FF8882]/30 hover:bg-[#FF8882] hover:text-white text-[#FF8882] font-semibold transition-all flex items-center gap-1.5 rounded-lg"
                   onClick={() => setIsBulkInventoryOpen(true)}
                   title="Open Continuous Bulk Inventory Workspace"
                 >
                   <Boxes className="w-3.5 h-3.5" />
-                  <span>Bulk Inventory</span>
+                  <span>Bulk Intake</span>
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="whitespace-nowrap text-xs px-2.5 sm:px-3 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-slate-100 text-gray-700 dark:text-gray-200 font-bold transition-all flex items-center gap-1.5"
+                  className="whitespace-nowrap text-xs px-2.5 sm:px-3 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 font-medium transition-all flex items-center gap-1.5 rounded-lg"
                   onClick={() => setIsBulkHistoryOpen(true)}
                   title="View Bulk Inventory History and Delivery Logs"
                 >

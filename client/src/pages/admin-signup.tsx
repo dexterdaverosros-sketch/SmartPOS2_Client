@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'wouter';
-import { motion } from 'framer-motion';
-import { Store, ArrowLeft, Lock, X, Unlock, Loader2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Store, ArrowLeft, Lock, X, Unlock, Loader2, Building2, User as UserIcon, Smartphone, Mail, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { AuthService } from '@/lib/db';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -22,15 +25,34 @@ const signupSchema = z.object({
 
 type SignupFormData = z.infer<typeof signupSchema>;
 
+type DeviceStatus = {
+  bound: boolean;
+  tenant?: {
+    id: string;
+    storeName?: string;
+    subdomain?: string;
+    createdAt?: string;
+  } | null;
+  admin?: {
+    id: string;
+    username?: string;
+    ownerName?: string;
+    businessName?: string;
+    mobile?: string;
+    email?: string;
+    role?: string;
+  } | null;
+  message?: string;
+};
+
 const AdminSignup: React.FC = () => {
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
-  const [showUnbindDialog, setShowUnbindDialog] = useState(false);
-  const [unbindUsername, setUnbindUsername] = useState('');
-  const [unbindPassword, setUnbindPassword] = useState('');
+  const [deviceStatus, setDeviceStatus] = useState<DeviceStatus | null>(null);
+  const [showUnbindConfirm, setShowUnbindConfirm] = useState(false);
   const [unbindLoading, setUnbindLoading] = useState(false);
-  const [unbindError, setUnbindError] = useState<string | null>(null);
+  const [statusLoading, setStatusLoading] = useState(true);
   const { login, unbindDevice } = useAuth();
   const { toast } = useToast();
 
@@ -44,42 +66,81 @@ const AdminSignup: React.FC = () => {
     }
   }, []);
 
-  const checkStatus = useCallback(async () => {
+  const checkDeviceStatus = useCallback(async () => {
+    setStatusLoading(true);
     try {
-      const data = await api.get('/api/auth/status');
-      if (data.configured || data.adminExists) {
+      const data: DeviceStatus = await api.get('/api/tenants/device-status');
+      setDeviceStatus(data);
+      if (data.bound) {
         setIsLocked(true);
       } else {
         setIsLocked(false);
       }
     } catch (e) {
-      console.warn('Failed to check system status');
+      console.warn('Failed to check device binding status, falling back to auth/status');
+      try {
+        const fallback = await api.get('/api/auth/status');
+        if (fallback.configured || fallback.adminExists) {
+          setIsLocked(true);
+          setDeviceStatus({
+            bound: true,
+            tenant: fallback.tenant ? {
+              id: fallback.tenant.id,
+              storeName: fallback.tenant.store_name || fallback.tenant.storeName,
+              subdomain: fallback.tenant.subdomain,
+            } : null,
+            admin: fallback.admin ? {
+              id: fallback.admin.id,
+              username: fallback.admin.username,
+              ownerName: fallback.admin.ownerName || fallback.admin.owner_name,
+              businessName: fallback.admin.businessName || fallback.admin.business_name,
+              mobile: fallback.admin.mobile,
+              email: fallback.admin.email,
+              role: fallback.admin.role,
+            } : null,
+            message: 'Device is currently bound.'
+          });
+        } else {
+          setIsLocked(false);
+          setDeviceStatus({ bound: false, tenant: null, admin: null });
+        }
+      } catch (_e2) {
+        setIsLocked(false);
+        setDeviceStatus({ bound: false, tenant: null, admin: null });
+      }
+    } finally {
+      setStatusLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    checkStatus();
-  }, [checkStatus]);
+    checkDeviceStatus();
+  }, [checkDeviceStatus]);
 
-  const handleSubmitUnbind = async () => {
-    setUnbindError(null);
+  const handleConfirmUnbind = async () => {
     setUnbindLoading(true);
     try {
-      const r = await unbindDevice({
-        adminUsername: unbindUsername.trim() || undefined,
-        adminPassword: unbindPassword || undefined,
-      });
+      const r = await unbindDevice();
       if (!r.success) {
-        setUnbindError(r.error || 'Unbind failed. Please verify credentials.');
+        toast({ title: 'Unbind Failed', description: r.error || 'Unable to unbind device.', variant: 'destructive' });
         return;
       }
-      toast({ title: 'Device Unbound', description: 'You can now register a new admin on this device.' });
-      setShowUnbindDialog(false);
-      setUnbindUsername('');
-      setUnbindPassword('');
-      await checkStatus();
+      toast({
+        title: 'Device Successfully Unbound',
+        description: 'All local data has been erased. Device is ready for a new account.',
+        duration: 5000,
+      });
+      setShowUnbindConfirm(false);
+      await checkDeviceStatus();
+      if (typeof window !== 'undefined') {
+        setTimeout(() => window.location.reload(), 800);
+      }
     } catch (e: any) {
-      setUnbindError(e?.message || String(e) || 'Unbind failed');
+      toast({
+        title: 'Unbind Failed',
+        description: e?.message || String(e) || 'Unexpected error during unbind.',
+        variant: 'destructive',
+      });
     } finally {
       setUnbindLoading(false);
     }
@@ -117,103 +178,200 @@ const AdminSignup: React.FC = () => {
     }
   };
 
+  if (statusLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
+        <div className="animate-pulse space-y-4 text-center">
+          <Loader2 className="w-12 h-12 text-[#FF8882] animate-spin mx-auto" />
+          <p className="text-sm text-gray-500 font-medium">Checking device binding status…</p>
+        </div>
+      </div>
+    );
+  }
+
   if (isLocked) {
+    const storeName = deviceStatus?.tenant?.storeName || deviceStatus?.admin?.businessName || 'Registered Store';
+    const ownerName = deviceStatus?.admin?.ownerName || deviceStatus?.admin?.username || 'Store Admin';
+    const subdomain = deviceStatus?.tenant?.subdomain;
+    const adminMobile = deviceStatus?.admin?.mobile;
+    const adminEmail = deviceStatus?.admin?.email;
+    const adminUsername = deviceStatus?.admin?.username;
+
     return (
       <>
-        <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 text-center">
-          <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-6">
-            <Lock className="w-10 h-10 text-red-500" />
-          </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Registration Locked</h2>
-          <p className="text-gray-600 mb-8 max-w-xs">
-            This SmartPOS+ system is already configured for another business. Please login instead.
-          </p>
-          <div className="w-full max-w-xs space-y-3">
-            <Button
-              onClick={() => setLocation('/admin-login')}
-              className="w-full bg-[#FF8882] hover:bg-[#D89D9D] rounded-xl py-5 font-bold shadow-lg"
-            >
-              Go to Login
-            </Button>
-            <Button
-              onClick={() => setShowUnbindDialog(true)}
-              variant="outline"
-              className="w-full rounded-xl py-5 font-semibold border-gray-300 text-gray-700 hover:bg-gray-100"
-            >
-              <Unlock className="w-4 h-4 mr-2" />
-              Unbind This Device
-            </Button>
-          </div>
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-rose-50 to-amber-50 flex flex-col items-center justify-center p-4 sm:p-6 text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="w-full max-w-lg"
+          >
+            <div className="mb-6">
+              <div className="w-24 h-24 bg-gradient-to-br from-amber-100 to-rose-100 rounded-[2rem] flex items-center justify-center mb-5 mx-auto shadow-xl shadow-rose-100/60 border-4 border-white">
+                <Lock className="w-12 h-12 text-rose-500" />
+              </div>
+              <div className="flex items-center justify-center gap-2 mb-3">
+                <Badge variant="destructive" className="px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] rounded-full bg-rose-500/90 border-0 shadow-lg shadow-rose-200">
+                  <AlertTriangle className="w-3 h-3 mr-1.5" /> Device Bound
+                </Badge>
+              </div>
+              <h2 className="text-3xl font-black text-gray-900 tracking-tight mb-2">Device Already Registered</h2>
+              <p className="text-sm text-gray-500 font-medium max-w-sm mx-auto leading-relaxed">
+                This terminal is currently linked to an existing SmartPOS+ business account.
+                Details of the registered account are shown below.
+              </p>
+            </div>
+
+            <Card className="mb-6 border-2 border-rose-100 bg-white/90 backdrop-blur-sm rounded-[2rem] shadow-2xl shadow-rose-100/50 overflow-hidden">
+              <div className="bg-gradient-to-r from-rose-500 via-pink-500 to-amber-500 px-6 py-5">
+                <div className="flex items-center gap-3 text-white">
+                  <div className="w-12 h-12 bg-white/20 backdrop-blur rounded-2xl flex items-center justify-center border border-white/30">
+                    <Building2 className="w-6 h-6" />
+                  </div>
+                  <div className="text-left flex-1">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/80 mb-0.5">Registered Store</p>
+                    <h3 className="text-xl font-black tracking-tight">{storeName}</h3>
+                    {subdomain && (
+                      <p className="text-xs font-semibold text-white/80 mt-0.5">
+                        <span className="bg-white/20 px-2 py-0.5 rounded-md font-mono">{subdomain}.smartpos</span>
+                      </p>
+                    )}
+                  </div>
+                  <CheckCircle2 className="w-7 h-7 text-white/90" />
+                </div>
+              </div>
+
+              <CardContent className="p-5 space-y-3 text-left">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 p-3.5 bg-gray-50 rounded-2xl border border-gray-100">
+                    <div className="w-10 h-10 bg-blue-50 text-blue-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                      <UserIcon className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-0.5">Account Owner</p>
+                      <p className="text-sm font-bold text-gray-900 truncate">{ownerName}</p>
+                      {adminUsername && adminUsername !== ownerName && (
+                        <p className="text-[11px] font-medium text-gray-500">@{adminUsername}</p>
+                      )}
+                    </div>
+                    <Badge variant="outline" className="text-[9px] font-black uppercase tracking-widest border-amber-200 bg-amber-50 text-amber-700 rounded-full px-2.5 py-0.5">
+                      {deviceStatus?.admin?.role || 'ADMIN'}
+                    </Badge>
+                  </div>
+
+                  {adminMobile && (
+                    <div className="flex items-center gap-3 p-3.5 bg-gray-50 rounded-2xl border border-gray-100">
+                      <div className="w-10 h-10 bg-emerald-50 text-emerald-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <Smartphone className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-0.5">Contact Number</p>
+                        <p className="text-sm font-bold text-gray-900 truncate">{adminMobile}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {adminEmail && (
+                    <div className="flex items-center gap-3 p-3.5 bg-gray-50 rounded-2xl border border-gray-100">
+                      <div className="w-10 h-10 bg-purple-50 text-purple-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <Mail className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-0.5">Email Address</p>
+                        <p className="text-sm font-bold text-gray-900 truncate">{adminEmail}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 p-3.5 bg-amber-50 border border-amber-200 rounded-2xl">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-4.5 h-4.5 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-[11px] font-semibold text-amber-800 leading-relaxed">
+                      Unbinding this device will <span className="font-black underline">permanently erase ALL local data</span> including
+                      products, sales, staff records, and settings. The device will be completely blank and ready for a new account.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="w-full space-y-3">
+              <Button
+                onClick={() => setLocation('/admin-login')}
+                className="w-full bg-gradient-to-r from-[#FF8882] to-[#FF9B95] hover:from-[#E87872] hover:to-[#E88A84] text-white rounded-2xl py-5 font-black text-sm shadow-xl shadow-rose-200/70 transition-all active:scale-[0.98]"
+              >
+                <Store className="w-4.5 h-4.5 mr-2" />
+                Sign In to This Store
+              </Button>
+
+              <Button
+                onClick={() => setShowUnbindConfirm(true)}
+                variant="destructive"
+                className="w-full rounded-2xl py-5 font-black text-sm shadow-lg shadow-red-100 transition-all active:scale-[0.98] bg-white text-red-600 border-2 border-red-200 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
+              >
+                <Unlock className="w-4.5 h-4.5 mr-2" />
+                Unbind & Factory Reset Device
+              </Button>
+            </div>
+          </motion.div>
         </div>
 
-        {showUnbindDialog && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
-            <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6 relative">
-              <button
-                onClick={() => { setShowUnbindDialog(false); setUnbindError(null); }}
-                className="absolute top-3 right-3 text-gray-400 hover:text-gray-700"
-                aria-label="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
-                  <Unlock className="w-5 h-5 text-amber-600" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-lg text-gray-900">Unbind This Device</h3>
-                  <p className="text-xs text-gray-500">Confirm admin credentials to unbind.</p>
-                </div>
+        <AlertDialog open={showUnbindConfirm} onOpenChange={setShowUnbindConfirm}>
+          <AlertDialogContent className="rounded-[2rem] max-w-md border-0 shadow-2xl">
+            <AlertDialogHeader className="text-center pb-2">
+              <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <AlertTriangle className="w-8 h-8 text-red-500" />
               </div>
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 block mb-1">Admin Username</label>
-                  <Input
-                    value={unbindUsername}
-                    onChange={(e) => setUnbindUsername(e.target.value)}
-                    placeholder="e.g. admin"
-                    className="w-full"
-                  />
+              <AlertDialogTitle className="text-xl font-black tracking-tight text-gray-900">
+                Confirm Device Factory Reset
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-sm font-medium text-gray-500 leading-relaxed pt-1">
+                You are about to unbind this device and perform a complete data wipe.
+                This action is irreversible and will erase everything from this device:
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            <div className="px-1 py-3 space-y-2">
+              {[
+                'All products, variants & inventory records',
+                'Complete sales history & receipts',
+                'Staff accounts, permissions & remittances',
+                'Customer records, credits & payments',
+                'All settings, configuration & device preferences',
+                'Admin account & session data'
+              ].map((item) => (
+                <div key={item} className="flex items-center gap-2.5 text-xs text-gray-600 font-medium bg-red-50 px-3 py-2 rounded-xl">
+                  <X className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+                  <span>{item}</span>
                 </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 block mb-1">Admin Password</label>
-                  <Input
-                    type="password"
-                    value={unbindPassword}
-                    onChange={(e) => setUnbindPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full"
-                  />
-                </div>
-                {unbindError && (
-                  <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg p-2">
-                    {unbindError}
-                  </div>
-                )}
-                <div className="flex gap-2 pt-1">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => { setShowUnbindDialog(false); setUnbindError(null); }}
-                    className="flex-1 rounded-xl"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={handleSubmitUnbind}
-                    disabled={unbindLoading}
-                    className="flex-1 rounded-xl bg-[#FF8882] hover:bg-[#D89D9D] text-white"
-                  >
-                    {unbindLoading ? (
-                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Unbinding...</>
-                    ) : 'Unbind Device'}
-                  </Button>
-                </div>
-              </div>
+              ))}
             </div>
-          </div>
-        )}
+
+            <AlertDialogFooter className="flex-col sm:flex-col gap-2 pt-2">
+              <AlertDialogCancel className="w-full rounded-xl h-12 font-bold text-sm border-gray-200">
+                Cancel — Keep Current Data
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => { e.preventDefault(); handleConfirmUnbind(); }}
+                disabled={unbindLoading}
+                className="w-full rounded-xl h-12 font-black text-sm bg-red-600 hover:bg-red-700 shadow-lg shadow-red-200"
+              >
+                {unbindLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Erasing Everything…
+                  </>
+                ) : (
+                  <>
+                    <Unlock className="w-4 h-4 mr-2" />
+                    Yes — Unbind & Reset Everything
+                  </>
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </>
     );
   }

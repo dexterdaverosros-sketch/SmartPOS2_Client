@@ -348,38 +348,98 @@ export const RemittanceService = {
 // Auth service
 export class AuthService {
   static async purgeLocalState(opts?: { skipApiCall?: boolean }): Promise<{ purged: boolean }> {
-    const preserveKeys = new Set(['smartpos_device_mode']);
     if (typeof localStorage !== 'undefined') {
-      const removeKeys = Object.keys(localStorage).filter((k: string) =>
-        k.startsWith('smartpos_') && !preserveKeys.has(k)
-      ).concat([
-        'admin_username',
-        'admin_password',
-        'admin_remember_me',
-        'customer_checker_tenant_id',
-        'customer_checker_store_name'
-      ]);
-      removeKeys.forEach((k: string) => localStorage.removeItem(k));
+      try {
+        Object.keys(localStorage).forEach((k: string) => localStorage.removeItem(k));
+      } catch (_fullClearErr) {
+        const preserveKeys = new Set<string>([]);
+        const removeKeys = Object.keys(localStorage).filter((k: string) =>
+          !preserveKeys.has(k)
+        ).concat([
+          'smartpos_user',
+          'smartpos_token',
+          'smartpos_tenant_id',
+          'smartpos_tenant',
+          'smartpos_guest_mode',
+          'smartpos_guest_user_id',
+          'smartpos_guest_expiry',
+          'smartpos_device_mode',
+          'smartpos_external_devices',
+          'smartpos_default_printer',
+          'admin_username',
+          'admin_password',
+          'admin_remember_me',
+          'customer_checker_tenant_id',
+          'customer_checker_store_name',
+          'routerUrl'
+        ]);
+        try {
+          removeKeys.forEach((k: string) => localStorage.removeItem(k));
+        } catch (_e) { /* ignore */ }
+      }
     }
 
-    const tablesToWipe = [
-      'users', 'staff', 'products', 'variants', 'sales', 'saleItems',
-      'expenses', 'purchases', 'creditors', 'nonInventoryProducts',
-      'remittances', 'notifications', 'bulkInventoryTransactions',
-      'bulkInventoryItems', 'pendingBulkSubmissions'
-    ];
+    if (typeof sessionStorage !== 'undefined') {
+      try {
+        Object.keys(sessionStorage).forEach((k: string) => sessionStorage.removeItem(k));
+      } catch (_ssErr) { /* ignore */ }
+    }
+
     try {
-      const validTables = tablesToWipe.filter(t => typeof (db as any)[t] !== 'undefined');
-      if (validTables.length > 0) {
-        await db.transaction('rw', validTables as any, async () => {
-          for (const t of validTables) {
-            try { await (db as any)[t].clear(); } catch (_e) { /* per-table silent */ }
-          }
-        });
-      }
+      await db.delete();
+      console.log('[purgeLocalState] Entire Dexie database SmartPOSDB deleted successfully.');
+      await db.open();
+      console.log('[purgeLocalState] Dexie database SmartPOSDB re-initialized (fresh, empty).');
     } catch (e) {
-      console.error('[purgeLocalState] Dexie wipe error, falling back to db.resetDatabase():', e);
-      try { await db.resetDatabase(); } catch (e2) { console.error('[purgeLocalState] resetDatabase fallback failed:', e2); }
+      console.error('[purgeLocalState] Full Dexie delete+reopen failed, falling back to table-by-table wipe:', e);
+      const tablesToWipe = [
+        'users', 'staff', 'products', 'variants', 'sales', 'saleItems',
+        'expenses', 'purchases', 'creditors', 'nonInventoryProducts',
+        'remittances', 'notifications', 'bulkInventoryTransactions',
+        'bulkInventoryItems', 'pendingBulkSubmissions'
+      ];
+      try {
+        const validTables = tablesToWipe.filter(t => typeof (db as any)[t] !== 'undefined');
+        if (validTables.length > 0) {
+          await db.transaction('rw', validTables as any, async () => {
+            for (const t of validTables) {
+              try { await (db as any)[t].clear(); } catch (_e) { /* per-table silent */ }
+            }
+          });
+        }
+      } catch (e2) {
+        console.error('[purgeLocalState] Fallback table wipe also failed:', e2);
+      }
+    }
+
+    if (typeof window !== 'undefined' && 'indexedDB' in window) {
+      try {
+        const dbs = await (indexedDB as any).databases?.();
+        if (Array.isArray(dbs)) {
+          for (const entry of dbs) {
+            const dbName = entry?.name;
+            if (dbName && (dbName === 'SmartPOSDB' || dbName.toLowerCase().includes('smartpos') || dbName.toLowerCase().includes('dexie'))) {
+              try {
+                const req = indexedDB.deleteDatabase(dbName);
+                req.onerror = () => console.warn('[purgeLocalState] Additional IndexedDB cleanup failed for:', dbName);
+              } catch (_idbErr) { /* ignore */ }
+            }
+          }
+        }
+      } catch (_idbListErr) { /* ignore - older browsers may not support databases() */ }
+    }
+
+    if (typeof window !== 'undefined' && 'caches' in window) {
+      try {
+        const cacheNames = await caches.keys();
+        if (Array.isArray(cacheNames) && cacheNames.length > 0) {
+          await Promise.allSettled(
+            cacheNames.filter(name =>
+              name.toLowerCase().includes('smartpos') || name.toLowerCase().includes('workbox') || name.toLowerCase().includes('vite')
+            ).map(name => caches.delete(name).catch(() => false))
+          );
+        }
+      } catch (_cacheErr) { /* ignore */ }
     }
 
     if (!opts?.skipApiCall) {
@@ -1591,6 +1651,16 @@ export class StaffService {
       passwordLastChanged: now,
       updatedAt: now,
     } as any);
+  }
+
+  static async getStaffTimestamps(id: string): Promise<any[]> {
+    try {
+      const res = await api.get(`/api/staff/${id}/timestamps`);
+      return Array.isArray(res) ? res : [];
+    } catch (e) {
+      console.error('Error in StaffService.getStaffTimestamps:', e);
+      return [];
+    }
   }
 }
 

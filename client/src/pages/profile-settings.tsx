@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Save, LogOut, User, Store, Settings, Wifi, Shield, Key, Bell, Smartphone, Scan, Camera, Moon, Sun, Info, Mail, Database, RefreshCw, ChevronRight, Printer, Cpu, Wallet, HelpCircle, HardDrive, DollarSign, ShoppingCart, Play, Pause } from 'lucide-react';
+import { ArrowLeft, Save, LogOut, User, Store, Settings, Wifi, Shield, Key, Bell, Smartphone, Scan, Camera, Moon, Sun, Info, Mail, Database, RefreshCw, ChevronRight, Printer, Cpu, Wallet, HelpCircle, HardDrive, DollarSign, ShoppingCart, Play, Pause, Lock, Unlock, AlertCircle, Building2, User as UserIcon, CheckCircle2, AlertTriangle, X, Loader2 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import Layout from '@/components/Layout';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -19,7 +21,6 @@ import { useApp } from '@/contexts/AppContext';
 import { useDevices } from '@/contexts/DeviceContext';
 import { useToast } from '@/hooks/use-toast';
 import { AuthService, SalesService, StaffService, db } from '@/lib/db';
-import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
@@ -50,6 +51,26 @@ const securityQuestionsSchema = z.object({
 type ProfileFormData = z.infer<typeof profileSchema>;
 type CredentialsFormData = z.infer<typeof credentialsSchema>;
 type SecurityQuestionsFormData = z.infer<typeof securityQuestionsSchema>;
+
+type DeviceStatus = {
+  bound: boolean;
+  tenant?: {
+    id?: string;
+    storeName?: string;
+    subdomain?: string;
+    createdAt?: string;
+  } | null;
+  admin?: {
+    id?: string;
+    username?: string;
+    ownerName?: string;
+    businessName?: string;
+    mobile?: string;
+    email?: string;
+    role?: string;
+  } | null;
+  message?: string;
+};
 
 type ReceiptSettings = {
   storeName: string;
@@ -155,6 +176,12 @@ const ProfileSettings: React.FC = () => {
   const [gcashConnected, setGcashConnected] = useState(false);
   const [mayaConnected, setMayaConnected] = useState(false);
   const [connectingWallet, setConnectingWallet] = useState<null | 'gcash' | 'maya'>(null);
+
+  const [deviceStatus, setDeviceStatus] = useState<DeviceStatus | null>(null);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [showDeviceBindingDialog, setShowDeviceBindingDialog] = useState(false);
+  const [showUnbindConfirm, setShowUnbindConfirm] = useState(false);
+  const [unbindLoading, setUnbindLoading] = useState(false);
 
   useEffect(() => {
     const checkWalletStatus = async () => {
@@ -424,6 +451,71 @@ const ProfileSettings: React.FC = () => {
     }
   };
 
+  const checkDeviceStatus = useCallback(async () => {
+    try {
+      setStatusLoading(true);
+      const res = await fetch('/api/tenants/device-status');
+      if (res.ok) {
+        const data = await res.json();
+        setDeviceStatus(data as DeviceStatus);
+      } else {
+        const authRes = await fetch('/api/auth/status');
+        if (authRes.ok) {
+          const ad = await authRes.json();
+          setDeviceStatus({
+            bound: !!ad.tenantId || !!ad.adminExists,
+            tenant: ad.tenant ? { id: ad.tenant?.id, storeName: ad.tenant?.storeName || ad.tenant?.businessName, subdomain: ad.tenant?.subdomain } : null,
+            admin: ad.admin ? { id: ad.admin?.id, ownerName: ad.admin?.ownerName, username: ad.admin?.username, mobile: ad.admin?.mobile, email: ad.admin?.email, role: ad.admin?.role } : null
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[device-status] failed', e);
+    } finally {
+      setStatusLoading(false);
+    }
+  }, []);
+
+  const handleConfirmUnbind = async () => {
+    setUnbindLoading(true);
+    try {
+      const res = await fetch('/api/tenants/unbind-device', { method: 'POST' });
+      const d = await res.json();
+      if (res.ok || d?.success) {
+        if (d?.clientPurge?.purgeAllLocalStorage && typeof localStorage !== 'undefined') {
+          Object.keys(localStorage).forEach(k => localStorage.removeItem(k));
+        } else if (Array.isArray(d?.clientPurge?.localStorageKeys) && typeof localStorage !== 'undefined') {
+          d.clientPurge.localStorageKeys.forEach((k: string) => localStorage.removeItem(k));
+        }
+        await AuthService.purgeLocalState({ skipApiCall: true });
+        toast({
+          title: 'Device Factory Reset Complete',
+          description: 'All store data has been erased. Device is ready for a new account.',
+          variant: 'default'
+        });
+        setDeviceStatus({ bound: false, tenant: null, admin: null });
+        setShowUnbindConfirm(false);
+        setShowDeviceBindingDialog(false);
+        setTimeout(() => {
+          if (typeof window !== 'undefined') window.location.href = '/register-tenant';
+        }, 900);
+      } else {
+        toast({ title: 'Unbind Failed', description: d?.error || 'Server rejected the unbind request.', variant: 'destructive' });
+      }
+    } catch (e: any) {
+      try {
+        if (typeof localStorage !== 'undefined') Object.keys(localStorage).forEach(k => localStorage.removeItem(k));
+        if (typeof sessionStorage !== 'undefined') Object.keys(sessionStorage).forEach(k => sessionStorage.removeItem(k));
+        await AuthService.purgeLocalState({ skipApiCall: true });
+      } catch (_f) { /* ignore */ }
+      toast({ title: 'Local Reset Complete', description: 'Local data wiped. Reloading…' });
+      setShowUnbindConfirm(false);
+      setTimeout(() => { if (typeof window !== 'undefined') window.location.href = '/register-tenant'; }, 700);
+    } finally {
+      setUnbindLoading(false);
+    }
+  };
+
   useEffect(() => {
     const loadStats = async () => {
       try {
@@ -436,8 +528,9 @@ const ProfileSettings: React.FC = () => {
       } catch {}
     };
     loadStats();
+    checkDeviceStatus();
     if (location === '/account-details') setShowAccountDetails(true);
-  }, []);
+  }, [checkDeviceStatus, location]);
 
   const SettingsCard: React.FC<{ icon: any, title: string, subtitle: string, onClick: () => void, color?: string }> = ({ icon: Icon, title, subtitle, onClick, color = "gray" }) => (
     <motion.button
@@ -591,6 +684,7 @@ const ProfileSettings: React.FC = () => {
                 setBackupCounts({users, products, sales, saleItems, staff, expenses, purchases, creditors});
                 setShowBackupDialog(true);
               }} />
+              <SettingsCard icon={Lock} title="Device Binding Status" subtitle={deviceStatus?.bound ? "Account Linked" : statusLoading ? "Checking…" : "No Account Linked"} color={deviceStatus?.bound ? "amber" : "teal"} onClick={() => setShowDeviceBindingDialog(true)} />
               <SettingsCard icon={HelpCircle} title="Help & Support" subtitle="Guides & Tutorials" color="blue" onClick={() => setShowHelpSupportDialog(true)} />
             </div>
           </div>
@@ -644,6 +738,210 @@ const ProfileSettings: React.FC = () => {
 
         {/* Dedicated Hardware Settings Dialog */}
         <HardwareSettingsDialog open={showHardwareSettings} onOpenChange={setShowHardwareSettings} />
+
+        {/* Device Binding Status Dialog */}
+        <Dialog open={showDeviceBindingDialog} onOpenChange={setShowDeviceBindingDialog}>
+          <DialogContent className="sm:max-w-lg max-h-[92vh] overflow-y-auto rounded-[2rem] border-0 shadow-2xl">
+            <DialogHeader className="text-center pb-1">
+              <DialogTitle className="text-xl font-black tracking-tight text-gray-900 flex items-center justify-center gap-2">
+                <Lock className="w-5 h-5 text-amber-500" />
+                Device Binding Status
+              </DialogTitle>
+              <DialogDescription className="text-xs font-semibold text-gray-500">
+                Check which store account is currently linked to this device.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="pt-2">
+              {statusLoading ? (
+                <div className="flex flex-col items-center justify-center py-10 gap-3">
+                  <Loader2 className="w-8 h-8 text-[#BF953F] animate-spin" />
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Checking device status…</p>
+                </div>
+              ) : deviceStatus?.bound ? (
+                <Card className="border-2 border-amber-500/40 bg-amber-50/60 backdrop-blur-sm rounded-3xl shadow-xl overflow-hidden">
+                  <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 px-6 py-4">
+                    <div className="flex items-center gap-3 text-white">
+                      <div className="w-10 h-10 bg-white/25 backdrop-blur rounded-xl flex items-center justify-center border border-white/30">
+                        <Lock className="w-5 h-5" />
+                      </div>
+                      <div className="text-left flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge variant="destructive" className="bg-white/25 border-0 text-white text-[9px] font-black uppercase tracking-widest rounded-full px-3 py-0.5">
+                            Device Bound
+                          </Badge>
+                        </div>
+                        <h3 className="text-base font-black tracking-tight">
+                          {deviceStatus.tenant?.storeName || deviceStatus.admin?.businessName || user?.businessName || 'Registered Store'}
+                        </h3>
+                        {deviceStatus.tenant?.subdomain && (
+                          <p className="text-[10px] font-bold text-white/80 uppercase tracking-widest mt-0.5">{deviceStatus.tenant.subdomain}.smartpos.app</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <CardContent className="p-5 space-y-3">
+                    <div className="flex items-center gap-3 p-3 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                      <div className="w-9 h-9 bg-blue-50 text-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <UserIcon className="w-4.5 h-4.5" />
+                      </div>
+                      <div className="flex-1 min-w-0 text-left">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-0.5">Account Owner</p>
+                        <p className="text-sm font-bold text-gray-900 truncate">
+                          {deviceStatus.admin?.ownerName || deviceStatus.admin?.username || user?.ownerName || 'Store Admin'}
+                        </p>
+                        {deviceStatus.admin?.role && (
+                          <Badge className="mt-1 bg-blue-50 text-blue-600 border-0 text-[9px] font-black uppercase tracking-widest">{deviceStatus.admin.role}</Badge>
+                        )}
+                      </div>
+                    </div>
+                    {(deviceStatus.admin?.mobile || user?.mobile) && (
+                      <div className="flex items-center gap-3 p-3 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                        <div className="w-9 h-9 bg-emerald-50 text-emerald-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <Smartphone className="w-4.5 h-4.5" />
+                        </div>
+                        <div className="flex-1 min-w-0 text-left">
+                          <p className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-0.5">Contact Number</p>
+                          <p className="text-sm font-bold text-gray-900 truncate">{deviceStatus.admin?.mobile || user?.mobile}</p>
+                        </div>
+                      </div>
+                    )}
+                    {(deviceStatus.admin?.email || user?.email) && (
+                      <div className="flex items-center gap-3 p-3 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                        <div className="w-9 h-9 bg-sky-50 text-sky-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <Mail className="w-4.5 h-4.5" />
+                        </div>
+                        <div className="flex-1 min-w-0 text-left">
+                          <p className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-0.5">Email Address</p>
+                          <p className="text-sm font-bold text-gray-900 truncate">{deviceStatus.admin?.email || user?.email}</p>
+                        </div>
+                      </div>
+                    )}
+                    <div className="p-3.5 bg-amber-100/80 rounded-2xl border border-amber-200/80 flex items-start gap-2.5">
+                      <AlertTriangle className="w-4.5 h-4.5 text-amber-600 flex-shrink-0 mt-0.5" />
+                      <p className="text-[11px] font-semibold text-amber-900/90 leading-relaxed">
+                        Unbinding this device will <span className="font-black">permanently erase</span> all store data,
+                        products, sales history, and settings from this device. This action cannot be undone.
+                      </p>
+                    </div>
+                    <div className="pt-2 flex flex-col gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={checkDeviceStatus}
+                        className="w-full rounded-2xl h-11 font-black text-xs border-gray-200 text-gray-600 hover:bg-gray-50"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5 mr-2" />
+                        Refresh Device Status
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        onClick={() => setShowUnbindConfirm(true)}
+                        className="w-full rounded-2xl h-12 font-black text-xs shadow-lg bg-rose-600 hover:bg-rose-700 border-0"
+                      >
+                        <Unlock className="w-4 h-4 mr-2" />
+                        Unbind & Factory Reset Device
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card className="border-2 border-emerald-500/30 bg-emerald-50/60 rounded-3xl shadow-xl overflow-hidden">
+                  <div className="bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-4">
+                    <div className="flex items-center gap-3 text-white">
+                      <div className="w-10 h-10 bg-white/25 backdrop-blur rounded-xl flex items-center justify-center border border-white/30">
+                        <CheckCircle2 className="w-5 h-5" />
+                      </div>
+                      <div className="text-left flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge className="bg-white/25 border-0 text-white text-[9px] font-black uppercase tracking-widest rounded-full px-3 py-0.5">
+                            Ready
+                          </Badge>
+                        </div>
+                        <h3 className="text-base font-black tracking-tight">Device is unbound</h3>
+                        <p className="text-[10px] font-bold text-white/80 mt-0.5">No store account is currently linked.</p>
+                      </div>
+                    </div>
+                  </div>
+                  <CardContent className="p-5 space-y-3">
+                    <div className="p-3 bg-white rounded-2xl border border-gray-100 flex items-start gap-2.5">
+                      <CheckCircle2 className="w-4.5 h-4.5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                      <p className="text-[11px] font-semibold text-gray-700 leading-relaxed">
+                        This device is clean and ready. You can create a new store account or sign in to an existing one.
+                      </p>
+                    </div>
+                    <div className="pt-2 flex flex-col gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={checkDeviceStatus}
+                        className="w-full rounded-2xl h-11 font-black text-xs border-gray-200 text-gray-600 hover:bg-gray-50"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5 mr-2" />
+                        Refresh Device Status
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Unbind Confirmation AlertDialog */}
+        <AlertDialog open={showUnbindConfirm} onOpenChange={(next) => { if (!unbindLoading) setShowUnbindConfirm(next); }}>
+          <AlertDialogContent className="rounded-[2rem] max-w-md border-0 shadow-2xl bg-white">
+            <AlertDialogHeader className="text-center pb-2">
+              <div className="w-16 h-16 bg-rose-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <AlertCircle className="w-8 h-8 text-rose-500" />
+              </div>
+              <AlertDialogTitle className="text-xl font-black tracking-tight text-gray-900">
+                Factory Reset This Device?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-sm font-medium text-gray-500 leading-relaxed pt-1">
+                This will completely erase the registered store and <span className="font-black">ALL data</span> from this device.
+                The device will be blank and ready for a new store account.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            <div className="px-1 py-3 space-y-2">
+              {[
+                'Delete all products, inventory & variants',
+                'Clear entire sales history & receipts',
+                'Remove staff accounts & remittances',
+                'Wipe customers, credits, payments',
+                'Erase all settings & device preferences',
+                'Delete admin account & sessions'
+              ].map((item) => (
+                <div key={item} className="flex items-center gap-2.5 text-xs text-gray-600 font-medium bg-rose-50 px-3 py-2 rounded-xl border border-rose-100">
+                  <X className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
+
+            <AlertDialogFooter className="flex-col sm:flex-col gap-2 pt-2">
+              <AlertDialogCancel disabled={unbindLoading} className="w-full rounded-xl h-12 font-bold text-sm border-gray-200">
+                Cancel — Keep Data
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => { e.preventDefault(); handleConfirmUnbind(); }}
+                disabled={unbindLoading}
+                className="w-full rounded-xl h-12 font-black text-sm bg-rose-600 hover:bg-rose-700 shadow-lg shadow-rose-200"
+              >
+                {unbindLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Erasing Everything…
+                  </>
+                ) : (
+                  <>
+                    <Unlock className="w-4 h-4 mr-2" />
+                    Yes — Reset & Unbind Device
+                  </>
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Other Dialogs */}
         <Dialog open={showHelpSupportDialog} onOpenChange={setShowHelpSupportDialog}>

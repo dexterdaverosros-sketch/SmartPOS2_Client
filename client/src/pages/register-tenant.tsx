@@ -1,9 +1,35 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'wouter';
-import { Building2, Globe, User, Lock, Eye, EyeOff, Sparkles, CheckCircle2, AlertCircle, ArrowRight, ShieldCheck, Store } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { Building2, Globe, User, Lock, Eye, EyeOff, Sparkles, CheckCircle2, AlertCircle, ArrowRight, ShieldCheck, Store, Unlock, Loader2, Smartphone, Mail, User as UserIcon } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { AuthService } from '@/lib/db';
 import { useToast } from '@/hooks/use-toast';
+import api from '@/lib/api';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+import { X } from 'lucide-react';
+
+type DeviceStatus = {
+  bound: boolean;
+  tenant?: {
+    id: string;
+    storeName?: string;
+    subdomain?: string;
+    createdAt?: string;
+  } | null;
+  admin?: {
+    id: string;
+    username?: string;
+    ownerName?: string;
+    businessName?: string;
+    mobile?: string;
+    email?: string;
+    role?: string;
+  } | null;
+  message?: string;
+};
 
 const RegisterTenant: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -17,6 +43,27 @@ const RegisterTenant: React.FC = () => {
   const [result, setResult] = useState<{ success: boolean; message: string; tenantUrl?: string } | null>(null);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const [deviceStatus, setDeviceStatus] = useState<DeviceStatus | null>(null);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [showUnbindConfirm, setShowUnbindConfirm] = useState(false);
+  const [unbindLoading, setUnbindLoading] = useState(false);
+
+  const checkDeviceStatus = useCallback(async () => {
+    setStatusLoading(true);
+    try {
+      const data: DeviceStatus = await api.get('/api/tenants/device-status');
+      setDeviceStatus(data);
+    } catch (e) {
+      console.warn('[register-tenant] Failed to check device status');
+      setDeviceStatus({ bound: false, tenant: null, admin: null });
+    } finally {
+      setStatusLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkDeviceStatus();
+  }, [checkDeviceStatus]);
 
   const handleStoreNameChange = (val: string) => {
     const slug = val.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -27,9 +74,9 @@ const RegisterTenant: React.FC = () => {
     }));
   };
 
-  const handleUnbindDevice = async () => {
+  const handleConfirmUnbind = async () => {
+    setUnbindLoading(true);
     try {
-      setLoading(true);
       const res = await fetch('/api/tenants/unbind-device', { method: 'POST' });
       const d = await res.json();
       if (res.ok) {
@@ -37,35 +84,38 @@ const RegisterTenant: React.FC = () => {
         if (clientPurge && Array.isArray(clientPurge.localStorageKeys) && typeof localStorage !== 'undefined') {
           clientPurge.localStorageKeys.forEach((k: string) => localStorage.removeItem(k));
         }
-        if (clientPurge && clientPurge.purgeDexieTables) {
-          await AuthService.purgeLocalState({ skipApiCall: true });
-        } else {
-          await AuthService.purgeLocalState({ skipApiCall: true });
+        if (clientPurge && clientPurge.purgeAllLocalStorage && typeof localStorage !== 'undefined') {
+          Object.keys(localStorage).forEach((k: string) => localStorage.removeItem(k));
         }
+        await AuthService.purgeLocalState({ skipApiCall: true });
 
         setFormData({ storeName: '', subdomain: '', username: '', password: '' });
         setResult(null);
+        setShowUnbindConfirm(false);
         toast({
-          title: 'Device Unbound',
-          description: 'Device state reset. Reloading workspace...',
-          variant: 'default'
+          title: 'Device Successfully Unbound',
+          description: 'All local data erased. Device is ready for a new store.',
+          duration: 5000,
         });
-        if (typeof window !== 'undefined' && typeof window.location !== 'undefined') {
-          setTimeout(() => window.location.reload(), 600);
+        await checkDeviceStatus();
+        if (typeof window !== 'undefined') {
+          setTimeout(() => window.location.reload(), 800);
         }
       } else {
-        setResult({
-          success: false,
-          message: d.error || 'Failed to unbind device.'
+        toast({
+          title: 'Unbind Failed',
+          description: d.error || 'Failed to unbind device.',
+          variant: 'destructive',
         });
       }
     } catch (e) {
-      setResult({
-        success: false,
-        message: 'Network error resetting device lock.'
+      toast({
+        title: 'Unbind Failed',
+        description: 'Network error during device reset.',
+        variant: 'destructive',
       });
     } finally {
-      setLoading(false);
+      setUnbindLoading(false);
     }
   };
 
@@ -228,15 +278,82 @@ const RegisterTenant: React.FC = () => {
                     {!result.success && (
                       <button
                         type="button"
-                        onClick={handleUnbindDevice}
+                        onClick={() => setShowUnbindConfirm(true)}
                         className="mt-2.5 text-xs font-semibold px-3.5 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 transition-all flex items-center gap-2 shadow-sm"
                       >
-                        <ShieldCheck className="w-4 h-4 text-rose-400" />
-                        <span>Force Reset & Unbind Device Lock</span>
+                        <Unlock className="w-4 h-4 text-rose-400" />
+                        <span>Reset & Unbind Device Now</span>
                       </button>
                     )}
                   </div>
                 </motion.div>
+              )}
+
+              {!statusLoading && deviceStatus?.bound && (
+                <AnimatePresence>
+                  <motion.div
+                    initial={{ opacity: 0, y: -10, height: 0 }}
+                    animate={{ opacity: 1, y: 0, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="mb-6"
+                  >
+                    <Card className="border-2 border-amber-500/40 bg-amber-500/10 backdrop-blur-sm rounded-3xl shadow-xl overflow-hidden">
+                      <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 px-5 py-3.5">
+                        <div className="flex items-center gap-3 text-white">
+                          <div className="w-9 h-9 bg-white/25 backdrop-blur rounded-xl flex items-center justify-center border border-white/30">
+                            <Lock className="w-4.5 h-4.5" />
+                          </div>
+                          <div className="text-left flex-1">
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <Badge variant="destructive" className="bg-white/25 border-0 text-white text-[9px] font-black uppercase tracking-widest rounded-full px-2.5 py-0.5">
+                                Device Bound
+                              </Badge>
+                            </div>
+                            <h3 className="text-sm font-black tracking-tight">
+                              {deviceStatus.tenant?.storeName || deviceStatus.admin?.businessName || 'Registered Store'}
+                            </h3>
+                          </div>
+                        </div>
+                      </div>
+                      <CardContent className="p-4 space-y-2.5">
+                        <div className="flex items-center gap-2.5 p-2.5 bg-slate-900/50 rounded-2xl border border-slate-700/60">
+                          <div className="w-8 h-8 bg-blue-500/15 text-blue-400 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <UserIcon className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0 text-left">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-0.5">Owner</p>
+                            <p className="text-xs font-bold text-white truncate">
+                              {deviceStatus.admin?.ownerName || deviceStatus.admin?.username || 'Store Admin'}
+                            </p>
+                          </div>
+                        </div>
+                        {deviceStatus.admin?.mobile && (
+                          <div className="flex items-center gap-2.5 p-2.5 bg-slate-900/50 rounded-2xl border border-slate-700/60">
+                            <div className="w-8 h-8 bg-emerald-500/15 text-emerald-400 rounded-lg flex items-center justify-center flex-shrink-0">
+                              <Smartphone className="w-4 h-4" />
+                            </div>
+                            <div className="flex-1 min-w-0 text-left">
+                              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-0.5">Contact</p>
+                              <p className="text-xs font-bold text-white truncate">{deviceStatus.admin.mobile}</p>
+                            </div>
+                          </div>
+                        )}
+                        <p className="text-[10px] font-semibold text-amber-300/90 leading-relaxed pt-1">
+                          This device is already registered. You must unbind & factory-reset before creating a new store account.
+                        </p>
+                        <Button
+                          type="button"
+                          onClick={() => setShowUnbindConfirm(true)}
+                          variant="destructive"
+                          className="w-full rounded-2xl h-11 font-black text-xs shadow-lg bg-rose-600 hover:bg-rose-700 border-0"
+                        >
+                          <Unlock className="w-4 h-4 mr-1.5" />
+                          Unbind & Reset This Device
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                </AnimatePresence>
               )}
 
               <form onSubmit={handleSubmit} className="space-y-5">
@@ -361,6 +478,62 @@ const RegisterTenant: React.FC = () => {
       <footer className="w-full max-w-7xl mx-auto px-6 py-4 text-center text-xs text-slate-500 z-10 border-t border-slate-900">
         &copy; {new Date().getFullYear()} SmartPOS Enterprise. Isolated Tenant Multi-Store Operating System.
       </footer>
+
+      <AlertDialog open={showUnbindConfirm} onOpenChange={setShowUnbindConfirm}>
+        <AlertDialogContent className="rounded-[2rem] max-w-md border-0 shadow-2xl bg-white">
+          <AlertDialogHeader className="text-center pb-2">
+            <div className="w-16 h-16 bg-rose-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <AlertCircle className="w-8 h-8 text-rose-500" />
+            </div>
+            <AlertDialogTitle className="text-xl font-black tracking-tight text-gray-900">
+              Factory Reset This Device?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-sm font-medium text-gray-500 leading-relaxed pt-1">
+              This will completely erase the registered store and all data from this device.
+              The device will be blank and ready for a new store account.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="px-1 py-3 space-y-2">
+            {[
+              'Delete all products, inventory & variants',
+              'Clear entire sales history & receipts',
+              'Remove staff accounts & remittances',
+              'Wipe customers, credits, payments',
+              'Erase all settings & device preferences',
+              'Delete admin account & sessions'
+            ].map((item) => (
+              <div key={item} className="flex items-center gap-2.5 text-xs text-gray-600 font-medium bg-rose-50 px-3 py-2 rounded-xl border border-rose-100">
+                <X className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
+                <span>{item}</span>
+              </div>
+            ))}
+          </div>
+
+          <AlertDialogFooter className="flex-col sm:flex-col gap-2 pt-2">
+            <AlertDialogCancel className="w-full rounded-xl h-12 font-bold text-sm border-gray-200">
+              Cancel — Keep Data
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); handleConfirmUnbind(); }}
+              disabled={unbindLoading}
+              className="w-full rounded-xl h-12 font-black text-sm bg-rose-600 hover:bg-rose-700 shadow-lg shadow-rose-200"
+            >
+              {unbindLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Erasing Everything…
+                </>
+              ) : (
+                <>
+                  <Unlock className="w-4 h-4 mr-2" />
+                  Yes — Reset & Unbind Device
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

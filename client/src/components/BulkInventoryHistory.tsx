@@ -3,24 +3,19 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   History, 
   Search, 
-  Calendar, 
-  Building2, 
   ChevronLeft, 
   ChevronRight, 
   Eye, 
   X, 
-  Package, 
   FileText, 
-  User, 
-  Clock, 
-  ArrowUpDown,
-  Filter,
   RefreshCw,
-  Boxes
+  Boxes,
+  Calendar,
+  Building2,
+  Package
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { BulkInventoryService } from '@/lib/db';
 import { useToast } from '@/hooks/use-toast';
@@ -143,40 +138,40 @@ export const BulkInventoryHistory: React.FC<BulkInventoryHistoryProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-5xl h-[90vh] flex flex-col p-0 overflow-hidden rounded-[2.5rem] border-none shadow-2xl bg-slate-900 text-white">
+      <DialogContent className="max-w-5xl h-[90vh] flex flex-col p-0 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">
         {/* Header */}
-        <DialogHeader className="p-6 sm:p-8 bg-slate-950 border-b border-white/10 flex-none relative">
+        <DialogHeader className="p-5 sm:p-6 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex-none">
           <div className="flex justify-between items-start">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-[#BF953F]/10 border border-[#BF953F]/20 flex items-center justify-center text-[#BF953F]">
-                <History className="w-6 h-6" />
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-300">
+                <History className="w-5 h-5" />
               </div>
               <div>
-                <DialogTitle className="text-2xl font-black tracking-tight text-white uppercase flex items-center gap-2">
+                <DialogTitle className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                   Bulk Inventory History
-                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-white/10">
-                    AUDIT LOG
+                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                    Audit Log
                   </span>
                 </DialogTitle>
-                <p className="text-xs text-slate-400 font-medium">Historical audit records of all bulk receiving deliveries</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Audit records and item snapshots for all receiving deliveries</p>
               </div>
             </div>
             <button
               onClick={onClose}
-              className="w-10 h-10 rounded-2xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all"
+              className="p-2 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
           {/* Filter Bar */}
-          <form onSubmit={handleApplyFilter} className="mt-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5 pt-4 border-t border-white/5">
+          <form onSubmit={handleApplyFilter} className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
             <div>
               <Input
                 value={reference}
                 onChange={e => setReference(e.target.value)}
-                placeholder="Search Reference (BI-...)"
-                className="h-10 bg-white/5 border-white/10 rounded-xl text-xs font-bold text-white placeholder:text-slate-500 focus:border-[#BF953F]"
+                placeholder="Reference No. (BI-...)"
+                className="h-9 bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-[#FF8882]"
               />
             </div>
             <div>
@@ -184,7 +179,7 @@ export const BulkInventoryHistory: React.FC<BulkInventoryHistoryProps> = ({
                 value={supplier}
                 onChange={e => setSupplier(e.target.value)}
                 placeholder="Filter by Supplier"
-                className="h-10 bg-white/5 border-white/10 rounded-xl text-xs font-bold text-white placeholder:text-slate-500 focus:border-[#BF953F]"
+                className="h-9 bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-[#FF8882]"
               />
             </div>
             <div>
@@ -192,7 +187,7 @@ export const BulkInventoryHistory: React.FC<BulkInventoryHistoryProps> = ({
                 value={productName}
                 onChange={e => setProductName(e.target.value)}
                 placeholder="Filter by Product Name"
-                className="h-10 bg-white/5 border-white/10 rounded-xl text-xs font-bold text-white placeholder:text-slate-500 focus:border-[#BF953F]"
+                className="h-9 bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-[#FF8882]"
               />
             </div>
             <div className="flex items-center gap-1">
@@ -200,22 +195,22 @@ export const BulkInventoryHistory: React.FC<BulkInventoryHistoryProps> = ({
                 type="date"
                 value={dateFrom}
                 onChange={e => setDateFrom(e.target.value)}
-                className="h-10 bg-white/5 border-white/10 rounded-xl text-[11px] font-bold text-white focus:border-[#BF953F] px-2"
+                className="h-9 bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 rounded-lg text-[11px] text-slate-900 dark:text-white px-2 focus:border-[#FF8882]"
                 title="From Date"
               />
-              <span className="text-xs text-slate-500">-</span>
+              <span className="text-xs text-slate-400">-</span>
               <Input
                 type="date"
                 value={dateTo}
                 onChange={e => setDateTo(e.target.value)}
-                className="h-10 bg-white/5 border-white/10 rounded-xl text-[11px] font-bold text-white focus:border-[#BF953F] px-2"
+                className="h-9 bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 rounded-lg text-[11px] text-slate-900 dark:text-white px-2 focus:border-[#FF8882]"
                 title="To Date"
               />
             </div>
             <div className="flex items-center gap-1.5">
               <Button
                 type="submit"
-                className="flex-1 h-10 bg-[#BF953F] text-black font-black uppercase text-[11px] rounded-xl hover:bg-[#AA771C] transition-all"
+                className="flex-1 h-9 bg-[#FF8882] hover:bg-[#ff7770] text-white text-xs font-medium rounded-lg shadow-sm transition-all"
               >
                 Filter
               </Button>
@@ -223,34 +218,34 @@ export const BulkInventoryHistory: React.FC<BulkInventoryHistoryProps> = ({
                 type="button"
                 variant="outline"
                 onClick={handleClearFilters}
-                className="h-10 px-3 border-white/15 bg-white/5 text-slate-400 hover:text-white rounded-xl text-xs"
-                title="Clear Filters"
+                className="h-9 px-3 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg text-xs"
+                title="Reset Filters"
               >
-                Clear
+                Reset
               </Button>
             </div>
           </form>
         </DialogHeader>
 
-        {/* History Table Content */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-8 custom-scrollbar bg-slate-950/40">
+        {/* History Table / Cards Content */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50/50 dark:bg-slate-950/30">
           {isLoading ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-8">
-              <RefreshCw className="w-8 h-8 text-[#BF953F] animate-spin mb-3" />
-              <p className="text-xs font-black uppercase tracking-wider text-slate-400">Loading History Records...</p>
+              <RefreshCw className="w-6 h-6 text-slate-400 animate-spin mb-2" />
+              <p className="text-xs text-slate-500 dark:text-slate-400">Loading history records...</p>
             </div>
           ) : rows.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-white/10 rounded-3xl">
-              <div className="w-16 h-16 rounded-3xl bg-white/5 flex items-center justify-center mb-4 text-slate-500">
-                <FileText className="w-8 h-8 text-slate-400" />
+            <div className="h-full min-h-[220px] flex flex-col items-center justify-center text-center p-8 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl bg-white/60 dark:bg-slate-900/40">
+              <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-3 text-slate-400">
+                <FileText className="w-6 h-6" />
               </div>
-              <h3 className="text-base font-black uppercase tracking-wider text-slate-200">No History Records Found</h3>
-              <p className="text-xs text-slate-400 max-w-sm mt-1">
-                Deliveries entered through the Bulk Inventory workspace will automatically be recorded here with complete item snapshots.
+              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">No records found</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mt-1">
+                Completed bulk inventory intake sessions will appear here with full line snapshots and batch details.
               </p>
             </div>
           ) : (
-            <div className="space-y-2.5">
+            <div className="space-y-2">
               {rows.map((tx) => {
                 const refNum = tx.reference_number || tx.referenceNumber || tx.id;
                 const supp = tx.supplier_company || tx.supplierCompany || 'Unspecified Supplier';
@@ -264,47 +259,47 @@ export const BulkInventoryHistory: React.FC<BulkInventoryHistoryProps> = ({
                   <div
                     key={tx.id}
                     onClick={() => handleOpenDetail(tx.id)}
-                    className="p-4 sm:p-5 rounded-2xl bg-white/5 border border-white/10 hover:border-[#BF953F]/40 hover:bg-white/10 cursor-pointer transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 group"
+                    className="p-3.5 sm:p-4 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/60 shadow-sm hover:border-[#FF8882]/60 hover:shadow-md cursor-pointer transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 group"
                   >
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-[#BF953F]/10 border border-[#BF953F]/20 flex items-center justify-center text-[#BF953F] group-hover:scale-105 transition-transform flex-none">
-                        <Boxes className="w-5 h-5" />
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 group-hover:text-[#FF8882] transition-colors flex-none">
+                        <Boxes className="w-4 h-4" />
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="font-mono font-black text-sm text-white">{refNum}</span>
-                          <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                          <span className="font-mono font-bold text-xs text-slate-900 dark:text-white">{refNum}</span>
+                          <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/40">
                             {tx.status || 'COMPLETED'}
                           </span>
                         </div>
-                        <div className="flex items-center gap-3 text-xs text-slate-400 mt-1">
-                          <span className="font-bold text-slate-200">{supp}</span>
+                        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                          <span className="font-medium text-slate-700 dark:text-slate-300">{supp}</span>
                           <span>•</span>
                           <span>{format(new Date(dateStr), 'MMM dd, yyyy · hh:mm a')}</span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-6 justify-between md:justify-end border-t md:border-t-0 border-white/5 pt-3 md:pt-0">
+                    <div className="flex items-center gap-5 justify-between md:justify-end border-t md:border-t-0 border-slate-100 dark:border-slate-700/60 pt-2 md:pt-0">
                       <div className="text-right">
-                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 block">Items / Units</span>
-                        <span className="text-xs font-black text-slate-200">{itemsCount} items ({unitsCount} units)</span>
+                        <span className="text-[10px] font-medium text-slate-400 block">Items / Units</span>
+                        <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">{itemsCount} items ({unitsCount} pcs)</span>
                       </div>
 
                       <div className="text-right">
-                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 block">Total Cost</span>
-                        <span className="text-sm font-black text-emerald-400">₱{costTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        <span className="text-[10px] font-medium text-slate-400 block">Total Value</span>
+                        <span className="text-xs font-bold text-slate-900 dark:text-white">₱{costTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                       </div>
 
                       <div className="text-right hidden sm:block">
-                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 block">Received By</span>
-                        <span className="text-xs font-bold text-slate-300">{creator}</span>
+                        <span className="text-[10px] font-medium text-slate-400 block">Recorded By</span>
+                        <span className="text-xs font-medium text-slate-600 dark:text-slate-400">{creator}</span>
                       </div>
 
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-9 w-9 rounded-xl text-slate-400 group-hover:text-white group-hover:bg-white/10"
+                        className="h-8 w-8 rounded-lg text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200"
                       >
                         <Eye className="w-4 h-4" />
                       </Button>
@@ -317,24 +312,24 @@ export const BulkInventoryHistory: React.FC<BulkInventoryHistoryProps> = ({
         </div>
 
         {/* Footer & Pagination */}
-        <div className="p-4 sm:p-6 bg-slate-950 border-t border-white/10 flex-none flex items-center justify-between">
-          <div className="text-xs text-slate-400">
-            Showing <strong className="text-white">{rows.length}</strong> of <strong className="text-white">{totalRecords}</strong> total sessions
+        <div className="p-3.5 sm:p-4 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex-none flex items-center justify-between">
+          <div className="text-xs text-slate-500 dark:text-slate-400">
+            Showing <strong className="text-slate-800 dark:text-slate-200">{rows.length}</strong> of <strong className="text-slate-800 dark:text-slate-200">{totalRecords}</strong> sessions
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <Button
               type="button"
               variant="outline"
               size="sm"
               disabled={page <= 1 || isLoading}
               onClick={() => loadHistory(page - 1)}
-              className="h-9 px-3 rounded-xl border-white/15 bg-white/5 text-slate-300 disabled:opacity-30"
+              className="h-8 px-2.5 rounded-lg border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 disabled:opacity-40"
             >
-              <ChevronLeft className="w-4 h-4 mr-1" />
+              <ChevronLeft className="w-3.5 h-3.5 mr-1" />
               <span>Prev</span>
             </Button>
-            <span className="text-xs font-bold text-slate-400 px-2">
+            <span className="text-xs font-medium text-slate-600 dark:text-slate-400 px-2">
               Page {page} of {totalPages}
             </span>
             <Button
@@ -343,35 +338,35 @@ export const BulkInventoryHistory: React.FC<BulkInventoryHistoryProps> = ({
               size="sm"
               disabled={page >= totalPages || isLoading}
               onClick={() => loadHistory(page + 1)}
-              className="h-9 px-3 rounded-xl border-white/15 bg-white/5 text-slate-300 disabled:opacity-30"
+              className="h-8 px-2.5 rounded-lg border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 disabled:opacity-40"
             >
               <span>Next</span>
-              <ChevronRight className="w-4 h-4 ml-1" />
+              <ChevronRight className="w-3.5 h-3.5 ml-1" />
             </Button>
           </div>
         </div>
 
         {/* Detail View Modal */}
         <Dialog open={selectedTxId !== null} onOpenChange={(open) => { if (!open) { setSelectedTxId(null); setDetailData(null); } }}>
-          <DialogContent className="max-w-3xl h-[80vh] flex flex-col p-0 overflow-hidden rounded-[2.5rem] border-none shadow-2xl bg-slate-900 text-white">
-            <DialogHeader className="p-6 sm:p-8 bg-slate-950 border-b border-white/10 flex-none relative">
+          <DialogContent className="max-w-3xl h-[80vh] flex flex-col p-0 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">
+            <DialogHeader className="p-5 sm:p-6 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex-none">
               <div className="flex justify-between items-start">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-mono font-black text-[#BF953F] px-2.5 py-0.5 rounded-lg bg-[#BF953F]/10 border border-[#BF953F]/20">
+                    <span className="text-xs font-mono font-bold text-slate-900 dark:text-white px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800">
                       {detailData?.transaction?.reference_number || detailData?.transaction?.referenceNumber || selectedTxId}
                     </span>
-                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/40">
                       {detailData?.transaction?.status || 'COMPLETED'}
                     </span>
                   </div>
-                  <DialogTitle className="text-xl font-black uppercase tracking-tight text-white">
-                    Bulk Delivery Session Details
+                  <DialogTitle className="text-base font-semibold text-slate-900 dark:text-white">
+                    Bulk Receiving Session Details
                   </DialogTitle>
                 </div>
                 <button
                   onClick={() => { setSelectedTxId(null); setDetailData(null); }}
-                  className="w-10 h-10 rounded-2xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all"
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -379,35 +374,35 @@ export const BulkInventoryHistory: React.FC<BulkInventoryHistoryProps> = ({
 
               {/* Transaction Meta Card */}
               {detailData && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-white/5 text-xs">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
                   <div>
-                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 block">Supplier</span>
-                    <span className="font-bold text-slate-200">{detailData.transaction.supplier_company || detailData.transaction.supplierCompany || 'N/A'}</span>
+                    <span className="text-[10px] font-medium text-slate-400 block">Supplier</span>
+                    <span className="font-medium text-slate-800 dark:text-slate-200">{detailData.transaction.supplier_company || detailData.transaction.supplierCompany || 'N/A'}</span>
                   </div>
                   <div>
-                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 block">Received At</span>
-                    <span className="font-bold text-slate-200">
+                    <span className="text-[10px] font-medium text-slate-400 block">Received At</span>
+                    <span className="font-medium text-slate-800 dark:text-slate-200">
                       {format(new Date(detailData.transaction.createdAt || detailData.transaction.created_at || new Date()), 'MMM dd, yyyy · hh:mm a')}
                     </span>
                   </div>
                   <div>
-                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 block">Total Units</span>
-                    <span className="font-black text-[#BF953F]">{detailData.summary?.totalUnits || 0} units ({detailData.summary?.totalItems || 0} items)</span>
+                    <span className="text-[10px] font-medium text-slate-400 block">Units / Items</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">{detailData.summary?.totalUnits || 0} units ({detailData.summary?.totalItems || 0} items)</span>
                   </div>
                   <div>
-                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 block">Total Cost</span>
-                    <span className="font-black text-emerald-400">₱{Number(detailData.summary?.totalCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    <span className="text-[10px] font-medium text-slate-400 block">Total Value</span>
+                    <span className="font-bold text-slate-900 dark:text-white">₱{Number(detailData.summary?.totalCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                   </div>
                 </div>
               )}
             </DialogHeader>
 
             {/* Item Details List */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-2.5 custom-scrollbar bg-slate-950/40">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-2 bg-slate-50/50 dark:bg-slate-950/30">
               {isLoadingDetail ? (
                 <div className="h-full flex flex-col items-center justify-center text-center p-8">
-                  <RefreshCw className="w-8 h-8 text-[#BF953F] animate-spin mb-3" />
-                  <p className="text-xs font-black uppercase tracking-wider text-slate-400">Loading item snapshot...</p>
+                  <RefreshCw className="w-6 h-6 text-slate-400 animate-spin mb-2" />
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Loading item snapshots...</p>
                 </div>
               ) : !detailData || !detailData.items || detailData.items.length === 0 ? (
                 <div className="text-center py-12 text-slate-400 text-xs font-medium">
@@ -420,36 +415,36 @@ export const BulkInventoryHistory: React.FC<BulkInventoryHistoryProps> = ({
                   return (
                     <div
                       key={item.id || idx}
-                      className="p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                      className="p-3 sm:p-3.5 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/60 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs"
                     >
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-[9px] font-mono text-slate-400">Barcode: {item.barcode}</span>
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className="text-[10px] font-mono text-slate-400">{item.barcode}</span>
                           {item.supplier_company_override && (
-                            <span className="text-[9px] font-bold text-slate-300">({item.supplier_company_override})</span>
+                            <span className="text-[10px] font-medium text-slate-500">({item.supplier_company_override})</span>
                           )}
                         </div>
-                        <h5 className="font-black text-white uppercase text-sm truncate">
+                        <h5 className="font-medium text-slate-900 dark:text-white text-xs truncate">
                           {item.product_name_snapshot || item.productNameSnapshot || 'Product'}
                         </h5>
                       </div>
 
-                      <div className="flex items-center gap-6 justify-between sm:justify-end">
+                      <div className="flex items-center gap-4 sm:gap-6 justify-between sm:justify-end border-t sm:border-t-0 pt-1.5 sm:pt-0 border-slate-100 dark:border-slate-700/60">
                         <div className="text-right">
-                          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 block">Quantity</span>
-                          <span className="font-black text-[#BF953F]">+{item.quantity}</span>
+                          <span className="text-[10px] font-medium text-slate-400 block">Quantity</span>
+                          <span className="font-semibold text-slate-800 dark:text-slate-200">+{item.quantity}</span>
                         </div>
                         <div className="text-right">
-                          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 block">Unit Cost</span>
-                          <span className="font-bold text-slate-200">₱{Number(item.cost_snapshot || item.costSnapshot || 0).toFixed(2)}</span>
+                          <span className="text-[10px] font-medium text-slate-400 block">Cost</span>
+                          <span className="font-medium text-slate-700 dark:text-slate-300">₱{Number(item.cost_snapshot || item.costSnapshot || 0).toFixed(2)}</span>
                         </div>
                         <div className="text-right">
-                          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 block">Selling Price</span>
-                          <span className="font-bold text-slate-200">₱{Number(item.selling_price_snapshot || item.sellingPriceSnapshot || 0).toFixed(2)}</span>
+                          <span className="text-[10px] font-medium text-slate-400 block">Selling Price</span>
+                          <span className="font-medium text-slate-700 dark:text-slate-300">₱{Number(item.selling_price_snapshot || item.sellingPriceSnapshot || 0).toFixed(2)}</span>
                         </div>
-                        <div className="text-right min-w-[70px]">
-                          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 block">Subtotal</span>
-                          <span className="font-black text-emerald-400">₱{lineCostSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        <div className="text-right min-w-[64px]">
+                          <span className="text-[10px] font-medium text-slate-400 block">Subtotal</span>
+                          <span className="font-semibold text-slate-900 dark:text-white">₱{lineCostSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                         </div>
                       </div>
                     </div>
@@ -458,11 +453,12 @@ export const BulkInventoryHistory: React.FC<BulkInventoryHistoryProps> = ({
               )}
             </div>
 
-            <DialogFooter className="p-4 bg-slate-950 border-t border-white/10 flex-none">
+            <DialogFooter className="p-3.5 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex-none">
               <Button
                 type="button"
+                variant="outline"
                 onClick={() => { setSelectedTxId(null); setDetailData(null); }}
-                className="w-full h-12 rounded-xl bg-white/10 text-white hover:bg-white/20 font-black uppercase text-xs"
+                className="w-full h-9 rounded-xl border-slate-200 dark:border-slate-700 text-xs font-medium"
               >
                 Close Details
               </Button>

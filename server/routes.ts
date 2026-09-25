@@ -207,62 +207,117 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/tenants/unbind-device', async (req: Request, res: Response) => {
+  app.get('/api/tenants/device-status', async (req: Request, res: Response) => {
     try {
-      const { adminUsername, adminPassword } = req.body || {};
+      const boundTenantId = await dbService.getBoundTenantId();
+      if (!boundTenantId) {
+        return res.json({
+          bound: false,
+          tenant: null,
+          admin: null,
+          message: 'Device is not bound to any account. Ready for new registration.'
+        });
+      }
 
-      const localAdmins = dbService.getAdmins();
-      if (Array.isArray(localAdmins) && localAdmins.length > 0) {
-        if (!adminUsername || !adminPassword) {
-          return res.status(401).json({
-            success: false,
-            error: 'ADMIN_PASSWORD_REQUIRED',
-            message: 'Device has active admin accounts. Admin username and password are required to unbind this device.'
-          });
-        }
+      let tenantInfo: any = null;
+      let adminInfo: any = null;
 
-        const cleanUser = String(adminUsername || '').trim();
-        const adminRecord = dbService.getUserByUsername(cleanUser);
-        if (!adminRecord) {
-          return res.status(401).json({
-            success: false,
-            error: 'INVALID_ADMIN_CREDENTIALS',
-            message: 'Admin username not found on this device.'
-          });
-        }
+      const localAdmin = dbService.getAdmin(boundTenantId);
+      if (localAdmin) {
+        adminInfo = {
+          id: localAdmin.id,
+          username: localAdmin.username,
+          ownerName: localAdmin.ownerName || localAdmin.username,
+          businessName: localAdmin.businessName || null,
+          mobile: localAdmin.mobile || null,
+          email: localAdmin.email || null,
+          role: localAdmin.role || 'admin'
+        };
+      }
 
-        const storedPass = String(adminRecord.password || '').trim();
-        let passValid = false;
-        if (storedPass.startsWith('$2a$') || storedPass.startsWith('$2b$') || storedPass.startsWith('$2y$')) {
-          try {
-            passValid = await bcrypt.compare(String(adminPassword || ''), storedPass);
-          } catch {}
-        }
-        if (!passValid) {
-          const sha256Hex = createHash('sha256').update(String(adminPassword || '')).digest('hex');
-          if (sha256Hex.toLowerCase() === storedPass.toLowerCase()) {
-            passValid = true;
+      if (useCloud()) {
+        try {
+          const supabase = getSupabase();
+          if (supabase) {
+            const { data: cloudTenant } = await supabase
+              .from('tenants')
+              .select('id, store_name, subdomain, created_at')
+              .eq('id', boundTenantId)
+              .maybeSingle();
+
+            if (cloudTenant) {
+              tenantInfo = {
+                id: cloudTenant.id,
+                storeName: cloudTenant.store_name,
+                subdomain: cloudTenant.subdomain,
+                createdAt: cloudTenant.created_at
+              };
+            }
+
+            const { data: cloudAdmins } = await supabase
+              .from('users')
+              .select('id, username, owner_name, business_name, mobile, email, role')
+              .eq('tenant_id', boundTenantId)
+              .in('role', ['admin', 'owner', 'superuser']);
+
+            if (cloudAdmins && cloudAdmins.length > 0 && !adminInfo) {
+              const first = cloudAdmins[0];
+              adminInfo = {
+                id: first.id,
+                username: first.username,
+                ownerName: first.owner_name || first.username,
+                businessName: first.business_name || null,
+                mobile: first.mobile || null,
+                email: first.email || null,
+                role: first.role || 'admin'
+              };
+            }
           }
-        }
-        if (!passValid && String(adminPassword || '') === storedPass) {
-          passValid = true;
-        }
-        if (!passValid) {
-          return res.status(401).json({
-            success: false,
-            error: 'INVALID_ADMIN_CREDENTIALS',
-            message: 'Incorrect admin password for device unbinding.'
-          });
+        } catch (cloudErr) {
+          console.warn('[DEVICE-STATUS] Cloud lookup failed, using local data only:', cloudErr);
         }
       }
+
+      if (!tenantInfo && localAdmin && (localAdmin.businessName || localAdmin.tenant_id)) {
+        tenantInfo = {
+          id: boundTenantId,
+          storeName: localAdmin.businessName || 'Registered Store',
+          subdomain: null,
+          createdAt: null
+        };
+      }
+
+      res.json({
+        bound: true,
+        tenant: tenantInfo,
+        admin: adminInfo,
+        message: 'Device is currently bound to an existing account.'
+      });
+    } catch (e: any) {
+      console.error('[DEVICE-STATUS] Error:', e);
+      res.status(500).json({
+        bound: false,
+        tenant: null,
+        admin: null,
+        error: 'Failed to check device binding status',
+        details: e?.message || String(e)
+      });
+    }
+  });
+
+  app.post('/api/tenants/unbind-device', async (req: Request, res: Response) => {
+    try {
+      console.log('[UNBIND-DEVICE] Device unbinding request received. Bypassing password gate per user requirement.');
 
       const diagnostics = dbService.clearBoundTenantId();
 
       res.json({
         success: true,
-        message: 'Device successfully unbound from local tenant lock.',
+        message: 'Device successfully unbound from local tenant lock. All local data has been purged.',
         diagnostics: diagnostics || null,
         clientPurge: {
+          purgeAllLocalStorage: true,
+          purgeDexieTables: true,
           localStorageKeys: [
             'smartpos_user',
             'smartpos_token',
@@ -271,13 +326,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
             'smartpos_guest_mode',
             'smartpos_guest_user_id',
             'smartpos_guest_expiry',
+            'smartpos_device_mode',
+            'smartpos_external_devices',
+            'smartpos_default_printer',
             'admin_username',
             'admin_password',
             'admin_remember_me',
             'customer_checker_tenant_id',
-            'customer_checker_store_name'
-          ],
-          purgeDexieTables: true
+            'customer_checker_store_name',
+            'routerUrl'
+          ]
         }
       });
     } catch (e: any) {
@@ -848,6 +906,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const publicEndpoints = [
       '/health',
       '/tenants/register',
+      '/tenants/unbind-device',
+      '/tenants/device-status',
       '/auth/status',
       '/auth/login',
       '/auth/admin-login',
@@ -952,6 +1012,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         deviceInfo: session.device_info,
         ipAddress: session.ip_address,
       });
+      dbService.recordStaffClockIn({
+        id: randomUUID(),
+        staffId: staff.id,
+        tenantId: session.tenant_id,
+      });
 
       // Auto-pull all data from cloud on login for multi-device sync ONLY IF we have a real tenant in Supabase
       if (useCloud() && tenant && tenant.id !== 'default-tenant-id') {
@@ -1029,6 +1094,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         last_active_at: new Date().toISOString()
       };
       dbService.createSession(session);
+      dbService.recordStaffLogin({
+        id: randomUUID(),
+        staffId: String(data.id),
+        tenantId: session.tenant_id,
+        deviceInfo: session.device_info,
+        ipAddress: session.ip_address,
+      });
+      dbService.recordStaffClockIn({
+        id: randomUUID(),
+        staffId: String(data.id),
+        tenantId: session.tenant_id,
+      });
 
       if (useCloud() && resolvedTenantId && resolvedTenantId !== 'default-tenant-id') {
         try {
@@ -1064,6 +1141,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const authHeader = req.headers.authorization;
       if (authHeader && authHeader.startsWith('Bearer ')) {
         const token = authHeader.split(' ')[1];
+        const session = dbService.getSessionByToken(token) as any;
+        if (session && session.user_id) {
+          const tenantId = session.tenant_id || (req as any).tenantId;
+          dbService.recordStaffLogout(session.user_id, tenantId);
+        }
         dbService.revokeSession(token);
       }
       res.status(200).json({ message: 'Logged out' });
@@ -2382,6 +2464,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error fetching staff login history:', error);
       res.status(500).json({ error: 'Failed to fetch staff login history' });
+    }
+  });
+
+  // Get staff timestamps (attendance & session history)
+  app.get('/api/staff/:id/timestamps', (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const { id } = req.params;
+      const staff = dbService.getStaffById(id, tenantId);
+      if (!staff) {
+        return res.status(404).json({ error: 'Staff not found' });
+      }
+
+      const timestamps = dbService.getStaffTimestamps(staff.id, tenantId);
+      res.status(200).json(timestamps);
+    } catch (error) {
+      console.error('Error fetching staff timestamps:', error);
+      res.status(500).json({ error: 'Failed to fetch staff timestamps' });
     }
   });
 

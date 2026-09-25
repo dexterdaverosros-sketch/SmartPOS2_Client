@@ -28,7 +28,8 @@ import {
   User,
   Briefcase,
   Building,
-  Download
+  Download,
+  FileSpreadsheet
 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import Layout from '@/components/Layout';
@@ -159,9 +160,80 @@ const StaffManagement: React.FC = () => {
   const [selectedStaff, setSelectedStaff] = useState<StaffDetails | null>(null);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isPushingToCloud, setIsPushingToCloud] = useState(false);
-  const [isFetchingFromCloud, setIsFetchingFromCloud] = useState(false);
   const [showAddPasskey, setShowAddPasskey] = useState(false);
+
+  // Time Stamp / Attendance dialog states
+  const [timestampDialogOpen, setTimestampDialogOpen] = useState(false);
+  const [selectedTimestampStaff, setSelectedTimestampStaff] = useState<StaffWithStatus | null>(null);
+  const [staffTimestamps, setStaffTimestamps] = useState<any[]>([]);
+  const [isLoadingTimestamps, setIsLoadingTimestamps] = useState(false);
+
+  const handleOpenTimestamp = async (member: StaffWithStatus) => {
+    setSelectedTimestampStaff(member);
+    setTimestampDialogOpen(true);
+    setIsLoadingTimestamps(true);
+    try {
+      const data = await StaffService.getStaffTimestamps(member.id);
+      setStaffTimestamps(data);
+    } catch (e) {
+      console.error('Failed to load timestamps:', e);
+      toast({ title: 'Failed to load timestamps', variant: 'destructive' });
+      setStaffTimestamps([]);
+    } finally {
+      setIsLoadingTimestamps(false);
+    }
+  };
+
+  const handleExportTimestampsToExcel = () => {
+    if (!selectedTimestampStaff) return;
+    try {
+      const nowStr = new Date().toLocaleString();
+      const exportDate = new Date().toISOString().split('T')[0];
+      const rows: string[][] = [
+        ['SmartPOS+ Staff Attendance Record'],
+        ['Staff Name', selectedTimestampStaff.name || ''],
+        ['Staff ID', selectedTimestampStaff.staffId || ''],
+        ['Role', selectedTimestampStaff.role || 'Cashier'],
+        ['Report Generated', nowStr],
+        [''],
+        ['Date', 'Time In', 'Time Out', 'Hours Worked', 'Status', 'Device Info', 'IP Address']
+      ];
+
+      staffTimestamps.forEach((row) => {
+        const timeInFormatted = row.timeIn ? new Date(row.timeIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-';
+        const timeOutFormatted = row.timeOut ? new Date(row.timeOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Active / On Duty';
+        const hoursStr = row.hoursWorked != null ? `${row.hoursWorked} hrs` : (row.status === 'Active' ? 'In Progress' : '-');
+        rows.push([
+          row.date || '',
+          timeInFormatted,
+          timeOutFormatted,
+          hoursStr,
+          row.status || 'Completed',
+          row.deviceInfo || '',
+          row.ipAddress || ''
+        ]);
+      });
+
+      const totalHours = staffTimestamps.reduce((acc, curr) => acc + (Number(curr.hoursWorked) || 0), 0);
+      rows.push(['']);
+      rows.push(['Total Records', String(staffTimestamps.length)]);
+      rows.push(['Total Hours Worked', `${totalHours.toFixed(2)} hrs`]);
+
+      const csvContent = '\uFEFF' + rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      const safeName = (selectedTimestampStaff.name || 'Staff').replace(/[^a-zA-Z0-9_-]/g, '_');
+      link.setAttribute('download', `Attendance_${safeName}_${exportDate}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast({ title: 'Attendance exported successfully' });
+    } catch (e) {
+      console.error('Export error:', e);
+      toast({ title: 'Export failed', variant: 'destructive' });
+    }
+  };
 
   // Permission options
   const permissionOptions = [
@@ -519,36 +591,6 @@ const StaffManagement: React.FC = () => {
     }
   };
 
-  const handlePushToCloud = async () => {
-    if (isPushingToCloud) return;
-    setIsPushingToCloud(true);
-    try {
-      const result = await api.post('/api/sync/push-all', {});
-      toast({ title: 'Cloud Sync Complete', description: result.message || 'Staff and business data pushed to the cloud.' });
-    } catch (error) {
-      toast({ title: 'Cloud Sync Failed', description: error instanceof Error ? error.message : 'Unable to push data to the cloud.', variant: 'destructive' });
-    } finally {
-      setIsPushingToCloud(false);
-    }
-  };
-
-  const handleFetchFromCloud = async () => {
-    if (isFetchingFromCloud) return;
-    setIsFetchingFromCloud(true);
-    try {
-      toast({ title: 'Fetching from Cloud...', description: 'Downloading all staff and products from Supabase.' });
-      const result = await SalesService.fetchFromCloud();
-      if (result.success) {
-        toast({ title: 'Fetch Complete', description: 'Local database has been updated with data from Supabase.' });
-        await loadStaff();
-      }
-    } catch (error) {
-      toast({ title: 'Fetch Failed', description: error instanceof Error ? error.message : 'Unable to fetch data from Supabase.', variant: 'destructive' });
-    } finally {
-      setIsFetchingFromCloud(false);
-    }
-  };
-
   const formatLastActive = (date?: Date) => {
     if (!date) return 'Never';
     try {
@@ -606,40 +648,6 @@ const StaffManagement: React.FC = () => {
                   Manage employees, monitor activity, and assign roles
                 </p>
               </div>
-            </div>
-            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto">
-              <Button
-                variant="outline"
-                className="border-gray-200 bg-white hover:bg-gray-50 text-xs"
-                onClick={async () => {
-                  try {
-                    const data = await api.get('/api/server-info');
-                    setServerInfoState(data.origin);
-                    if (socketRef.current && !socketRef.current.connected) socketRef.current.connect();
-                    toast({ title: 'Connection refreshed' });
-                  } catch (e) {
-                    toast({ title: 'Failed to connect', variant: 'destructive' });
-                  }
-                }}
-              >
-                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-                Refresh
-              </Button>
-              <Button
-                onClick={() => setIsAddDialogOpen(true)}
-                className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs gap-1.5"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                Add Staff
-              </Button>
-              <Button variant="outline" onClick={handlePushToCloud} disabled={isPushingToCloud} className="border-blue-200 text-blue-700 bg-white text-xs">
-                <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isPushingToCloud ? 'animate-spin' : ''}`} />
-                {isPushingToCloud ? 'Pushing...' : 'Push Cloud'}
-              </Button>
-              <Button variant="outline" onClick={handleFetchFromCloud} disabled={isFetchingFromCloud} className="border-emerald-200 text-emerald-700 bg-white text-xs">
-                <Download className={`w-3.5 h-3.5 mr-1.5 ${isFetchingFromCloud ? 'animate-spin' : ''}`} />
-                {isFetchingFromCloud ? 'Fetching...' : 'Fetch Cloud'}
-              </Button>
             </div>
           </div>
         </div>
@@ -777,6 +785,7 @@ const StaffManagement: React.FC = () => {
                     onDelete={() => setDeletingStaff(member)}
                     onView={() => handleViewStaff(member.id)}
                     onEdit={() => handleEditStaff(member.id)}
+                    onTimestamp={() => handleOpenTimestamp(member)}
                   />
                 ))}
               </div>
@@ -987,17 +996,31 @@ const StaffManagement: React.FC = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Floating Add Staff Button */}
-        <div className="fixed bottom-6 right-6 z-20">
+        {/* Staff Timestamp & Attendance Dialog */}
+        <StaffTimestampDialog
+          open={timestampDialogOpen}
+          onOpenChange={setTimestampDialogOpen}
+          staff={selectedTimestampStaff}
+          timestamps={staffTimestamps}
+          isLoading={isLoadingTimestamps}
+          onExport={handleExportTimestampsToExcel}
+        />
+
+        {/* Floating Action Button - Add Staff (Aligned with Bottom Navigation & Inventory FAB) */}
+        <div className="fixed bottom-28 right-6 z-50 flex flex-col items-end space-y-3">
           <motion.button
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: 'spring', stiffness: 300 }}
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => setIsAddDialogOpen(true)}
-            className="flex items-center gap-2 bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white px-5 py-3 rounded-2xl shadow-lg hover:shadow-xl transition-all hover:-translate-y-1"
+            className="w-14 h-14 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-full shadow-lg transition-colors flex items-center justify-center cursor-pointer"
+            style={{
+              boxShadow: '0 4px 12px rgba(37, 99, 235, 0.35)',
+            }}
+            title="Add Staff"
           >
-            <Plus className="w-5 h-5" />
-            <span className="font-semibold text-sm">Add Staff</span>
+            <UserPlus className="w-6 h-6" />
           </motion.button>
         </div>
 
@@ -1521,18 +1544,194 @@ const EditStaffForm = ({
   );
 };
 
+const StaffTimestampDialog = ({
+  open,
+  onOpenChange,
+  staff,
+  timestamps,
+  isLoading,
+  onExport
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  staff: StaffWithStatus | null;
+  timestamps: any[];
+  isLoading: boolean;
+  onExport: () => void;
+}) => {
+  if (!staff) return null;
+  const initials = getInitials(staff.name || 'Staff');
+  const gradient = getGradient(staff.name || 'Staff');
+  const roleColor = staff.role?.toLowerCase().includes('manager')
+    ? 'bg-blue-100 text-blue-700'
+    : staff.role?.toLowerCase().includes('admin')
+      ? 'bg-purple-100 text-purple-700'
+      : 'bg-green-100 text-green-700';
+
+  const totalHours = timestamps.reduce((acc, curr) => acc + (Number(curr.hoursWorked) || 0), 0);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[95vw] sm:max-w-3xl max-h-[90vh] flex flex-col p-0 overflow-hidden rounded-2xl bg-white border border-gray-100 shadow-2xl">
+        {/* Header */}
+        <div className="p-5 sm:p-6 bg-slate-900 text-white flex-shrink-0">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white font-bold text-xl shadow-md border border-white/20 flex-shrink-0`}>
+                {initials}
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-xl font-bold text-white tracking-tight">{staff.name}</h2>
+                  <Badge className={`px-2.5 py-0.5 rounded-full text-xs font-medium border-0 ${roleColor}`}>
+                    {staff.role || 'Cashier'}
+                  </Badge>
+                  <Badge className={`px-2.5 py-0.5 rounded-full text-xs font-medium border-0 ${
+                    staff.isOnline ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-700 text-slate-300'
+                  }`}>
+                    {staff.isOnline ? '● Online' : 'Offline'}
+                  </Badge>
+                </div>
+                <p className="text-xs sm:text-sm text-slate-300 mt-1 flex items-center gap-2">
+                  <span>Staff ID: <strong className="text-white font-medium">{staff.staffId}</strong></span>
+                  {staff.department && <span>• Dept: <strong className="text-white font-medium">{staff.department}</strong></span>}
+                </p>
+              </div>
+            </div>
+
+            <Button
+              onClick={onExport}
+              disabled={timestamps.length === 0 || isLoading}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-md gap-2 text-xs font-semibold px-4 py-2.5 flex-shrink-0 cursor-pointer transition-all hover:shadow-lg disabled:opacity-50"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>Export to Excel</span>
+            </Button>
+          </div>
+
+          {/* Quick Metrics Bar */}
+          <div className="grid grid-cols-3 gap-3 mt-5 pt-4 border-t border-slate-800">
+            <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700/50">
+              <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider block">Total Logins</span>
+              <span className="text-lg font-bold text-white mt-0.5 block">{timestamps.length}</span>
+            </div>
+            <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700/50">
+              <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider block">Total Hours</span>
+              <span className="text-lg font-bold text-blue-400 mt-0.5 block">{totalHours.toFixed(2)} hrs</span>
+            </div>
+            <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700/50">
+              <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider block">Current Status</span>
+              <span className={`text-sm font-semibold mt-1 block ${staff.isOnline ? 'text-emerald-400' : 'text-slate-300'}`}>
+                {staff.isOnline ? 'Active / On Duty' : 'Off Duty'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Attendance & Timestamps Table Container */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50/50">
+          {isLoading ? (
+            <div className="py-16 text-center">
+              <RefreshCw className="w-8 h-8 text-[#2563EB] animate-spin mx-auto mb-3" />
+              <p className="text-sm text-gray-500 font-medium">Loading attendance timestamp records...</p>
+            </div>
+          ) : timestamps.length === 0 ? (
+            <div className="py-16 text-center bg-white rounded-2xl border border-gray-100 p-8 shadow-xs">
+              <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl mx-auto mb-4 flex items-center justify-center">
+                <Clock className="w-8 h-8" />
+              </div>
+              <h3 className="text-base font-semibold text-gray-900 mb-1">No Attendance Timestamps Found</h3>
+              <p className="text-sm text-gray-500 max-w-sm mx-auto">
+                No login or clock-in sessions have been recorded for {staff.name} yet.
+              </p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-gray-200/80 overflow-hidden shadow-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs sm:text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50/90 text-gray-600 font-semibold uppercase text-[11px] tracking-wider">
+                      <th className="py-3 px-4">Date</th>
+                      <th className="py-3 px-4">Time In</th>
+                      <th className="py-3 px-4">Time Out</th>
+                      <th className="py-3 px-4">Hours</th>
+                      <th className="py-3 px-4">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {timestamps.map((item, idx) => {
+                      const timeInStr = item.timeIn ? new Date(item.timeIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-';
+                      const timeOutStr = item.timeOut ? new Date(item.timeOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : null;
+                      const isCompleted = Boolean(item.timeOut);
+
+                      return (
+                        <tr key={item.id || idx} className="hover:bg-blue-50/30 transition-colors">
+                          <td className="py-3.5 px-4 font-medium text-gray-900 whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <Calendar className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                              <span>{item.date || '-'}</span>
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 text-gray-700 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5 font-medium text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md w-fit">
+                              <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>{timeInStr}</span>
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 text-gray-700 whitespace-nowrap">
+                            {timeOutStr ? (
+                              <div className="flex items-center gap-1.5 font-medium text-slate-700 bg-slate-100 px-2 py-1 rounded-md w-fit">
+                                <Clock className="w-3.5 h-3.5 text-slate-500" />
+                                <span>{timeOutStr}</span>
+                              </div>
+                            ) : (
+                              <Badge className="bg-amber-50 text-amber-700 border-amber-200 font-medium text-[11px]">
+                                Active (Open)
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 font-medium text-gray-900 whitespace-nowrap">
+                            {item.hoursWorked != null ? (
+                              <span>{item.hoursWorked} hrs</span>
+                            ) : (
+                              <span className="text-gray-400 italic">{isCompleted ? '-' : 'Running...'}</span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <Badge className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold border-0 ${
+                              isCompleted ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
+                            }`}>
+                              {isCompleted ? 'Completed' : '● Active'}
+                            </Badge>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 const StaffCard = ({
   member,
   index,
   onDelete,
   onView,
-  onEdit
+  onEdit,
+  onTimestamp
 }: {
   member: StaffWithStatus;
   index: number;
   onDelete: () => void;
   onView: (id: string) => void;
   onEdit: (id: string) => void;
+  onTimestamp: () => void;
 }) => {
   const initials = getInitials(member.name);
   const gradient = getGradient(member.name);
@@ -1550,26 +1749,38 @@ const StaffCard = ({
       className="bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-1 transition-all"
     >
       <CardHeader className="pb-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className={`relative w-12 h-12 sm:w-14 sm:h-14 flex-shrink-0 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white font-bold text-base sm:text-lg shadow-md`}>
-            {initials}
-            <div className={`absolute -bottom-1 -right-1 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-white ${
-              member.isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-300'
-            }`} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <CardTitle className="text-base sm:text-lg font-bold text-gray-900 truncate">{member.name}</CardTitle>
-            <div className="flex items-center gap-1.5 flex-wrap mt-1">
-              <Badge className={`px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium border-0 ${roleColor}`}>
-                {member.role || 'Cashier'}
-              </Badge>
-              <Badge className={`px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium border-0 ${
-                member.isOnline ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-600'
-              }`}>
-                {member.isOnline ? 'Online' : 'Offline'}
-              </Badge>
+        <div className="flex items-start justify-between gap-3 min-w-0">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className={`relative w-12 h-12 sm:w-14 sm:h-14 flex-shrink-0 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white font-bold text-base sm:text-lg shadow-md`}>
+              {initials}
+              <div className={`absolute -bottom-1 -right-1 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-white ${
+                member.isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-300'
+              }`} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <CardTitle className="text-base sm:text-lg font-bold text-gray-900 truncate">{member.name}</CardTitle>
+              <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                <Badge className={`px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium border-0 ${roleColor}`}>
+                  {member.role || 'Cashier'}
+                </Badge>
+                <Badge className={`px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium border-0 ${
+                  member.isOnline ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-600'
+                }`}>
+                  {member.isOnline ? 'Online' : 'Offline'}
+                </Badge>
+              </div>
             </div>
           </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onTimestamp}
+            className="flex-shrink-0 h-8 px-2.5 text-xs font-semibold text-blue-700 border-blue-200 bg-blue-50/60 hover:bg-blue-100 hover:text-blue-800 rounded-lg gap-1.5 transition-all shadow-xs cursor-pointer"
+            title="View Attendance & Timestamps"
+          >
+            <Clock className="w-3.5 h-3.5 text-blue-600" />
+            <span>Time Stamp</span>
+          </Button>
         </div>
       </CardHeader>
       <CardContent className="pb-4 pt-0">
