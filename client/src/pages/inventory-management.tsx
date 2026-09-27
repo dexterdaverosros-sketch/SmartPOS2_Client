@@ -11,7 +11,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ProductService } from '@/lib/db';
+import { ProductService, NotificationService } from '@/lib/db';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -164,6 +164,8 @@ const InventoryManagement: React.FC = () => {
     try {
       const allProducts = await ProductService.getAllProducts();
       setProducts(allProducts);
+      // Asynchronously evaluate low stock levels and update notifications
+      NotificationService.checkAndGenerateLowStockAlerts().catch(() => {});
     } catch (error) {
       console.error('Error loading products:', error);
       toast({

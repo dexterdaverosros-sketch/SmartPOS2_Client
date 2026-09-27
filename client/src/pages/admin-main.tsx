@@ -431,6 +431,7 @@ const AdminMain: React.FC = () => {
 
   const loadNotifications = async () => {
     try {
+      await NotificationService.checkAndGenerateLowStockAlerts();
       const list = await NotificationService.list();
       setNotifications(list);
       const count = await NotificationService.getUnreadCount();
@@ -519,6 +520,18 @@ const AdminMain: React.FC = () => {
       } catch (e) {
         console.error('Failed to parse notification data', e);
       }
+    } else if (notification.type === 'inventory_alert') {
+      setShowNotifications(false);
+      if (notification.data) {
+        try {
+          const d = typeof notification.data === 'string' ? JSON.parse(notification.data) : notification.data;
+          if (d.productId) {
+            setLocation(`/inventory/product/${d.productId}`);
+            return;
+          }
+        } catch {}
+      }
+      setLocation('/inventory');
     }
   };
 
@@ -1182,36 +1195,65 @@ const AdminMain: React.FC = () => {
             </DialogHeader>
             <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50/50">
               {activeTab === 'updates' && (
-                notifications.map((n) => (
-                  <div key={n.id} className={cn("p-3 rounded-xl border bg-white transition-all flex items-start gap-3", !n.isRead && "border-[#BF953F]/20 shadow-sm")}>
-                    {isSelectMode && (
-                      <input 
-                        type="checkbox" 
-                        checked={selectedNotificationIds.includes(n.id)}
-                        onChange={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); handleToggleSelect(n.id); }}
-                        className="mt-1 h-4 w-4 rounded border-gray-300 text-[#BF953F] focus:ring-[#BF953F]"
-                      />
-                    )}
-                    <div 
-                      className="flex-1 cursor-pointer"
-                      onClick={() => !isSelectMode && handleNotificationClick(n)}
-                    >
-                      <p className={cn("text-xs", !n.isRead ? "font-bold" : "text-gray-500")}>{n.message}</p>
-                      <span className="text-[8px] text-gray-400 mt-1 block">{new Date(n.createdAt as any).toLocaleTimeString()}</span>
-                    </div>
-                    {!isSelectMode && (
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-6 w-6 text-gray-400 hover:text-red-500"
-                        onClick={(e) => { e.stopPropagation(); handleDeleteNotification(n.id); }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    )}
+                notifications.length === 0 ? (
+                  <div className="py-8 text-center text-xs text-gray-400">
+                    No notifications yet
                   </div>
-                ))
+                ) : (
+                  notifications.map((n) => {
+                    const isInventoryAlert = n.type === 'inventory_alert';
+                    return (
+                      <div 
+                        key={n.id} 
+                        className={cn(
+                          "p-3.5 rounded-xl border bg-white transition-all flex items-start gap-3", 
+                          !n.isRead && (isInventoryAlert ? "border-amber-300 bg-amber-50/20 shadow-sm" : "border-[#BF953F]/20 shadow-sm")
+                        )}
+                      >
+                        {isSelectMode && (
+                          <input 
+                            type="checkbox" 
+                            checked={selectedNotificationIds.includes(n.id)}
+                            onChange={(e) => e.stopPropagation()}
+                            onClick={(e) => { e.stopPropagation(); handleToggleSelect(n.id); }}
+                            className="mt-1 h-4 w-4 rounded border-gray-300 text-[#BF953F] focus:ring-[#BF953F]"
+                          />
+                        )}
+                        <div 
+                          className="flex-1 cursor-pointer"
+                          onClick={() => !isSelectMode && handleNotificationClick(n)}
+                        >
+                          {isInventoryAlert && (
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-200 uppercase tracking-wider">
+                                Low Stock
+                              </span>
+                            </div>
+                          )}
+                          <p className={cn("text-xs leading-relaxed", !n.isRead ? "font-bold text-gray-900" : "text-gray-600")}>{n.message}</p>
+                          <div className="flex items-center justify-between mt-1.5">
+                            <span className="text-[9px] text-gray-400 block">{new Date(n.createdAt as any).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            {isInventoryAlert && (
+                              <span className="text-[9px] font-semibold text-[#FF8882] hover:underline flex items-center gap-0.5">
+                                View Product →
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {!isSelectMode && (
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-6 w-6 text-gray-400 hover:text-red-500"
+                            onClick={(e) => { e.stopPropagation(); handleDeleteNotification(n.id); }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })
+                )
               )}
               {activeTab === 'remittance' && (
                 pendingRemittances.map((r) => (

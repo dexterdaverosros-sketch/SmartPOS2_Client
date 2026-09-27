@@ -214,6 +214,134 @@ export const NotificationService = {
   },
   async saveLocally(notification: Notification): Promise<void> {
     await db.notifications.put(notification);
+  },
+  async checkAndGenerateLowStockAlerts(tenantId?: string): Promise<Notification[]> {
+    try {
+      const effectiveTenant = tenantId || localStorage.getItem('smartpos_tenant_id') || '';
+      const [allProducts, allVariants, existingNotifs] = await Promise.all([
+        db.products.toArray(),
+        db.variants.toArray(),
+        db.notifications.toArray()
+      ]);
+
+      const now = Date.now();
+      const twelveHoursAgo = now - 12 * 60 * 60 * 1000;
+      const createdAlerts: Notification[] = [];
+
+      // Check standard products
+      for (const prod of allProducts) {
+        const qty = Number(prod.quantity ?? 0);
+        if (qty <= 5) {
+          const isOutOfStock = qty <= 0;
+          const msg = isOutOfStock
+            ? `🚨 Out of Stock: "${prod.name}" has 0 units remaining! Restock needed.`
+            : `⚠️ Low Stock Alert: "${prod.name}" is running low (${qty} unit${qty === 1 ? '' : 's'} left).`;
+
+          // Deduplicate
+          const duplicate = existingNotifs.some(n => {
+            if (n.type !== 'inventory_alert') return false;
+            const notifTime = n.createdAt ? new Date(n.createdAt).getTime() : 0;
+            const isRecent = notifTime >= twelveHoursAgo;
+            if (!n.isRead || isRecent) {
+              if (n.data) {
+                try {
+                  const d = typeof n.data === 'string' ? JSON.parse(n.data) : n.data;
+                  if (d.productId === prod.id && !d.variantId) return true;
+                } catch {}
+              }
+              if (n.message && n.message.includes(`"${prod.name}"`)) return true;
+            }
+            return false;
+          });
+
+          if (!duplicate) {
+            const newNotif: Notification = {
+              id: generateUUID(),
+              tenantId: effectiveTenant,
+              userId: null,
+              type: 'inventory_alert',
+              message: msg,
+              data: JSON.stringify({
+                productId: prod.id,
+                productName: prod.name,
+                quantity: qty,
+                isOutOfStock,
+                type: 'low_stock'
+              }),
+              isRead: false,
+              createdAt: new Date()
+            } as any;
+
+            await db.notifications.put(newNotif);
+            createdAlerts.push(newNotif);
+            try {
+              await api.post('/api/notifications', newNotif);
+            } catch {}
+          }
+        }
+      }
+
+      // Check variants
+      const prodMap = new Map(allProducts.map(p => [p.id, p.name]));
+      for (const variant of allVariants) {
+        const qty = Number(variant.quantity ?? 0);
+        if (qty <= 5) {
+          const isOutOfStock = qty <= 0;
+          const parentName = prodMap.get(variant.productId) || 'Product';
+          const fullName = `${parentName} (${variant.name})`;
+          const msg = isOutOfStock
+            ? `🚨 Out of Stock: "${fullName}" has 0 units remaining! Restock needed.`
+            : `⚠️ Low Stock Alert: "${fullName}" is running low (${qty} unit${qty === 1 ? '' : 's'} left).`;
+
+          const duplicate = existingNotifs.some(n => {
+            if (n.type !== 'inventory_alert') return false;
+            const notifTime = n.createdAt ? new Date(n.createdAt).getTime() : 0;
+            const isRecent = notifTime >= twelveHoursAgo;
+            if (!n.isRead || isRecent) {
+              if (n.data) {
+                try {
+                  const d = typeof n.data === 'string' ? JSON.parse(n.data) : n.data;
+                  if (d.variantId === variant.id) return true;
+                } catch {}
+              }
+              if (n.message && n.message.includes(`"${fullName}"`)) return true;
+            }
+            return false;
+          });
+
+          if (!duplicate) {
+            const newNotif: Notification = {
+              id: generateUUID(),
+              tenantId: effectiveTenant,
+              userId: null,
+              type: 'inventory_alert',
+              message: msg,
+              data: JSON.stringify({
+                productId: variant.productId,
+                variantId: variant.id,
+                productName: fullName,
+                quantity: qty,
+                isOutOfStock,
+                type: 'low_stock'
+              }),
+              isRead: false,
+              createdAt: new Date()
+            } as any;
+
+            await db.notifications.put(newNotif);
+            createdAlerts.push(newNotif);
+            try {
+              await api.post('/api/notifications', newNotif);
+            } catch {}
+          }
+        }
+      }
+
+      return createdAlerts;
+    } catch (err) {
+      console.error('Error generating low stock alerts:', err);
+      return [];
+    }
   }
 };
 
@@ -996,14 +1124,18 @@ export class ProductService {
     }]).catch(e => console.warn('Immediate stock sync failed, will rely on periodic sync', e));
   }
 
-  static async addVariant(productId: string, data: { name: string; price: number; cost: number; quantity?: number; barcode?: string; image?: string | null }): Promise<Variant> {
+  static async addVariant(productId: string, data: { name: string; price: number; cost: number; quantity?: number; barcode?: string; boxBarcode?: string; unitsPerBox?: number; boxCost?: number; image?: string | null }): Promise<Variant> {
     const variant: Variant = {
       id: generateUUID(),
+      tenantId: localStorage.getItem('smartpos_tenant_id') || '',
       productId,
       name: data.name.trim(),
       price: Math.round(data.price * 100) / 100,
       cost: Math.round(data.cost * 100) / 100,
       barcode: data.barcode?.trim() || null,
+      boxBarcode: data.boxBarcode?.trim() || null,
+      unitsPerBox: data.unitsPerBox ?? 1,
+      boxCost: data.boxCost ?? 0,
       image: data.image || null,
       quantity: Math.floor(data.quantity ?? 0),
       createdAt: new Date(),
@@ -1018,6 +1150,8 @@ export class ProductService {
       price: variant.price,
       cost: variant.cost,
       barcode: variant.barcode,
+      boxBarcode: (variant as any).boxBarcode,
+      unitsPerBox: (variant as any).unitsPerBox,
       image: null,
       quantity: variant.quantity ?? 0,
       createdAt: (variant as any).createdAt instanceof Date ? (variant as any).createdAt.toISOString() : new Date().toISOString(),

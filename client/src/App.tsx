@@ -64,6 +64,7 @@ function Router() {
       <Route path="/store/:tenant/admin-dashboard" component={() => <ProtectedRoute component={AdminDashboard} role="admin" />} />
       <Route path="/store/:tenant/inventory/product/:id/variant/edit/:variantId" component={() => <ProtectedRoute component={ProductVariantEdit} role="admin" />} />
       <Route path="/store/:tenant/inventory/product/:id/variant/add" component={() => <ProtectedRoute component={ProductVariantAdd} role="admin" />} />
+      <Route path="/store/:tenant/inventory/variant/add" component={() => <ProtectedRoute component={ProductVariantAdd} role="admin" />} />
       <Route path="/store/:tenant/inventory/product/:id" component={() => <ProtectedRoute component={ProductDetails} role="admin" />} />
       <Route path="/store/:tenant/inventory" component={() => <ProtectedRoute component={Inventory} role="admin" />} />
       <Route path="/store/:tenant/ledger" component={() => <ProtectedRoute component={Ledger} role="admin" />} />
@@ -100,6 +101,7 @@ function Router() {
       <Route path="/admin-dashboard" component={() => <ProtectedRoute component={AdminDashboard} role="admin" />} />
       <Route path="/inventory/product/:id/variant/edit/:variantId" component={() => <ProtectedRoute component={ProductVariantEdit} role="admin" />} />
       <Route path="/inventory/product/:id/variant/add" component={() => <ProtectedRoute component={ProductVariantAdd} role="admin" />} />
+      <Route path="/inventory/variant/add" component={() => <ProtectedRoute component={ProductVariantAdd} role="admin" />} />
       <Route path="/inventory/product/:id" component={() => <ProtectedRoute component={ProductDetails} role="admin" />} />
       <Route path="/inventory" component={() => <ProtectedRoute component={Inventory} role="admin" />} />
       <Route path="/ledger" component={() => <ProtectedRoute component={Ledger} role="admin" />} />

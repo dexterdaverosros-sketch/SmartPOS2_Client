@@ -33,7 +33,7 @@ const translations = {
     failedToAddExpense: 'Failed to add expense',
     failedToAddPurchase: 'Failed to add purchase',
     failedToAddCreditor: 'Failed to add creditor',
-    executiveTools: 'Executive Tools',
+    executiveTools: 'Quick Access',
     financials: 'Financials',
     expenses: 'Expenses',
     bookkeeping: 'Bookkeeping',
